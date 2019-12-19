@@ -1,0 +1,130 @@
+---
+title: "Cluster of Plot Data"
+author: "William H MacKenzie"
+date: "18/12/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(reshape)
+require(reshape2)
+require(vegan)
+require(caret)
+require(tcltk)
+require(randomForest)
+require(Matrix)
+require(labdsv)
+require(gdata)
+require(MASS)
+require(openxlsx)
+require (C50)
+require(tidyr)
+require(stringr)
+require(rpart)
+require(tree)
+require(rattle)
+require(rpart.plot)
+require(partykit)
+require(vegclust)
+require(standardize)
+require(dplyr)
+require(tictoc)
+require(plyr)
+require(Hmisc)
+require(ggplot2)
+require(ggdendro)
+require(pvclust)
+require(dendextend)
+require(ape)
+require (dbscan)
+require(factoextra)
+require(fpc)
+require(cluster)
+```
+
+##Import vegetation plot data produced from 0_BEC_data_import_clean.R script
+
+```{r cars}
+
+load("./outputs/VegDat_Clean.RData") ###variable = vegData
+vegData <- vegData %>% select(-Type)
+
+VegMatrix <- dcast(vegData, PlotNumber ~ Species)###Convert to site unit by species matrix
+Plots <- VegMatrix[1]
+rownames(VegMatrix) <- VegMatrix$PlotNumber
+VegMatrix <- VegMatrix[-1]
+VegMatrix[is.na(VegMatrix)] <- 0
+```
+## Cluster analysis of plot data and export to csv file
+```{r}
+Vegchord = decostand(VegMatrix,"normalize")
+dd <- dist(Vegchord)
+#hc <- hclust(dd, method = "ward.D2")
+flexbeta <- function (dis,beta) 
+{
+  alpha <- (1-beta)/2
+  out <- agnes(dis,meth='flex',par.method=alpha)
+  out
+}
+hc <- flexbeta(dd,-0.25)
+hc <- as.hclust(hc)
+dend <- as.dendrogram(hc)
+####plots from ape package
+plot(as.phylo(hc), type = "unrooted", cex = 0.5,no.margin = TRUE, lab4ut = "axial")
+
+plot(as.phylo(hc), cex = 0.5, label.offset = 0.5)
+#plot(as.phylo(hc), type = "cladogram", cex = 0.5, label.offset = 0.5)
+#plot(as.phylo(hc), type = "fan")
+
+library(cluster)
+fit <- kmeans(dd, 10)
+#clusplot(Vegchord, fit$cluster, color=TRUE, shade=TRUE, labels=2, lines=0)
+out <- cbind(Plots, clusterNum = fit$cluster)
+head(out)
+write.csv(out, "./outputs/ClusterMembership.csv", row.names = FALSE)
+```
+
+```{r}
+# Centroid Plot against 1st 2 discriminant functions
+library(fpc)
+plotcluster(dd, fit$cluster)
+
+##Import SU table of plots desired for cluster analysis
+#SUhier <- read.csv("FebHierarchyLevelSU.csv", stringsAsFactors = FALSE)
+#### Reduce vegdata to those listed in SUHier
+
+########Function to define optimal eps
+dbscan::kNNdistplot(dd, k =  4)
+abline(h = 0.4, lty = 2)
+###compute DBSAB using two different packages
+set.seed(123)
+# fpc package
+res.fpc <- fpc::dbscan(dd, eps = 0.4, MinPts = 4)
+# dbscan package
+res.db <- dbscan::dbscan(dd, 0.4, 4)
+#Make sure that both version produce the same results:
+  
+#  all(res.fpc$cluster == res.db)
+
+ # The result can be visualized as follow:
+    
+    fviz_cluster(res.fpc, dd, geom = "point")
+    
+    
+#  dbscan(data, eps, MinPts = 5, scale = FALSE, 
+#       method = c("hybrid", "raw", "dist"))
+# Compute DBSCAN using fpc package
+set.seed(123)
+db <- fpc::dbscan(dd, eps = 0.15, MinPts = 5, method = "dist")
+# Plot DBSCAN results
+plot(db, dd, main = "DBSCAN", frame = FALSE)
+# Print DBSCAN
+print(db)
+## or plot with factoextra
+fviz_cluster(db, fit, stand = FALSE, frame = FALSE, geom = "point")
+km.res <- kmeans(dd, 5, nstart = 25)
+fviz_cluster(km.res, dd, frame = FALSE, geom = "point")
+```
+
+
