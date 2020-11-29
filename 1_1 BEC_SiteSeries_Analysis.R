@@ -46,9 +46,9 @@ load ("Order_Differential_data.RData")## choose summary data of desired hierarch
 #### OPTION Subset for just tree species (optional)##################
 load ("VegDat_Clean.RData")
 #temp <- separate(temp, Species, c("Species","Type"), "-", remove = TRUE)
-vegData <- vegData[vegData$Type %in% c(1,2),]
+#vegData <- vegData[vegData$Type %in% c(1,2),] # for trees only
 vegData <- vegData[!is.na(vegData$Species),]
-treeSpp <- as.character(unique(vegData$Species))
+#treeSpp <- as.character(unique(vegData$Species))
 SUsumData <- SUsumData[SUsumData$Species %in% treeSpp,]
 ##############################################################################
 
@@ -94,7 +94,7 @@ ggplot(dend, labels = TRUE) +
 
 ####
 set.seed(1234)
-result <- pvclust(SScovMatrix[-1], method.dist="cor", 
+result <- pvclust(VegMatrix[-1], method.dist="cor", 
                   method.hclust="average", nboot=10)
 plot(result)
 pvrect(result)
