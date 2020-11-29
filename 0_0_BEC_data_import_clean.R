@@ -3,7 +3,6 @@
 ##Kiri Daust, July 2018
 ##MacKenzie, August 2018 extensive updates
 
-.libPaths("E:/R packages351")
 #install.packages("Hmisc")
 require(reshape)
 require(reshape2)
@@ -30,9 +29,11 @@ require(dplyr)
 require(tictoc)
 require(plyr)
 require(Hmisc)
+require(data.table)
+require(tidyverse)
 
 rm(list=ls())
-wd=tk_choose.dir(); setwd(wd)
+#wd=tk_choose.dir(); setwd(wd)
 
 ####trialing Goldstream#############
 goldstream <- function(x, type){ ##type either goldstream or prominence
@@ -47,7 +48,7 @@ goldstream <- function(x, type){ ##type either goldstream or prominence
 
 #####################importing veg data########################################
 ############### Uses 3 column R export FORMAT FROM Vpro with Lifeform option selected
-vegData <- read.table("BECMasterVeg_Oct26_2018.txt", header = TRUE) 
+vegData <- read.table("./inputs/PinuAlb_18Dec2019.txt", header = TRUE) 
 vegData <- separate(vegData, Species, c("Species","Type"), "-", remove = TRUE)
 vegData <- mutate_all(vegData, funs(toupper)) ### converts lower case characters to upper
 vegData$Cover <- as.numeric(vegData$Cover)
@@ -55,9 +56,9 @@ vegData$Cover <- as.numeric(vegData$Cover)
 vegData$Cover <- round(vegData$Cover, digits = 3)
 ## remove species with zero cover
 vegData <- vegData[vegData$Cover > 0,]
-save(vegData, file = "VegDat_Raw.RData")##includes type field for lifeform
+save(vegData, file = "./inputs/VegDat_Raw.RData")##includes type field for lifeform
 lifeform <- unique(vegData[,c(2:3)])
-save(lifeform, file= "SppLifeForm.RData")###library list of species lifeform codes
+save(lifeform, file= "./inputs/SppLifeForm.RData")###library list of species lifeform codes
 load("VegDat_Raw.RData")
 ##############Some stats on imported data
 ####Count number of columns (species) required
@@ -104,8 +105,8 @@ save(vegData3c, file = "VegDat_Raw_3column.RData")
 load("VegDat_Raw3column.RData")
 
 ###update old codes
-masterList <- read.csv("USysAllSpecs.csv", stringsAsFactors = FALSE)
-noMatch <- masterList[masterList$OldCode != masterList$Code,3:4]
+masterList <- fread("./inputs/SpeciesMaster05Oct2019.csv", stringsAsFactors = FALSE)
+noMatch <- masterList[masterList$OldCode != masterList$Code,5:6]
 temp <- merge(vegData,noMatch,by.x = "Species", by.y = "OldCode")
 temp$Species <- temp$Code
 temp <- temp[,-5]
@@ -114,7 +115,7 @@ vegData <- vegData[!vegData$Species %in% noMatch$OldCode,] ##remove old codes
 
 ###remove codes not in master list
 notIn <- vegData[!vegData$Species %in% masterList$Code,]
-vegData <- vegData[vegData$Species %in% masterList$Code,]
+ vegData <- vegData[vegData$Species %in% masterList$Code,]
 
 if(length(notIn$Species) > 0){
   notIn <- dcast(notIn, PlotNumber ~ Species, value.var = "Species", fun.aggregate = length)
@@ -123,8 +124,8 @@ if(length(notIn$Species) > 0){
 vegRemove <- vegData[vegData$Cover <= 0,] 
 write.csv(vegRemove, file = "Plots_0Cover.csv") ## output of species with zero cover for review
 vegData <- vegData[vegData$Cover > 0,]## remove records with zero cover
-save(vegData, file = "VegDat_Clean.RData")
-load("VegDat_Clean.RData")
+save(vegData, file = "./outputs/VegDat_Clean.RData")
+#load("VegDat_Clean.RData")
 
 ###Optional application of lump species
 lump <- read.csv("NewSppLump27Oct2018_Lump.csv", stringsAsFactors = FALSE)
