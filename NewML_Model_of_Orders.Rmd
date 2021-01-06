@@ -1,0 +1,76 @@
+---
+title: "MachineLearningHigherOrders"
+author: "Will MacKenzie"
+date: "06/01/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+require(tidyverse)
+require(tidymodels)
+require(data.table)
+
+```
+
+## A machine learning model of high-level hierarchical BEC units
+
+```{r import clean data}
+### Vegetation From BECMaster cleaning script Long form Plot|Species|Cover (across all layers)
+### or From Vpro export
+#####################importing Vpro veg data########################################
+############### Uses 3 column R export FORMAT FROM Vpro with Lifeform option selected
+load("./inputs/VegDat_Raw.RData")##includes type field for lifeform
+vegDat2 <- vegData %>% filter(!is.na(Type))
+###SU table
+fread("./inputs/BECMster_V2020_2_SU.csv")
+##Import Vpro hierarchy table widen and reformat
+SUhier <- fread("./inputs/BECv12_Forests_July2020_Hierarchy.csv")
+#SUhier <- read.csv("./inputs/AllForestHier.csv", stringsAsFactors = FALSE)
+colnames(SUhier)[1:12]=c("PlotNumber", "Region", "Class", "Order", "SubOrder", "Alliance", "SubAlliance", "Association", "SubAssociation", "Facies", "Working", "SiteSeries")
+#Create lowest working hierarchical units
+SUhier$SubAssociation <- ifelse(SUhier$SubAssociation == "",SUhier$Association,SUhier$SubAssociation) ##if SubAssoc blank, fill with Association
+SUhier$SubOrder <- ifelse(SUhier$SubOrder == "",SUhier$Order,SUhier$SubOrder)
+SUhier$SubAlliance <- ifelse(SUhier$SubAlliance == "",SUhier$Alliance,SUhier$SubAlliance)
+write.csv(SUhier, "AllForestHier_filled.csv")
+## combine PlotNumber, SU, and Hierarchy into single table. Include all Plots even where no hierarchy assignment
+```
+
+
+```{r summarize data, echo=FALSE}
+### Add SU column to identify each plot
+### Summarize by SU including mean cover and constancy percent
+### Save summary data
+
+### Site series and number of plots summary table
+### Count number of site series good/dubious/poor based on number of plots
+### Exclude unit with too few plots
+```
+
+
+```{r initial hierarchy placement}
+#### Add all hierarchy unit to SS summary
+
+```
+
+```{r prep to build forest ML model}
+### identify those SS that fall under the forest region
+### ### add an 'X' pseudospecies to the site series summary where no trees occur
+### Filter out all species but tree species
+
+```
+
+```{r build preliminary forest model}
+###test and train
+
+```
+
+```{r review misassigned SS}
+
+```
+
+```{r predict placement of new SS and plots}
+
+```
+
