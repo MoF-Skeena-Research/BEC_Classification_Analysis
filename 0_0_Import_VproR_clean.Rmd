@@ -43,8 +43,9 @@ require(psych)
 
 ```{r import data}
 
-vegData <- read.table("./inputs/PinuAlb_18Dec2019.txt", header = TRUE) 
+vegData <- read.table("./inputs/BECMasterVeg_Jan6_2021.txt", header = TRUE) 
 vegData <- separate(vegData, Species, c("Species","Type"), "-", remove = TRUE)
+
 vegData <- mutate_all(vegData, funs(toupper)) ### converts lower case characters to upper
 vegData$Cover <- as.numeric(vegData$Cover)
 ###return on significant decimal places
