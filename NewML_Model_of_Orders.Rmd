@@ -11,7 +11,8 @@ knitr::opts_chunk$set(echo = FALSE)
 require(tidyverse)
 require(tidymodels)
 require(data.table)
-
+require(data.tree)
+require(collapsibleTree)
 ```
 
 ## A machine learning model of high-level hierarchical BEC units
@@ -24,10 +25,23 @@ require(data.table)
 load("./inputs/VegDat_Raw.RData")##includes type field for lifeform
 vegDat2 <- vegData %>% filter(!is.na(Type))
 ###SU table
-fread("./inputs/BECMster_V2020_2_SU.csv")
+SUTab <- fread("./inputs/BECMster_V2020_2_SU.csv")
 ##Import Vpro hierarchy table widen and reformat
 SUhier <- fread("./inputs/BECv12_Forests_July2020_Hierarchy.csv")
-#SUhier <- read.csv("./inputs/AllForestHier.csv", stringsAsFactors = FALSE)
+hierLookup <- SUhier[,.(ID,Name)]
+HierClean <- SUhier[,.(ID,Parent,Name,Level)]
+HierClean[is.na(Parent), Parent := 1]
+temp <- data.table(ID = -1310326746,Parent = 1, Name = "XXX",Level = 1)
+HierClean <- rbind(HierClean,temp)
+HierClean$Parent[!HierClean$Parent %in% HierClean$ID]
+HierClean[hierLookup, ParentName := i.Name, on = c(Parent = "ID")]
+HierClean[is.na(ParentName), ParentName := "root2"]
+HierClean <- HierClean[,.(Name,ParentName,Level)]
+HierClean$ParentName[!HierClean$ParentName %in% HierClean$Name]
+tree <- FromDataFrameNetwork(HierClean)
+collapsibleTree(tree, collapsed = T)
+wideTab <- ToDataFrameTypeCol(tree)
+
 colnames(SUhier)[1:12]=c("PlotNumber", "Region", "Class", "Order", "SubOrder", "Alliance", "SubAlliance", "Association", "SubAssociation", "Facies", "Working", "SiteSeries")
 #Create lowest working hierarchical units
 SUhier$SubAssociation <- ifelse(SUhier$SubAssociation == "",SUhier$Association,SUhier$SubAssociation) ##if SubAssoc blank, fill with Association
