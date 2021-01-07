@@ -12,7 +12,6 @@ require(tidyverse)
 require(tidymodels)
 require(data.table)
 require(data.tree)
-require(collapsibleTree)
 ```
 
 ## A machine learning model of high-level hierarchical BEC units
@@ -28,27 +27,46 @@ vegDat2 <- vegData %>% filter(!is.na(Type))
 SUTab <- fread("./inputs/BECMster_V2020_2_SU.csv")
 ##Import Vpro hierarchy table widen and reformat
 SUhier <- fread("./inputs/BECv12_Forests_July2020_Hierarchy.csv")
-hierLookup <- SUhier[,.(ID,Name)]
-HierClean <- SUhier[,.(ID,Parent,Name,Level)]
-HierClean[is.na(Parent), Parent := 1]
-temp <- data.table(ID = -1310326746,Parent = 1, Name = "XXX",Level = 1)
-HierClean <- rbind(HierClean,temp)
-HierClean$Parent[!HierClean$Parent %in% HierClean$ID]
-HierClean[hierLookup, ParentName := i.Name, on = c(Parent = "ID")]
-HierClean[is.na(ParentName), ParentName := "root2"]
-HierClean <- HierClean[,.(Name,ParentName,Level)]
-HierClean$ParentName[!HierClean$ParentName %in% HierClean$Name]
-tree <- FromDataFrameNetwork(HierClean)
-#collapsibleTree(tree, collapsed = T)
-wideTab <- ToDataFrameTypeCol(tree)
 
-colnames(wideTab)[1:12]=c("PlotNumber", "Region", "Class", "Order", "SubOrder", "Alliance", "SubAlliance", "Association", "SubAssociation", "Facies", "Working", "SiteSeries")
-#Create lowest working hierarchical units
-SUhier$SubAssociation <- ifelse(SUhier$SubAssociation == "",SUhier$Association,SUhier$SubAssociation) ##if SubAssoc blank, fill with Association
-SUhier$SubOrder <- ifelse(SUhier$SubOrder == "",SUhier$Order,SUhier$SubOrder)
-SUhier$SubAlliance <- ifelse(SUhier$SubAlliance == "",SUhier$Alliance,SUhier$SubAlliance)
-write.csv(SUhier, "AllForestHier_filled.csv")
-## combine PlotNumber, SU, and Hierarchy into single table. Include all Plots even where no hierarchy assignment
+treeToTable <- function(SUhier){
+  hierLookup <- SUhier[,.(ID,Name)]
+  HierClean <- SUhier[,.(ID,Parent,Name,Level)]
+  roots <- HierClean$Parent[!HierClean$Parent %in% HierClean$ID]
+  roots <- unique(roots[!is.na(roots)])
+  if(length(roots) >= 1){
+    warning("There are duplicate roots. Please check ID ", roots)
+  }
+  HierClean[is.na(Parent), Parent := 1]
+  temp <- data.table(ID = roots,Parent = rep(1,length(roots)), Name = rep("XXX",length(roots)),Level = rep(1, length(roots)))
+  HierClean <- rbind(HierClean,temp)
+  
+  HierClean[hierLookup, ParentName := i.Name, on = c(Parent = "ID")]
+  HierClean[is.na(ParentName), ParentName := "root2"]
+  HierClean <- HierClean[,.(Name,ParentName,Level)]
+  HierClean$ParentName[!HierClean$ParentName %in% HierClean$Name]
+  tree <- FromDataFrameNetwork(HierClean)
+  wideTab <- ToDataFrameTypeCol(tree)
+  wideTab <- as.data.table(wideTab)
+  wideTab[,ID := 1:nrow(wideTab)]
+  wideTab[,level_1 := NULL]
+  tab2 <- melt(wideTab, id.vars = "ID")
+  tab2 <- na.omit(tab2)
+  tab2[HierClean, Level := i.Level, on = c(value = "Name")]
+  dupLevels <- tab2[,.(Len = .N), by = .(ID,Level)]
+  dupLevels <- dupLevels[Len > 1,]
+  dups <- tab2[ID %in% dupLevels$ID,]
+  setorder(dups,"ID")
+  dups[,variable := NULL] ##these are the branches with duplicates
+  tabOut <- dcast(tab2, ID ~ Level, value.var = "value", fun.aggregate = function(x){x[1]})
+  setnames(tabOut, c("ID","Region","Class","Order","Suborder","Alliance","Suball","Assoc","Subass","Working","SiteSeries"))
+  tabOut[is.na(Subass), Subass := Assoc]
+  tabOut[is.na(Suborder), Suborder := Order]
+  tabOut[is.na(Suball), Suball := Alliance]
+  return(list(table = tabOut, duplicates = dups))
+}
+
+temp <- treeToTable(SUhier)
+hierWide <- temp$table
 ```
 
 
