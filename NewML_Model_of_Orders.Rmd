@@ -75,42 +75,14 @@ BECHier <- fread("./inputs/AllForestHier_filled.csv")
 ### Summarize by SU including mean cover and constancy percent
 ##roll up into site series summary data
 
-
-set.seed(123321)
-coreNo <- makeCluster(detectCores() - 1)
-registerDoParallel(coreNo, cores = detectCores() - 1)
-Cores <- as.numeric(detectCores()-1)
-
 constCut <- 0 ##remove species less than cutoff
-tic()
-temp <- foreach(SS = unique(vegData2$SiteUnit), .combine = rbind, .packages = "foreach") %dopar% {
-  sub <- vegData2[vegData2$SiteUnit == SS,]
-  num <- length(unique(sub$PlotNumber))
-  foreach(Spp = unique(sub$Species), .combine = rbind) %do% {
-    sub2 <- sub[sub$Species == Spp,]
-    numSpp <- dim(unique(sub2[,1:2]))[1]
-    covsum <- sum(sub2$Cover)
-    mean <- covsum/num
-    const <- numSpp/num
-    if(const >= constCut){
-      out <- data.frame(SiteUnit = SS, Species = Spp, MeanCov = mean, Constancy = const*100, NoPlots = num)
-    }
-    
-  }
-}
-toc()
-stopCluster(coreNo)
+vegDat <- as.data.table(vegDat2)
+vegDat[SUTab, SiteUnit := i.SiteUnit, on = "PlotNumber"]
+vegDat <- vegDat[!is.na(SiteUnit) & SiteUnit != "",]
+vegDat[,nPlots := .N, by = .(SiteUnit)]
+vegSum <- vegDat[,.(MeanCov = sum(Cover)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)]
+vegSum <- vegSum[Constancy >= constCut,]
 
-NewSSSum <- temp
-colnames(NewSSSum) [1] <- "SiteSeries"
-save(NewSSSum, file = "NewSS_SummaryData.RData")
-
-
-### Save summary data
-
-### Site series and number of plots summary table
-### Count number of site series good/dubious/poor based on number of plots
-### Exclude unit with too few plots
 ```
 
 
