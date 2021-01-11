@@ -12,11 +12,12 @@ require(tidyverse)
 require(tidymodels)
 require(data.table)
 require(data.tree)
+require(DataExplorer)
 ```
 
 ## A machine learning model of high-level hierarchical BEC units
 
-```{r import clean data}
+```{r import data}
 ### Vegetation From BECMaster cleaning script Long form Plot|Species|Cover (across all layers)
 ### or From Vpro export
 #####################importing Vpro veg data########################################
@@ -24,10 +25,14 @@ require(data.tree)
 load("./inputs/VegDat_Raw.RData")##includes type field for lifeform
 vegDat2 <- vegData %>% filter(!is.na(Type))
 ###SU table
-SUTab <- fread("./inputs/BECMster_V2020_2_SU.csv")
+SUTab <- fread("./inputs/BEC_ForestHier_10Jan21_SU.csv")
 ##Import Vpro hierarchy table widen and reformat
 SUhier <- fread("./inputs/BECv12_Forests_July2020_Hierarchy.csv")
+sppMaster <- fread('./inputs/SpeciesMaster05Oct2019.csv')
+```
 
+
+```{r clean hierarchy}
 treeToTable <- function(SUhier){
   hierLookup <- SUhier[,.(ID,Name)]
   HierClean <- SUhier[,.(ID,Parent,Name,Level)]
@@ -58,7 +63,7 @@ treeToTable <- function(SUhier){
   setorder(dups,"ID")
   dups[,variable := NULL] ##these are the branches with duplicates
   tabOut <- dcast(tab2, ID ~ Level, value.var = "value", fun.aggregate = function(x){x[1]})
-  setnames(tabOut, c("ID","Region","Class","Order","Suborder","Alliance","Suball","Assoc","Subass","Working","SiteSeries"))
+  setnames(tabOut, c("ID","Region","Class","Order","Suborder","Alliance","Suball","Assoc","Subass","Facies","Working", "SiteSeries"))
   tabOut[is.na(Subass), Subass := Assoc]
   tabOut[is.na(Suborder), Suborder := Order]
   tabOut[is.na(Suball), Suball := Alliance]
@@ -66,41 +71,160 @@ treeToTable <- function(SUhier){
 }
 
 temp <- treeToTable(SUhier)
-hierWide <- temp$table
+Hier.clean <- temp$table
+fwrite(Hier.clean, './inputs/cleanedHierarchy.csv')
+
 ```
 
 
-```{r summarize data, echo=FALSE}
-BECHier <- fread("./inputs/AllForestHier_filled.csv")
+```{r summarize site series, echo=FALSE}
+
+#SUTab <- fread("./inputs/BECMster_V2020_2_SU.csv")
 ### Summarize by SU including mean cover and constancy percent
 ##roll up into site series summary data
+### Filter out all species but tree species
+trees = c("1") ###, "2" include only conifers to start
+vegDat2 <- vegDat2 %>% filter(Type %in% trees )
 
 constCut <- 0 ##remove species less than cutoff
 vegDat <- as.data.table(vegDat2)
+
 vegDat[SUTab, SiteUnit := i.SiteUnit, on = "PlotNumber"]
 vegDat <- vegDat[!is.na(SiteUnit) & SiteUnit != "",]
-vegDat[,nPlots := .N, by = .(SiteUnit)]
+#vegDat[,nPlots := .N, by = .(SiteUnit)]
+vegDat <- as.tibble(vegDat)
+vegDat$SiteUnit <- as.factor(vegDat$SiteUnit)
+vegDat <- vegDat %>% group_by(SiteUnit) %>%  mutate(nPlots = n_distinct(PlotNumber))
+vegDat <- as.data.table(vegDat)
 vegSum <- vegDat[,.(MeanCov = sum(Cover)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)]
 vegSum <- vegSum[Constancy >= constCut,]
+
+fwrite(vegSum, './inputs/SiteSeriesConiferSummary.csv')
+
+#### linkages to Site Association Analysis Units from other script will replace this.
 
 ```
 
 
 ```{r initial hierarchy placement}
-#### Add all hierarchy unit to SS summary
+#Hier.clean <- fread("./inputs/cleanedHierarchy.csv")
+#vegSum <- fread('./inputs/SiteSeriesForestedSummary.csv')
+
+SS_good <- vegSum %>% filter(nPlots >=10) %>% filter(Constancy >= .33)## Select only site series will enough plots
+Hier.units <- Hier.clean %>% select(SiteSeries, Class, Order, Suborder)
+Hier.data <- left_join(SS_good, Hier.units, by = c('SiteUnit' = 'SiteSeries'))
+#trees <- sppMaster %>% filter(TreeCode <=2) %>% filter(Codetype == 'U') %>% select(Code)
+#trees <- as.character(trees$Code)
+#Hier.data2 <- Hier.data[Species %in% as.character(trees),]
+fwrite(Hier.data, './inputs/SiteSeriesForested_w_HierarchyUnits.csv')
+```
+
+```{r some hierarchy stats}
+classes <- unique(Hier.data$Class)
+orders <- unique(Hier.data$Order)
+suborders <- unique(Hier.data$Suborder)
+class.dat <-
+  Hier.data %>% select(SiteUnit, Class, Species, MeanCov) %>% pivot_wider(
+    id_cols = c(SiteUnit, Class),
+    names_from = Species,
+    values_from = MeanCov) %>% 
+  mutate(Class = replace_na(Class, "unplaced")) %>% 
+   replace(is.na(.),0) %>% 
+  mutate_if(is.character, as.factor)
+
+DataExplorer::create_report(class.dat)
+```
+
+
+```{r build preliminary tidy model}
+classID <- class.dat %>% select(SiteUnit, Class)
+class.dat <- class.dat %>% select(-SiteUnit)
+
+BEC_recipe <- recipe(Class ~ .,  data = class.dat)# %>%
+    #step_center(all_predictors()) %>%
+ # step_scale(all_predictors())
+
+BEC_model <- rand_forest(trees = 101, mtry = tune()) %>%# min_n = 10specify that the model is a random forest
+  #set_args(mtry = tune()) %>% specify that the `mtry` parameter needs to be tuned
+  set_engine("randomForest", num.threads = (cores-1)) %>%  #, importance = "impurity, ) %>% select the engine/package that underlies the model
+   set_mode("classification")
+
+ # set the workflow
+BEC_workflow <- workflow() %>%
+  add_recipe(BEC_recipe) %>%
+  add_model(BEC_model)
+#
+## build model for prediction
+BECmodel.tidy <- BEC_workflow %>% fit(class.dat)
+gc()
+
+ BECmodel.var <- pull_workflow_fit(BECmodel.tidy)$fit
+BEC.pred <-   as.data.frame(BECmodel.var$predicted)
+MisID <- cbind(classID,BEC.pred)%>% dplyr::rename(BEC.pred = 3) %>% mutate(compare = if_else(Class == BEC.pred, "Same", "Diff"))
+###Variable importance
+varimp <- as.data.frame(BECmodel.var$importance)
+covcount <- nrow(varimp)
+
+
+#saveRDS(BGCmodel.tidy, file = paste("./BGC_models/WNAv12_Zone_", covcount, "_Var_tidyrf3.rds"))
+#parsed <- parse_model(BGCmodel.var)
+#write_yaml(parsed, "my_model.yml")
+save(BGCmodel.tidy, file= paste("./BEC_models/Forest_Classes_rf.RData"))
 
 ```
 
-```{r prep to build forest ML model}
-### identify those SS that fall under the forest region
-### ### add an 'X' pseudospecies to the site series summary where no trees occur
-### Filter out all species but tree species
 
-```
+```{r}
+BEC_split <- initial_split(class.dat, strata = Class, p = .8)
+BEC_train <- training(BEC_split)
+BEC_test <- testing(BEC_split)
 
-```{r build preliminary forest model}
-###test and train
 
+BEC_model <- rand_forest(trees = 101, mtry = tune()) %>%# min_n = 10specify that the model is a random forest
+  #set_args(mtry = tune()) %>% specify that the `mtry` parameter needs to be tuned
+  set_engine("randomForest", num.threads = (cores-1)) %>%  #, importance = "impurity, ) %>% select the engine/package that underlies the model
+   set_mode("classification")
+
+ # set the workflow
+BEC_workflow <- workflow() %>%
+  add_recipe(BEC_recipe) %>%
+  add_model(BEC_model)
+#
+## build model for prediction
+BECmodel.train <- BEC_workflow %>% fit(BEC_train)
+ BECmodel.var <- pull_workflow_fit(BECmodel.train)$fit
+ BECmodel.var
+
+
+ # trainIndex <- createDataPartition(class.dat$Class, p = .7,
+#                                   list = FALSE,
+#                                   times = 1)
+# 
+# 
+# BEC_train <- XAll[ trainIndex,]
+# BEC_train$BEC <- as.factor(BEC_train$BEC)
+# BEC_test  <- XAll[-trainIndex,]# %>% droplevels()
+
+BECmodel_train <- ranger(BEC ~ ., data = BEC_train[-1],
+                           num.trees = 501,  seed = 12345,
+                            splitrule =  "extratrees", #""gini",
+                            #always.split.variables = c("DD5","CMD.total", "PPT_JAS"), #,
+                            #split.select.weights = var.weight.vec,
+                    mtry = 5,
+                          #max.depth = .5,
+                    min.node.size = 5,
+                           importance = "permutation", write.forest = TRUE, classification = TRUE)
+
+BECmodel_train
+
+ test.pred <- predict(BECmodel.train, new_data = BEC_test[,-c(1)])
+  BEC.pred <- as.data.frame(test.pred) %>% tibble::rownames_to_column() %>% dplyr::rename("BEC.pred" = ".pred_class")
+
+BEC.test <- BEC_test %>% select(Class) %>% cbind(BEC.pred) %>%  select( -rowname) %>% mutate_if(is.character, as.factor)
+levels(BEC.test$BEC.pred) <- levels(BEC.test$BEC)
+BEC_accuracy <- BEC.test %>%                   # test set predictions
+  accuracy(truth = Class, BEC.pred)
+ table(BEC_accuracy)
 ```
 
 ```{r review misassigned SS}
