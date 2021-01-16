@@ -13,6 +13,7 @@ require(tidymodels)
 require(data.table)
 require(data.tree)
 require(DataExplorer)
+require(C50)
 ```
 
 ## A machine learning model of high-level hierarchical BEC units
@@ -20,12 +21,15 @@ require(DataExplorer)
 ```{r import data}
 ### Vegetation From BECMaster cleaning script Long form Plot|Species|Cover (across all layers)
 ### or From Vpro export
+
+vegDat2 <- fread('./inputs/BECMaster_VegR_clean.csv')
 #####################importing Vpro veg data########################################
 ############### Uses 3 column R export FORMAT FROM Vpro with Lifeform option selected
-load("./inputs/VegDat_Raw.RData")##includes type field for lifeform
-vegDat2 <- vegData %>% filter(!is.na(Type))
+#load("./inputs/VegDat_Raw.RData")##includes type field for lifeform
+#vegDat2 <- vegData %>% filter(!is.na(Type))
 ###SU table
 SUTab <- fread("./inputs/BEC_ForestHier_10Jan21_SU.csv")
+SUTab$SiteUnit <-  trimws(SUTab$SiteUnit)
 ##Import Vpro hierarchy table widen and reformat
 SUhier <- fread("./inputs/BECv12_Forests_July2020_Hierarchy.csv")
 sppMaster <- fread('./inputs/SpeciesMaster05Oct2019.csv')
@@ -83,39 +87,43 @@ fwrite(Hier.clean, './inputs/cleanedHierarchy.csv')
 ### Summarize by SU including mean cover and constancy percent
 ##roll up into site series summary data
 ### Filter out all species but tree species
-trees = c("1") ###, "2" include only conifers to start
-vegDat2 <- vegDat2 %>% filter(Type %in% trees )
+trees = c("1", "2") ### include only trees for hierarchy build
+vegDat_test <- vegDat2 %>% filter(Lifeform %in% trees )
 
 constCut <- 0 ##remove species less than cutoff
-vegDat <- as.data.table(vegDat2)
+vegDat <- as.data.table(vegDat_test)
 
 vegDat[SUTab, SiteUnit := i.SiteUnit, on = "PlotNumber"]
-vegDat <- vegDat[!is.na(SiteUnit) & SiteUnit != "",]
+vegDat <- vegDat[!is.na(SiteUnit) & SiteUnit != "",] %>% distinct()
 #vegDat[,nPlots := .N, by = .(SiteUnit)]
-vegDat <- as.tibble(vegDat)
+#vegDat <- as_tibble(vegDat)
 vegDat$SiteUnit <- as.factor(vegDat$SiteUnit)
-vegDat <- vegDat %>% group_by(SiteUnit) %>%  mutate(nPlots = n_distinct(PlotNumber))
+vegDat3 <- vegDat %>% group_by(SiteUnit, Species) %>% filter(n() > 1)
+
+vegDat3 <- vegDat %>% group_by(SiteUnit, Species) %>% mutate(nPlots = n_distinct(PlotNumber))
 vegDat <- as.data.table(vegDat)
-vegSum <- vegDat[,.(MeanCov = sum(Cover)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)]
-vegSum <- vegSum[Constancy >= constCut,]
+
+-------------problem with the mean cover calculation
+
+vegSum <- vegDat[,.(MeanCov = sum(Cover)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)] %>% mutate(across(where(is.numeric), round, 3))
 
 fwrite(vegSum, './inputs/SiteSeriesConiferSummary.csv')
+
+##build grand summary table that then can be reduce to only species with high constancy in a least one unit. Probably not too useful for very large analyses
 
 #### linkages to Site Association Analysis Units from other script will replace this.
 
 ```
 
 
-```{r initial hierarchy placement}
+```{r filter and prepare}
 #Hier.clean <- fread("./inputs/cleanedHierarchy.csv")
 #vegSum <- fread('./inputs/SiteSeriesForestedSummary.csv')
 
-SS_good <- vegSum %>% filter(nPlots >=10) %>% filter(Constancy >= .33)## Select only site series will enough plots
-Hier.units <- Hier.clean %>% select(SiteSeries, Class, Order, Suborder)
-Hier.data <- left_join(SS_good, Hier.units, by = c('SiteUnit' = 'SiteSeries'))
-#trees <- sppMaster %>% filter(TreeCode <=2) %>% filter(Codetype == 'U') %>% select(Code)
-#trees <- as.character(trees$Code)
-#Hier.data2 <- Hier.data[Species %in% as.character(trees),]
+SS_good <- vegSum %>% filter(nPlots >=3) %>% filter(Constancy >= 33) %>% rename(SiteSeries = SiteUnit) %>% distinct()## Select only site series will enough plots
+Hier.units <- Hier.clean %>% select(SiteSeries, Class, Order, Suborder) %>% distinct()
+#Hier.units <- Hier_update%>% select(SiteSeries, Class, Order, Suborder)
+Hier.data <- left_join(Hier.units, SS_good) %>% filter(!is.na(nPlots)) %>% arrange(Species) %>% distinct()
 fwrite(Hier.data, './inputs/SiteSeriesForested_w_HierarchyUnits.csv')
 ```
 
@@ -124,43 +132,205 @@ classes <- unique(Hier.data$Class)
 orders <- unique(Hier.data$Order)
 suborders <- unique(Hier.data$Suborder)
 class.dat <-
-  Hier.data %>% select(SiteUnit, Class, Species, MeanCov) %>% pivot_wider(
-    id_cols = c(SiteUnit, Class),
+  Hier.data %>% select(SiteSeries, Class, Species, MeanCov) %>% 
+  pivot_wider(id_cols = c(SiteSeries, Class),
     names_from = Species,
     values_from = MeanCov) %>% 
-  mutate(Class = replace_na(Class, "unplaced")) %>% 
+  mutate(Class = replace_na(Class, "unplaced")) %>% filter(!SiteSeries == "") %>% 
    replace(is.na(.),0) %>% 
-  mutate_if(is.character, as.factor)
+  mutate_if(is.character, as.factor) %>% distinct()
 
-DataExplorer::create_report(class.dat)
+#DataExplorer::create_report(class.dat)
+```
+Data pre-processing includes the following steps:  
+
+```{r prep data, include = TRUE, echo = FALSE}
+
+classID <- class.dat %>% select(SiteSeries, Class)
+#class.dat2 <- class.dat %>% select(-SiteUnit)
+BEC_all <- class.dat %>% arrange(SiteSeries)
+SU_names <- as.data.frame(BEC_all$SiteSeries) %>%  distinct() %>% rowid_to_column('.row') %>% rename("SiteSeries" = 2)
+# 1: split into training and test data (0.75/0.25) training and testing 
+
+# BEC_split <-  initial_split(BEC_all, 
+#                               strata = Class,
+#                               prop = 0.9)
+#   
+# BEC_train <- training(BEC_split)
+# BEC_test <- testing(BEC_split)
+BEC_recipe <-
+    recipe(Class ~ ., data = BEC_all) %>%
+     update_role(SiteSeries, new_role = "id variable") %>% 
+  #update_role(-SiteUnit, new_role = "predictor") %>% 
+    #step_corr(all_numeric()) %>%        # remove correlated covariates
+    #step_dummy(all_nominal(),-all_outcomes()) %>%    
+    #step_zv(all_numeric()) %>%          # remove values with no variance
+   # step_smote(Class) %>%
+    prep() 
+    summary(BEC_recipe)
+
+# note in RF as a tree based model it is not required to scale and normalize covariates and may have negative influence on the model performance  
+```
+
+## Tuning run to identify appropriate hyper parameters. Only needs to be run a single time for a particular model development
+
+```{r model tuning, include = FALSE, echo = FALSE}
+
+# BEC_tunemodel <- rand_forest(mtry = tune(), min_n = tune(), trees = 501) %>%
+#   set_mode("classification") %>%
+#   set_engine("ranger", importance = "impurity") #or "permutations
+# 
+# # randf_spec <- rand_forest(trees = 500) %>%
+# #   set_engine("randomForest") %>%
+# #   set_mode("classification")
+# 
+# BEC_tuneworkflow <- workflow() %>%
+#   add_model(BEC_tunemodel) %>%
+#     add_recipe(BEC_recipe)
+# 
+# ranger_tune_detail <-
+#   grid_regular(
+#     mtry(range = c(1, 20)),
+#     min_n(range = c(2, 10)),
+#     levels = 5)
+# 
+# cv_metrics <- metric_set(accuracy, roc_auc, j_index)
+# 
+# v = 10
+# reps = 5
+# set.seed(345)
+# BEC_cvfold <- vfold_cv(BEC_all, 
+#                          v = v, 
+#                          repeats = reps, 
+#                          strata = Class)
+# # re-run the tuning with the explicit parameter sets
+# set.seed(4556)
+# doParallel::registerDoParallel()
+# 
+# ranger_regular_tune <-
+#   tune_grid(BEC_tuneworkflow,
+#             resamples = BEC_cvfold,
+#             metrics = cv_metrics,
+#             grid = ranger_tune_detail)
+# 
+# autoplot(ranger_regular_tune) ##plots the results
+# 
+# bestacc <- select_best(ranger_regular_tune, metric = "accuracy")
+# bestroc <- select_best(ranger_regular_tune, metric = "roc_auc")
+# bestj <- select_best(ranger_regular_tune, metric = "j_index")
+
+```
+
+## Run cross validation model of all data using tuning from previous step
+```{r define cv model with tuned parameters, echo = TRUE }
+# define model with set parameters from tuning
+
+BEC_fmodel <- rand_forest(mtry = 5, min_n = 2, trees = 501) %>%
+  set_mode("classification") %>%
+  set_engine("ranger", importance = "impurity") #or "permutations
+
+BEC_cv_workflow <- workflow() %>% 
+  add_model(BEC_fmodel) %>% 
+  add_recipe(BEC_recipe)
+
+v = 10
+reps = 5
+  
+set.seed(345)
+BEC_cvfold <- vfold_cv(BEC_all, 
+                         v = v, 
+                         repeats = reps, 
+                         strata = Class)
+cv_metrics <- metric_set(accuracy, roc_auc, j_index, sens, spec)
+
+set.seed(130)
+doParallel::registerDoParallel()
+BEC_cv_fitted <- 
+  BEC_cv_workflow %>% 
+  fit_resamples(resamples = BEC_cvfold, metrics = cv_metrics, control = control_resamples(save_pred = TRUE))
+```
+
+## Collect accuracy metrics and predictions and improperly predicted site units
+```{r collect metrics and predictions, echo = TRUE }
+# collect accuracy metrics  
+cv_results <- BEC_cv_fitted  %>% collect_metrics(summarize = FALSE)
+cv_results_sum <- BEC_cv_fitted  %>% collect_metrics()
+BEC.pred <- BEC_cv_fitted %>% collect_predictions()# collect predictions
+BEC.predx <- left_join( BEC.pred, SU_names)
+### accuracy by siteunit
+BEC.pred_acc <- BEC.pred %>% 
+  group_by(Class) %>% 
+  accuracy(Class, .pred_class)
+#Summarize prediction
+BEC.pred2 <- BEC_cv_fitted %>% collect_predictions(summarize = TRUE)# collect predictions
+BEC.pred3 <- left_join(SU_names, BEC.pred2)
+
+## Identify misplaced site units
+MisID <- BEC.pred3 %>% select(SiteSeries, Class, .pred_class) %>% mutate(compare = if_else(Class == .pred_class, "Same", "Diff")) %>% filter(compare == "Diff")# %>% rename("SiteSeries" = SiteUnit)
+fwrite(MisID, "Misplaced Site Series in Classes.csv")
+
+##ID where there are different classifications predicted by fold **** this is not aligning SU_names properly
+# BEC.pred_cv <- BEC_cv_fitted %>% collect_predictions(summarize = FALSE) %>% left_join(SU_names) %>% select(SiteUnit, Class, .pred_class) %>% group_by_all() %>% summarize(numcv = n())#distinct# dplyr::rename(BEC.pred = 3) %>% 
+# setDT(BEC.pred_cv, key = c("SiteUnit"))
+# BEC.pred_cv[, N := .N, by = key(BEC.pred_cv)]                # count rows per group
+# class.diff <- BEC.pred_cv[N > 1]
+
+```
+## review and reassign site units to correct hierarchy units
+```{r reassign units}
+##Update class by MisID in BEC_all (to build final model) and in Hier.clean (to update the hierachy table)
+UpdateClass <- MisID %>% select(SiteSeries, .pred_class)
+Hier_update <- left_join(Hier.clean, UpdateClass, by  = "SiteSeries") %>% mutate(newClass = coalesce(.pred_class, Class)) %>% select(-Class, -.pred_class) %>% rename(Class = newClass) %>% select(ID, Region, Class, everything())
 ```
 
 
-```{r build preliminary tidy model}
-classID <- class.dat %>% select(SiteUnit, Class)
-class.dat <- class.dat %>% select(-SiteUnit)
+```{r build final model, include = FALSE}
 
-BEC_recipe <- recipe(Class ~ .,  data = class.dat)# %>%
+# 2: set up cross validation for parameter tuning data sets # note vc is default to 10 fold
+BEC_workflow <- workflow() %>%
+  add_model(BEC_fmodel) %>% 
+    add_recipe(BEC_recipe)
+
+BEC_ranger_model <- fit(BEC_workflow, BEC_all)
+BEC_ranger_model$fit
+
+```
+
+```{r C5 decision tree}
+#Add in train-test split
+#Cross-validation.
+
+#BEC_C5_recipe <- recipe(Class ~ .,  data = BEC_all)# %>%
     #step_center(all_predictors()) %>%
  # step_scale(all_predictors())
-
-BEC_model <- rand_forest(trees = 101, mtry = tune()) %>%# min_n = 10specify that the model is a random forest
+BEC_C5_model <- decision_tree(min_n = 2) %>% #, trees = NULL, min_n = NULL)# trees = 5, min_n = 2min_n = 10specify that the model is a random forest
   #set_args(mtry = tune()) %>% specify that the `mtry` parameter needs to be tuned
-  set_engine("randomForest", num.threads = (cores-1)) %>%  #, importance = "impurity, ) %>% select the engine/package that underlies the model
-   set_mode("classification")
+  set_engine("C5.0") %>%  #, num.threads = (cores-1), importance = "impurity, ) %>% select the engine/package that underlies the model
+   set_mode(mode = "classification")
 
  # set the workflow
-BEC_workflow <- workflow() %>%
+BEC_C5_workflow <- workflow() %>%
   add_recipe(BEC_recipe) %>%
-  add_model(BEC_model)
+  add_model(BEC_C5_model)
 #
+BECmodel.C5 <- fit(BEC_C5_workflow, BEC_all)
+out <- butcher(BECmodel.C5, verbose = TRUE)
+
+
+C5model <- C5.0_train(class.dat, Class, minCases = 2)
+C5model <- C5.0(x=class.dat[-1], y = class.dat$Class)
+C5model
+summary(C5model)
+plot(C5model)
+
 ## build model for prediction
-BECmodel.tidy <- BEC_workflow %>% fit(class.dat)
+
 gc()
 
  BECmodel.var <- pull_workflow_fit(BECmodel.tidy)$fit
 BEC.pred <-   as.data.frame(BECmodel.var$predicted)
 MisID <- cbind(classID,BEC.pred)%>% dplyr::rename(BEC.pred = 3) %>% mutate(compare = if_else(Class == BEC.pred, "Same", "Diff"))
+fwrite(MisID, "Misplaced Site Series in Classes.csv")
 ###Variable importance
 varimp <- as.data.frame(BECmodel.var$importance)
 covcount <- nrow(varimp)
@@ -169,7 +339,7 @@ covcount <- nrow(varimp)
 #saveRDS(BGCmodel.tidy, file = paste("./BGC_models/WNAv12_Zone_", covcount, "_Var_tidyrf3.rds"))
 #parsed <- parse_model(BGCmodel.var)
 #write_yaml(parsed, "my_model.yml")
-save(BGCmodel.tidy, file= paste("./BEC_models/Forest_Classes_rf.RData"))
+saveRDS(BECmodel.tidy, file= paste("./BEC_models/Forest_Classes_rf.rds"))
 
 ```
 
