@@ -119,24 +119,28 @@ testReverse <- tableToTree(hierWide = copy(Hier.clean),levelNames)
 ##roll up into site series summary data
 ### Filter out all species but tree species
 trees = c("1", "2") ### include only trees for hierarchy build
-vegDat_test <- vegDat2 %>% filter(Lifeform %in% trees )
+vegDat2 <- as.data.table(vegData)
+vegDat_test <- vegDat2[Lifeform %in% trees,]
+#vegDat_test <- vegDat2 %>% filter(Lifeform %in% trees )
 
 constCut <- 0 ##remove species less than cutoff
 vegDat <- as.data.table(vegDat_test)
 
 vegDat[SUTab, SiteUnit := i.SiteUnit, on = "PlotNumber"]
-vegDat <- vegDat[!is.na(SiteUnit) & SiteUnit != "",] %>% distinct()
-#vegDat[,nPlots := .N, by = .(SiteUnit)]
+vegDat <- unique(vegDat[!is.na(SiteUnit) & SiteUnit != "",])
+vegDat3 <- vegDat[,if(.N > 1) .SD, by = .(SiteUnit,Species)]
+vegDat3[,nPlots := length(unique(PlotNumber)), by = .(SiteUnit)]
+vegSum <- vegDat3[,.(MeanCov = sum(Cover)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)]
 #vegDat <- as_tibble(vegDat)
-vegDat$SiteUnit <- as.factor(vegDat$SiteUnit)
-vegDat3 <- vegDat %>% group_by(SiteUnit, Species) %>% filter(n() > 1)
+# vegDat$SiteUnit <- as.factor(vegDat$SiteUnit)
+# vegDat3 <- vegDat %>% group_by(SiteUnit, Species) %>% filter(n() > 1)
 
-vegDat3 <- vegDat %>% group_by(SiteUnit, Species) %>% mutate(nPlots = n_distinct(PlotNumber))
-vegDat <- as.data.table(vegDat)
+# vegDat3 <- vegDat %>% group_by(SiteUnit, Species) %>% mutate(nPlots = n_distinct(PlotNumber))
+# vegDat <- as.data.table(vegDat)
 
--------------problem with the mean cover calculation
-
-vegSum <- vegDat[,.(MeanCov = sum(Cover)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)] %>% mutate(across(where(is.numeric), round, 3))
+#-------------problem with the mean cover calculation
+# 
+# vegSum <- vegDat[,.(MeanCov = sum(Cover)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)] %>% mutate(across(where(is.numeric), round, 3))
 
 fwrite(vegSum, './inputs/SiteSeriesConiferSummary.csv')
 
