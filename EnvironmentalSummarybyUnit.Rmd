@@ -1,0 +1,36 @@
+---
+title: "Hierarchy_Environment"
+author: "Will MacKenzie"
+date: "16/01/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(ggridges)
+require(ggplot2)
+```
+
+## Environmental comparison of hierarchy units
+###Climate + BGC
+###Site - aSMR, nutrients, topographic 
+###Map
+
+
+```{r ridgeline plot by hierarhcy unit}
+
+ggplot(diamonds, aes(x = price, y = cut, fill = cut)) +
+  geom_density_ridges() +
+  theme_ridges() + 
+  theme(legend.position = "none")
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
