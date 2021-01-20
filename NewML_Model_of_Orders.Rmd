@@ -16,23 +16,48 @@ require(DataExplorer)
 require(C50)
 ```
 
-## A machine learning model of high-level hierarchical BEC units
+## A machine learning model of high-level hierarchical BEC Forest units
+Create a ML model of Forested Classes, Orders, and Suborders using BECv11 units.
+Predict membership of new BECv12 units and assign to suborders then rebuild ML model.
+Compare similarity of tree composition within units to find outliers that represent new SubOrders
+Predict membership of draft BECv13 units for test.
+Create summaries and compare vegetation and climatic attributes of units. Identify climatic indicator groups.
+
+## Pair-wise comparison of high constancy species to analyze site series within Suborders to create Associations/SubAssociations.
+
+## Create Alliances based on indicator group creation and analysis.
+
+## Build model to assign new units and unassigned plots
+
+## Build for non-forested units. Classes based on major site level differences rather than climate and using major species groups (e.g. Hydrophytic Carex spp )
 
 ```{r import data}
 ### Vegetation From BECMaster cleaning script Long form Plot|Species|Cover (across all layers)
 ### or From Vpro export
 
 vegDat2 <- fread('./inputs/BECMaster_VegR_clean.csv')
+sppMaster <- fread('./inputs/SpeciesMaster05Oct2019.csv')
 #####################importing Vpro veg data########################################
 ############### Uses 3 column R export FORMAT FROM Vpro with Lifeform option selected
 #load("./inputs/VegDat_Raw.RData")##includes type field for lifeform
 #vegDat2 <- vegData %>% filter(!is.na(Type))
 ###SU table
-SUTab <- fread("./inputs/BEC_ForestHier_10Jan21_SU.csv")
+SUTab <- fread("./inputs/BECMster_V2020_2_SU.csv")
 SUTab$SiteUnit <-  trimws(SUTab$SiteUnit)
+SS.names <- unique(SUTab$SiteUnit)
+
+#####list of official current and future correlated units from BECdb
+current <- c('Current', 'Future')
+ecotypes <- c("Forest", "Deciduous")
+#### cleaned list of official site series
+BECdb_SS <- fread("./inputs/BECdb_SiteSeriesv12.csv") %>% filter(Status %in% current) %>% filter(ArchivedinVersion == "") %>% filter(`Forest-NonForest` %in% ecotypes) %>% 
+  select(MergedBGC_SS, SS_NoSpace, SiteSeriesLongName, SiteSeriesScientificName) %>% rename (SiteUnit = 1, SSName = 3, SciName = 4) %>% distinct(SiteUnit, .keep_all = TRUE)
+#### compare SUTab to BECdb.  Whan all BECdb units to have data and SUTab to include no unofficial units
+SS_missing <- full_join(SUTab, BECdb_SS) %>% filter(is.na(PlotNumber))
 ##Import Vpro hierarchy table widen and reformat
 SUhier <- fread("./inputs/BECv12_Forests_July2020_Hierarchy.csv")
-sppMaster <- fread('./inputs/SpeciesMaster05Oct2019.csv')
+### add any site units not in hierarchy to hierarchy
+
 ```
 
 
@@ -67,7 +92,7 @@ treeToTable <- function(SUhier){
   setorder(dups,"ID")
   dups[,variable := NULL] ##these are the branches with duplicates
   tabOut <- dcast(tab2, ID ~ Level, value.var = "value", fun.aggregate = function(x){x[1]})
-  setnames(tabOut, c("ID","Region","Class","Order","Suborder","Alliance","Suball","Assoc","Subass","Facies", "SiteSeries"))
+  setnames(tabOut, c("ID","Formation","Class","Order","Suborder","Alliance","Suball","Assoc","Subass","Facies", "Working", "SiteSeries"))
   tabOut[is.na(Subass), Subass := Assoc]
   tabOut[is.na(Suborder), Suborder := Order]
   tabOut[is.na(Suball), Suball := Alliance]
@@ -80,36 +105,13 @@ fwrite(Hier.clean, './inputs/cleanedHierarchy.csv')
 
 ```
 
-```{r reverse function}
-levelNames <- c("Region", "Class", "Order", "Suborder", "Alliance", "Suball", 
-"Assoc", "Subass", "Facies", "SiteSeries")
+```{r check units in hierarchy}
+### remove units not in BECdb
 
-tableToTree <- function(hierWide, levelNames){
-  levelID <- data.table(Name = levelNames, Level = 1:length(levelNames))
-  
-  levs <- melt(hierWide, id.vars = "ID")
-  levs[,ID := NULL]
-  levs <- unique(levs)
-  levs[levelID, Level := i.Level, on = c(variable = "Name")]
-  
-  hierWide[,ID := NULL]
-  hierWide[,Root := "TempRoot"]
-  setcolorder(hierWide,c(ncol(hierWide),1:(ncol(hierWide)-1)))
-  paths <- tidyr::unite(hierWide, "pathString", na.rm = T, sep = "_")
-  tr <- as.Node(paths,pathDelimiter = "_")
-  tr$Set(Lab = tr$Get("name"))
-  tr$Set(name = 1:tr$totalCount)
-  dat <- ToDataFrameNetwork(tr,"Lab",direction = "climb")
-  dat <- as.data.table(dat)
-  setnames(dat, old = c("from","to","Lab"), new = c("Parent","ID","Name"))
-  dat[levs, Level := i.Level, on = c(Name = "value")]
-  setcolorder(dat,c("ID","Name","Parent","Level"))
-  return(dat)
-}
+### add in official unit missing in hierarchy
 
-
-testReverse <- tableToTree(hierWide = copy(Hier.clean),levelNames)
 ```
+
 
 
 ```{r summarize site series, echo=FALSE}
@@ -119,7 +121,7 @@ testReverse <- tableToTree(hierWide = copy(Hier.clean),levelNames)
 ##roll up into site series summary data
 ### Filter out all species but tree species
 trees = c("1", "2") ### include only trees for hierarchy build
-vegDat2 <- as.data.table(vegData)
+vegDat2 <- as.data.table(vegDat2)
 vegDat_test <- vegDat2[Lifeform %in% trees,]
 #vegDat_test <- vegDat2 %>% filter(Lifeform %in% trees )
 
@@ -151,7 +153,7 @@ fwrite(vegSum, './inputs/SiteSeriesConiferSummary.csv')
 ```
 
 
-```{r filter and prepare}
+```{r filter and prepare for analysis}
 #Hier.clean <- fread("./inputs/cleanedHierarchy.csv")
 #vegSum <- fread('./inputs/SiteSeriesForestedSummary.csv')
 
@@ -318,6 +320,36 @@ UpdateClass <- MisID %>% select(SiteSeries, .pred_class)
 Hier_update <- left_join(Hier.clean, UpdateClass, by  = "SiteSeries") %>% mutate(newClass = coalesce(.pred_class, Class)) %>% select(-Class, -.pred_class) %>% rename(Class = newClass) %>% select(ID, Region, Class, everything())
 ```
 
+```{r reverse function to write hierarhcy back into Vpro format}
+levelNames <- c("Region", "Class", "Order", "Suborder", "Alliance", "Suball", 
+"Assoc", "Subass", "Facies", "SiteSeries")
+
+tableToTree <- function(hierWide, levelNames){
+  levelID <- data.table(Name = levelNames, Level = 1:length(levelNames))
+  
+  levs <- melt(hierWide, id.vars = "ID")
+  levs[,ID := NULL]
+  levs <- unique(levs)
+  levs[levelID, Level := i.Level, on = c(variable = "Name")]
+  
+  hierWide[,ID := NULL]
+  hierWide[,Root := "TempRoot"]
+  setcolorder(hierWide,c(ncol(hierWide),1:(ncol(hierWide)-1)))
+  paths <- tidyr::unite(hierWide, "pathString", na.rm = T, sep = "_")
+  tr <- as.Node(paths,pathDelimiter = "_")
+  tr$Set(Lab = tr$Get("name"))
+  tr$Set(name = 1:tr$totalCount)
+  dat <- ToDataFrameNetwork(tr,"Lab",direction = "climb")
+  dat <- as.data.table(dat)
+  setnames(dat, old = c("from","to","Lab"), new = c("Parent","ID","Name"))
+  dat[levs, Level := i.Level, on = c(Name = "value")]
+  setcolorder(dat,c("ID","Name","Parent","Level"))
+  return(dat)
+}
+
+
+testReverse <- tableToTree(hierWide = copy(Hier.clean),levelNames)
+```
 
 ```{r build final model, include = FALSE}
 
