@@ -1,7 +1,7 @@
 ---
 title: "MachineLearningHigherOrders"
-author: "Will MacKenzie"
-date: "06/01/2021"
+author: "Will MacKenzie & Kiri Daust"
+date: "05/07/2021"
 output: html_document
 ---
 
@@ -14,22 +14,35 @@ require(data.table)
 require(data.tree)
 require(DataExplorer)
 require(C50)
+require(indicspecies)
 ```
 
-## A machine learning model of high-level hierarchical BEC Forest units
-Create a ML model of Forested Classes, Orders, and Suborders using BECv11 units.
-Predict membership of new BECv12 units and assign to suborders then rebuild ML model.
-Compare similarity of tree composition within units to find outliers that represent new SubOrders
-Predict membership of draft BECv13 units for test.
-Create summaries and compare vegetation and climatic attributes of units. Identify climatic indicator groups.
+1. A machine learning model of high-level hierarchical BEC Forest units
+a. Create a ML model of Forested Orders using BECv11 site series that meet minimum plot requirements.
+b. Use only tree species for first round of model build for the forested Orders.
+c. Predict membership of new BECv12 units and assign to orders then rebuild ML model.
+d. Review any mis predicted site series for reassignment.
+e. Compare similarity of tree composition within units (noise clustering) to find outliers that may represent new Orders (test by leaving out known units)
+f. Create vegetation summaries of Orders and compare vegetation (all species now). Identify climatic indicator species groups.
+g. Create climatic and site attributes summary of Orders 
+h. Create maps of plot locations for each Order
 
-## Pair-wise comparison of high constancy species to analyze site series within Suborders to create Associations/SubAssociations.
+2. Do pair-wise analysis of site series within Orders using high constancy species to analyze site series and create Associations/SubAssociations.
 
-## Create Alliances based on indicator group creation and analysis.
+3. Build Alliances. Focus should be on identifying species groups that reflect different site conditions.
+a. Use some of the techniques of indicspecies package to create Alliances based on indicator group creation and analysis.
+b. Try to build a machine learning model of Alliances
+c. Vegetation and Environment summary of Alliances
 
-## Build model to assign new units and unassigned plots
+4. Document hierarchy
 
-## Build for non-forested units. Classes based on major site level differences rather than climate and using major species groups (e.g. Hydrophytic Carex spp )
+5. Build model to assign new units and unassigned plots
+Challenge here is to make a constant list of species between model and new units.
+a. Predict membership of new site series (draft BECv13). Noise Clustering to test for novel units that do not fit any existing. Use machine learning to hierarchy
+b. Predict Order membership of BECMaster plots that are unassigned to existing site series and add to an Order_unplaced site unit under each Order.
+
+6. Build for non-forested units. Classes based on major site level differences rather than climate and using major species groups (e.g. Hydrophytic Carex spp )
+May wish to assign a temporary notree pseudo species to all units that have no trees to help separate forested hierarchy from non-forested hierarchy (Hurdle model)
 
 ```{r import data}
 ### Vegetation From BECMaster cleaning script Long form Plot|Species|Cover (across all layers)
@@ -123,9 +136,9 @@ fwrite(Hier.clean, './inputs/cleanedHierarchy.csv')
 trees = c("1", "2") ### include only trees for hierarchy build
 vegDat2 <- as.data.table(vegDat2)
 vegDat_test <- vegDat2[Lifeform %in% trees,]
-#vegDat_test <- vegDat2 %>% filter(Lifeform %in% trees )
+vegDat_test <- vegDat_test %>% dplyr::filter(Cover > 0.1)
 
-constCut <- 0 ##remove species less than cutoff
+constCut <- 0.1 ##remove species less than cutoff
 vegDat <- as.data.table(vegDat_test)
 
 vegDat[SUTab, SiteUnit := i.SiteUnit, on = "PlotNumber"]
@@ -317,7 +330,7 @@ fwrite(MisID, "Misplaced Site Series in Classes.csv")
 ```{r reassign units}
 ##Update class by MisID in BEC_all (to build final model) and in Hier.clean (to update the hierachy table)
 UpdateClass <- MisID %>% select(SiteSeries, .pred_class)
-Hier_update <- left_join(Hier.clean, UpdateClass, by  = "SiteSeries") %>% mutate(newClass = coalesce(.pred_class, Class)) %>% select(-Class, -.pred_class) %>% rename(Class = newClass) %>% select(ID, Region, Class, everything())
+Hier_update <- left_join(Hier.clean, UpdateClass, by  = "SiteSeries") %>% mutate(newClass = coalesce(.pred_class, Class)) %>% select(-Class, -.pred_class) %>% rename(Class = newClass) %>% select(ID, Class, everything())
 ```
 
 ```{r reverse function to write hierarhcy back into Vpro format}
@@ -364,7 +377,7 @@ BEC_ranger_model$fit
 ```
 
 ```{r C5 decision tree}
-#Add in train-test split
+#For interpretation of hierarchy
 #Cross-validation.
 
 #BEC_C5_recipe <- recipe(Class ~ .,  data = BEC_all)# %>%
@@ -469,6 +482,8 @@ BEC_accuracy <- BEC.test %>%                   # test set predictions
 ```
 
 ```{r predict placement of new SS and plots}
+
+
 
 ```
 
