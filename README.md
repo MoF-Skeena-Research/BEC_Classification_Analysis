@@ -1,8 +1,8 @@
-# Vegetation_Classification
-Scripts for Building or Assessing the Vegetation Classification of BEC
+# BEC_Hierarchy Vegetation Classification Analysis
+Scripts for Building or Assessing the Vegetation Classification Hierarchy of BEC
 
 The flow of the scripts is 
-0. Import data from Vpro and create optional roll-ups for analyses (species lumping)
+###0. Import data from Vpro and create optional roll-ups for analyses (species lumping)
 
 Optionally : generate some new working units by cluster analysis if no site unit classification has been developed
 
