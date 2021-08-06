@@ -1,4 +1,5 @@
-
+# Kiri Daust
+# August 2021
 
 library(shiny)
 library(htmltools)
@@ -6,9 +7,10 @@ library(leaflet)
 library(leaflet.extras)
 library(data.table)
 library(leafgl)
+library(shinyjs)
+library(RPostgreSQL)
+library(sf)
 
-subzones_colours_ref <- fread("WNA_v12_HexCols.csv")
-setnames(subzones_colours_ref,c("BGC","Col"))
 source("leaflet_tiles.R")
 
 mbtk="pk.eyJ1Ijoid2htYWNrZW4iLCJhIjoiY2twaDVkNXU5MmJieTJybGE3cWRtY3Q4aCJ9.ISBkzSHFfrr78AVP2y2FeQ"
@@ -27,6 +29,7 @@ ui <- fluidPage(
   titlePanel("Download BGC Plot Data", windowTitle = "BGC Plots"),
   tags$head(tags$style("#tableModal .modal-dialog {width: fit-content !important;}")),
   fluidRow(
+    useShinyjs(),
     column(3,
            h2("Instructions"),
            p("Draw a rectangle on the map to select desired plots. Then, selected desired columns from the 
@@ -36,10 +39,28 @@ ui <- fluidPage(
                        selected = c("plotnumber","projectid","date","zone","subzone",
                                     "siteseries","moistureregime","nutrientregime",
                                     "elevation","slopegradient","aspect")),
-           actionButton("runquery","Run Query!")
+           sliderInput("vegcov","Select Min % Cover:", min = 0, max = 5, value = 0.5,step = 0.1),
+           actionButton("runquery","Run Query!"),
+           br(),
+           hidden(
+             div(id = "data",
+                 wellPanel(
+                   fluidRow(
+                     column(6,
+                            actionButton("showenv","View Environment Table"),
+                            downloadButton("dldenv","Download Environment")
+                     ),
+                     column(6,
+                            actionButton("showveg","View Veg Table"),
+                            downloadButton("dldveg","Download Veg")
+                     )
+                   )
+                 )
+                 
+              )
+           )
            ),
     column(9,
-           
            leafglOutput("map",height = "85vh")
            )
   )
@@ -76,7 +97,7 @@ server <- function(input, output) {
   })
   
   observeEvent(input$showplots,{
-    withProgress(message = "Fetching Data", {
+    withProgress(message = "Working...", {
       dat <- st_read(con, query = "select plotnumber,geom from env")
     })
     
@@ -86,17 +107,50 @@ server <- function(input, output) {
   
   observeEvent(input$runquery,{
     plotnums <- global_plotnum$plotno
-    veg <- dbGetQuery(con,paste0("select * from veg where plotno IN ('",paste(plotnums,collapse = "','"),"')"))
-    esql <- paste0("select ",paste(input$envHeaders,collapse = ","),
-                   " from env where plotnumber IN ('",paste(plotnums,collapse = "','"),"')")
-    env <- dbGetQuery(con,esql)
+    withProgress(message = "Getting Data...", {
+      veg <- RPostgreSQL::dbGetQuery(con,paste0("select * from veg where plotno IN ('",paste(plotnums,collapse = "','"),
+                                                "') AND cover > ",input$vegcov))
+      esql <- paste0("select ",paste(input$envHeaders,collapse = ","),
+                     " from env where plotnumber IN ('",paste(plotnums,collapse = "','"),"')")
+      env <- RPostgreSQL::dbGetQuery(con,statement = esql)
+    })
+
     output$env_tab <- renderTable({
+      env
+    })
+    output$dldenv <- downloadHandler(
+      filename = "EnvironmentTable.csv",
+      content = function(file){
+        fwrite(env,file)
+      }
+    )
+    output$veg_tab <- renderTable({
       veg
     })
+    output$dldveg <- downloadHandler(
+      filename = "VegTable.csv",
+      content = function(file){
+        fwrite(veg,file)
+      }
+    )
+    shinyjs::show("data")
+  })
+  
+  observeEvent(input$showenv,{
     showModal(div(id = "tableModal",
                   modalDialog(h2("Query Results!"),
-                              tableOutput("env_tab")
-                              )
+                              tableOutput("env_tab"),
+                              easyClose = TRUE
+                  )
+    ))
+  })
+  
+  observeEvent(input$showveg,{
+    showModal(div(id = "tableModal",
+                  modalDialog(h2("Query Results!"),
+                              tableOutput("veg_tab"),
+                              easyClose = TRUE
+                  )
     ))
   })
   

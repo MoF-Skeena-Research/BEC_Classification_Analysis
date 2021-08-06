@@ -1,7 +1,10 @@
-bgc_tileserver <- "http://159.203.20.90/data/WNA_MAP/{z}/{x}/{y}.pbf"
-bgc_tilelayer <- "WNA_MAP"
+bgc_tileserver <- "http://159.203.20.90/data/BC_BGC/{z}/{x}/{y}.pbf"
+bgc_tilelayer <- "BECMap"
 district_tileserver <- "http://159.203.20.90/data/Districts/{z}/{x}/{y}.pbf"
 district_tilelayer <- "Districts"
+
+subzones_colours_ref <- fread("WNA_v12_HexCols.csv")
+setnames(subzones_colours_ref,c("BGC","Col"))
 
 plugins <- {list(vgplugin = 
                    htmltools::htmlDependency(
@@ -28,8 +31,8 @@ addBGCTiles <- function(map) {
   map <- htmlwidgets::onRender(map, paste0('
     function(el, x, data) {
       ', paste0("var subzoneColors = {", paste0("'", subzones_colours_ref$BGC, "':'", subzones_colours_ref$Col,"'", collapse = ","), "}"), '
-      
-      //L.bec_layer_opacity = 0.2
+      console.log(subzoneColors);
+      L.bec_layer_opacity = 0.6
       
       var vectorTileOptions=function(layerName, layerId, activ,
                              lfPane, colorMap, prop, id) {
@@ -56,8 +59,8 @@ addBGCTiles <- function(map) {
       
       var subzLayer = L.vectorGrid.protobuf(
         "', bgc_tileserver, '",
-        vectorTileOptions("bec_map", "', bgc_tilelayer, '", false,
-                          "tilePane", subzoneColors, "MAP_LABEL", "MAP_LABEL")
+        vectorTileOptions("bec_map", "', bgc_tilelayer, '", true,
+                          "tilePane", subzoneColors, "MAP_LABEL", "OBJECTID")
       )
       this.layerManager.addLayer(subzLayer, "tile", "bec_map", "BGCs");
       
