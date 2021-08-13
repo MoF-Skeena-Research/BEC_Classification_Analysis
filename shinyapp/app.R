@@ -35,6 +35,7 @@ ui <- fluidPage(
            p("Draw a rectangle on the map to select desired plots. Then, selected desired columns from the 
              environment table and click Run Query"),
            actionButton("showplots","Show Plots"),
+           radioButtons("selectlayer", "Choose a Layer to Select", choices = c("Districts","BGCs")),
            selectInput("envHeaders","Select Environment Fields:", choices = envNames, multiple = T,
                        selected = c("plotnumber","projectid","date","zone","subzone",
                                     "siteseries","moistureregime","nutrientregime",
@@ -61,15 +62,18 @@ ui <- fluidPage(
            )
            ),
     column(9,
-           leafglOutput("map",height = "85vh")
+           textOutput("selections"),
+           leafglOutput("map",height = "85vh"),
+           actionButton("clearhl","Clear Selection")
            )
   )
   
 )
 
 # Define server logic required to draw a histogram
-server <- function(input, output) {
+server <- function(input, output, session) {
   global_plotnum <- reactiveValues(plotno = NULL)
+  global_select <- reactiveValues(BGC = character(), District = character())
   
   output$map <- renderLeaflet({
     leaflet() %>%
@@ -96,6 +100,14 @@ server <- function(input, output) {
         position = "topright")
   })
   
+  observeEvent(input$dist_click,{
+    global_select$District <- append(global_select$District,input$dist_click)
+  })
+  
+  observeEvent(input$bgc_click,{
+    global_select$BGC <- append(global_select$BGC,input$bgc_click)
+  })
+  
   observeEvent(input$showplots,{
     withProgress(message = "Working...", {
       dat <- st_read(con, query = "select plotnumber,geom from env")
@@ -103,6 +115,25 @@ server <- function(input, output) {
     
     leafletProxy("map") %>%
       addGlPoints(data = dat, layerId = "plots", popup = ~ plotnumber)
+  })
+  
+  observeEvent(input$selectlayer,{
+    if(input$selectlayer == "Districts"){
+      session$sendCustomMessage("selectDist","puppy")
+    }else{
+      session$sendCustomMessage("selectBGC","puppy")
+    }
+  })
+  
+  observeEvent(input$clearhl,{
+    session$sendCustomMessage("clearDist","puppy")
+    session$sendCustomMessage("clearBGC","puppy")
+    global_select$BGC <- character()
+    global_select$District <- character()
+  })
+  
+  output$selections <- renderText({
+    c(global_select$BGC,global_select$District)
   })
   
   observeEvent(input$runquery,{

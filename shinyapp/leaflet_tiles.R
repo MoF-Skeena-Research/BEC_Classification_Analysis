@@ -75,7 +75,7 @@ addBGCTiles <- function(map) {
               return {
                 weight: 0.5,
                 color: "#000000",
-                fill: false,
+                fill: true,
                 fillOpacity: 0
               }
             }
@@ -93,6 +93,64 @@ addBGCTiles <- function(map) {
       )
       this.layerManager.addLayer(distLayer, "tile", "Districts", "Districts")
       // end districts
+      
+      //highlight on click
+      var styleHL = {
+            weight: 1.5,
+            color: "#fc036f",
+            fillColor: "#FFFB00",
+            fillOpacity: 1,
+            fill: true
+      };
+      
+      var selectedDists = [];
+      distLayer.on("click", function(e){
+        console.log("click");
+        Shiny.setInputValue("dist_click",e.layer.properties.dist_code);
+        selectedDists.push(e.layer.properties.dist_code);
+        var properties = e.layer.properties
+			  highlight = properties.dist_code;
+        distLayer.setFeatureStyle(highlight, styleHL);
+      });
+      
+      Shiny.addCustomMessageHandler("clearDist",function(x){
+        selectedDists.forEach((ID) => {
+          distLayer.resetFeatureStyle(ID);
+        });
+      });
+      
+      var selectedBGC = [];
+      subzLayer.on("click", function(e){
+        console.log(e.layer.properties);
+        Shiny.setInputValue("bgc_click",e.layer.properties.MAP_LABEL);
+        selectedBGC.push(e.layer.properties.OBJECTID);
+        var properties = e.layer.properties
+			  highlight = properties.OBJECTID;
+        subzLayer.setFeatureStyle(highlight, styleHL);
+      });
+      
+      Shiny.addCustomMessageHandler("clearBGC",function(x){
+        selectedBGC.forEach((ID) => {
+          subzLayer.resetFeatureStyle(ID);
+        });
+      });
+      
+      
+      subzLayer.bindTooltip(function(e) {
+        return e.properties.MAP_LABEL;
+      }, {sticky: true, textsize: "10px", opacity: 1});
+      
+      distLayer.bindTooltip(function(e) {
+        return e.properties.dist_name;
+      }, {sticky: true, textsize: "10px", opacity: 1});
+      
+      Shiny.addCustomMessageHandler("selectDist",function(x){
+          distLayer.bringToFront();
+      });
+      
+      Shiny.addCustomMessageHandler("selectBGC",function(x){
+          subzLayer.bringToFront();
+      });
 
     }'
   ))
