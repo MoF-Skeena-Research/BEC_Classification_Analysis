@@ -21,7 +21,9 @@ drv <- dbDriver("PostgreSQL")
 sapply(dbListConnections(drv), dbDisconnect)
 con <- dbConnect(drv, user = "postgres", password = "postgres", host = "138.197.168.220", 
                  port = 5432, dbname = "bec_master")
-
+selectedCols = c("plotnumber","projectid","date","zone","subzone",
+             "siteseries","moistureregime","nutrientregime",
+             "elevation","slopegradient","aspect")
 envNames <- dbGetQuery(con,"select column_name from information_schema.columns where table_name = 'env'")[,1]
 # Define UI for application that draws a histogram
 
@@ -32,14 +34,13 @@ ui <- fluidPage(
     useShinyjs(),
     column(3,
            h2("Instructions"),
-           p("Draw a rectangle on the map to select desired plots. Then, selected desired columns from the 
+           p("First, select the geographical region (either by clicking on Districts, BGCs, or drawing a bounding box).
+           Then, select extracts from the 
              environment table and click Run Query"),
            actionButton("showplots","Show Plots"),
-           radioButtons("selectlayer", "Choose a Layer to Select", choices = c("Districts","BGCs")),
-           selectInput("envHeaders","Select Environment Fields:", choices = envNames, multiple = T,
-                       selected = c("plotnumber","projectid","date","zone","subzone",
-                                    "siteseries","moistureregime","nutrientregime",
-                                    "elevation","slopegradient","aspect")),
+           radioButtons("selectlayer", "Choose a Layer to Select", choices = c("Districts","BGCs","Custom")),
+           checkboxGroupInput("extracts","Extracts to Include",
+                              choices = c("Plots/Locations","Soil Info","Site Info","Forage","Vegetation")),
            sliderInput("vegcov","Select Min % Cover:", min = 0, max = 5, value = 0.5,step = 0.1),
            actionButton("runquery","Run Query!"),
            br(),
@@ -91,9 +92,6 @@ server <- function(input, output, session) {
         group = "Cities",
         options = leaflet::pathOptions(pane = "overlayPane")) %>%
       addBGCTiles() %>%
-      addDrawToolbar(
-        targetGroup='draw',
-        editOptions = editToolbarOptions(selectedPathOptions = selectedPathOptions())) %>%
       leaflet::addLayersControl(
         baseGroups = c("Hillshade","Satellite"),
         overlayGroups = c("BGCs","Districts","Cities","draw"),
@@ -120,8 +118,13 @@ server <- function(input, output, session) {
   observeEvent(input$selectlayer,{
     if(input$selectlayer == "Districts"){
       session$sendCustomMessage("selectDist","puppy")
-    }else{
+    }else if(input$selectlayer == "BGCs"){
       session$sendCustomMessage("selectBGC","puppy")
+    }else{
+      leafletProxy("map") %>%
+        addDrawToolbar(
+          targetGroup='draw',
+          editOptions = editToolbarOptions(selectedPathOptions = selectedPathOptions()))
     }
   })
   
@@ -137,11 +140,25 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$runquery,{
-    plotnums <- global_plotnum$plotno
+    if(input$selectlayer == "Districts"){
+      plotnums <- RPostgreSQL::dbGetQuery(con,paste0("SELECT plotnumber 
+                                                     from plotid 
+                                                     where dist_code IN ('",
+                                                     paste(global_select$District,collapse = "','"),
+                                                     "')"))[,1]
+    }else if(input$selectlayer == "BGCs"){
+      plotnums <- RPostgreSQL::dbGetQuery(con,paste0("SELECT plotnumber 
+                                                     from plotid 
+                                                     where \"BGC\" IN ('",
+                                                     paste(global_select$BGC,collapse = "','"),
+                                                     "')"))[,1]
+    }else{
+      plotnums <- global_plotnum$plotno
+    }
     withProgress(message = "Getting Data...", {
       veg <- RPostgreSQL::dbGetQuery(con,paste0("select * from veg where plotno IN ('",paste(plotnums,collapse = "','"),
                                                 "') AND cover > ",input$vegcov))
-      esql <- paste0("select ",paste(input$envHeaders,collapse = ","),
+      esql <- paste0("select ",paste(selectedCols,collapse = ","),
                      " from env where plotnumber IN ('",paste(plotnums,collapse = "','"),"')")
       env <- RPostgreSQL::dbGetQuery(con,statement = esql)
     })
