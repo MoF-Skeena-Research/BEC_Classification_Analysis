@@ -1,0 +1,76 @@
+---
+title: "Check Site Series for Plot Data"
+author: "Will MacKenzie"
+date: "13/09/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require(data.table)
+require(tidyverse)
+require(dplyr)
+
+```
+
+## Import plot, site units, and hierarchy tables
+
+
+```{r import data}
+SU.tab <- fread("./inputs/BECMster_V2020_2_SU.csv", stringsAsFactors = FALSE)
+SU.tab$SiteUnit <- sub("a$|b$|c$", "", SU.tab$SiteUnit)
+SS.Forest <- fread("./inputs/tblBEC_SiteSeries_v12.csv", stringsAsFactors = FALSE) %>% rename(SiteUnit = SS_Label, SS_Name = SiteSeriesLongName, Type = 'Forest-NonForest') %>% 
+  dplyr::filter(Type == "Forest") %>% select(SiteUnit, SS_Name)
+
+SS.Forest$SiteUnit <- sub("a$|b$|c$", "", SS.Forest$SiteUnit)
+SS.Forest <- SS.Forest %>%  distinct()
+fwrite(SS.Forest, "AllForestSS.csv")
+#newSS <- fread("./inputs/new_SiteSeries_v13.csv", stringsAsFactors = FALSE)##new units for analysis
+Hierarchy <- fread("./inputs/AllForestHier.csv", stringsAsFactors = FALSE)
+colnames(Hierarchy )[1:12]=c("PlotNumber", "Region", "Class", "Order", "SubOrder", "Alliance", "SubAlliance", "Association", "SubAssociation", "Facies", "Working", "SiteUnit")
+#Create lowest working hierarchical units
+Hierarchy$SubAssociation <- ifelse(Hierarchy$SubAssociation == "",Hierarchy$Association,Hierarchy$SubAssociation) ##if SubAssoc blank, fill with Association
+Hierarchy$SubOrder <- ifelse(Hierarchy$SubOrder == "",Hierarchy$Order,Hierarchy$SubOrder)
+Hierarchy$SubAlliance <- ifelse(Hierarchy$SubAlliance == "",Hierarchy$Alliance,Hierarchy$SubAlliance)
+
+write.csv(Hierarchy, "AllForestHier_filled.csv")
+```
+
+
+```{r read and merge original SUs from publications, message=FALSE}
+read_plus <- function(flnm) {
+    read_csv(flnm)# %>% 
+        #mutate(filename = flnm)##include this line if source file name is desired in output
+}
+
+pub_SU <-
+    list.files(path = "./data-raw/",
+               pattern = "*.csv", 
+               full.names = T) %>% 
+    map_df(~read_plus(.))
+
+pub_SU <- pub_SU  %>% distinct()
+pub_SU$SiteUnit <-  sub("a$|b$|c$", "", pub_SU$SiteUnit) ###remove phases
+
+```
+## Check for plots for each SU
+
+```{r plots per SU, echo=FALSE}
+
+BGCv12_SU <- left_join(SS.Forest, pub_SU) %>% select(-SS_Name) %>% distinct()
+fwrite(BGCv12_SU, "AllPlots_SU.csv")
+BGCv12_nplots <- BGCv12_SU %>% count(SiteUnit) %>% distinct()##plots per SU
+
+BGCv12_missing <- anti_join(SS.Forest, BGCv12_nplots ) %>% select(-SS_Name) %>%  distinct()
+
+```
+
+### Compare BGCv12 and Hierarchy SU
+```{r check for inclusion of classification units}
+
+BGCv12inHier <- left_join(BGCv12_nplots, Hierarchy)
+
+```
+
+
+
+
