@@ -15,6 +15,9 @@ require(data.tree)
 require(DataExplorer)
 require(C50)
 require(indicspecies)
+
+cloud_dir <- "F:/OneDrive - Personal/OneDrive/BEC_Classification_Paper/"
+#cloud_dir <- "F:/OneDrive - Government of BC/CCISSv12/"
 ```
 
 1. A machine learning model of high-level hierarchical BEC Forest units
@@ -26,10 +29,12 @@ e. Compare similarity of tree composition within units (noise clustering) to fin
 f. Create vegetation summaries of Orders and compare vegetation (all species now). Identify climatic indicator species groups.
 g. Create climatic and site attributes summary of Orders 
 h. Create maps of plot locations for each Order
+i. Hierarchy tree graphic
 
 2. Do pair-wise analysis of site series within Orders using high constancy species to analyze site series and create Associations/SubAssociations.
 
 3. Build Alliances. Focus should be on identifying species groups that reflect different site conditions.
+
 a. Use some of the techniques of indicspecies package to create Alliances based on indicator group creation and analysis.
 b. Try to build a machine learning model of Alliances
 c. Vegetation and Environment summary of Alliances
@@ -47,8 +52,8 @@ May wish to assign a temporary notree pseudo species to all units that have no t
 ```{r import data}
 ### Vegetation From BECMaster cleaning script Long form Plot|Species|Cover (across all layers)
 ### or From Vpro export
-
-vegDat2 <- fread('./inputs/BECMaster_VegR_clean.csv')
+#BGCZone <- fread(paste0(cloud_dir,"All_BGCs_Info_v12_2.csv"), data.table=FALSE)
+vegDat2 <- fread(paste0(cloud_dir,"inputs/BECMaster_VegR_clean.csv"), data.table = FALSE)
 sppMaster <- fread('./inputs/SpeciesMaster05Oct2019.csv')
 #####################importing Vpro veg data########################################
 ############### Uses 3 column R export FORMAT FROM Vpro with Lifeform option selected
