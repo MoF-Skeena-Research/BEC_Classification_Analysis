@@ -118,6 +118,7 @@ SU_in_Hier <- full_join(BGCv13_nplots, Hier.clean)
 Hier.clean2 <- SU_in_Hier[!is.na(n),] #removes both hierarchy units without site series and site series without plots
 Hier.clean2 <- Hier.clean2 %>% mutate(Formation = ifelse(is.na(Formation), "NewUnitstoPlace", Formation)) # adds unplaced units into the hierarchy under NewUnitstoPlace Formation
 Hier.new <- Hier.clean2 %>% select(-n) %>% relocate(SiteUnit, .after = last_col())
+fwrite(Hier.new, './outputs/BECv13_Hierarchy_Matrix.csv')
 ```
 
 
