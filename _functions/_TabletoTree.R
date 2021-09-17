@@ -1,4 +1,4 @@
-hierWide = Hier.new
+#hierWide = Hier.new
 
 tableToTree <- function(hierWide, levelNames){
   levelID <- data.table(Name = levelNames, Level = 1:length(levelNames))
@@ -12,6 +12,7 @@ tableToTree <- function(hierWide, levelNames){
   levs <- levs[!is.na(value)]## this is unique names and where an unique ID number should be assigned
   hierWide[,ID := NULL]
   hierWide[,Root := "TempRoot"]
+  hierWide <- hierWide %>% select(Root, everything())
   temp <- data.table::transpose(hierWide,keep.names = "Level")
   temp <- temp[, lapply(.SD, function(x) replace(x, duplicated(x), NA))]
   temp <- data.table::transpose(temp, make.names = "Level")
