@@ -43,7 +43,7 @@ require(psych)
 
 ```{r import data}
 
-vegData <- read.table("./inputs/BECMasterVeg_Jan6_2021.txt", header = TRUE) 
+vegData <- fread("./inputs/BECMasterVeg_15Sept_2021.txt", header = TRUE) 
 vegData <- separate(vegData, Species, c("Species","Type"), "-", remove = TRUE)
 
 vegData <- mutate_all(vegData, funs(toupper)) ### converts lower case characters to upper
