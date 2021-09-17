@@ -16,14 +16,19 @@ source("./_functions/_TabletoTree.R")
 
 ## Import SU table and BECv12 site series
 ```{r import data}
-SU.tab <- fread("./inputs/BECMster_V2020_2_SU.csv", stringsAsFactors = FALSE)
+#SU.tab <- fread("./inputs/BECMster_V2020_2_SU.csv", stringsAsFactors = FALSE)
+SU.tab <- fread("./inputs/ALLBECSU_2021_SU.csv", stringsAsFactors = FALSE)
 SU.tab$SiteUnit <- sub("a$|b$|c$", "", SU.tab$SiteUnit)
-SS.Forest <- fread("./inputs/tblBEC_SiteSeries_v12.csv", stringsAsFactors = FALSE) %>% rename(SiteUnit = SS_Label, SS_Name = SiteSeriesLongName, Type = 'Forest-NonForest') %>% 
-  dplyr::filter(Type == "Forest"| Type == "Deciduous") %>% select(SiteUnit, SS_Name)
+SS.Forest <- fread("./inputs/tblBEC_SiteSeries_v12_new.csv", stringsAsFactors = FALSE) %>% 
+  dplyr::rename(SiteUnit = SS_Label, SS_Name = SiteSeriesLongName, Type = `Forest-NonForest`) %>% 
+  dplyr::filter(Type == "Forest"| Type == "Deciduous") %>% dplyr::select(SiteUnit, SS_Name)
 
 SS.Forest$SiteUnit <- sub("a$|b$|c$", "", SS.Forest$SiteUnit)
 SS.Forest <- SS.Forest %>%  distinct()
+BECv12_SS <- SS.Forest$SiteUnit %>% as.character
+BECv12_SU <- SU.tab[SU.tab$SiteUnit %in% BECv12_SS]
 fwrite(SS.Forest, "./outputs/BECv12_Forest_SiteSeries.csv")
+fwrite(BECv12_SU, "./outputs/BECv11_Forest_SU.csv")
 #newSS <- fread("./inputs/new_SiteSeries_v13.csv", stringsAsFactors = FALSE)##new units for analysis
 
 ```
@@ -35,25 +40,38 @@ read_plus <- function(flnm) {
         #mutate(filename = flnm)##include this line if source file name is desired in output
 }
 
-pub_SU <-
-    list.files(path = "./published_SU/",
+corr1_SU <-
+    list.files(path = "./inputs/Correlation1_SU/",
+               pattern = "*.csv",
+               full.names = T) %>%
+    map_df(~read_plus(.))
+
+corr2_SU <-
+    list.files(path = "./inputs/Correlation2Published_SU/xlsx_SiteUnitTables/",
                pattern = "*.csv", 
                full.names = T) %>% 
     map_df(~read_plus(.))
+BECv12_SU <- rbind(corr2_SU, corr1_SU)
+#BECv12_SU <- corr2_SU
+BECv12_SU <- BECv12_SU %>% distinct()
+BECv12_SU$SiteUnit <-  sub("a$|b$|c$", "", BECv12_SU$SiteUnit) ##converts phases to site series
+BECv12_SU2 <- left_join(SS.Forest, BECv12_SU) %>% dplyr::select(PlotNumber, SiteUnit)
+BECv12_noSorts <- anti_join(SS.Forest, BECv12_SU2) ### Accepted site series not found in any sorts
+fwrite(BECv12_SU2, "./outputs/BECv12_Forest_SU.csv")
 
-pub_SU <- pub_SU  %>% distinct()
-pub_SU$SiteUnit <-  sub("a$|b$|c$", "", pub_SU$SiteUnit) ##converts phases to site series
-pub_SU2 <- left_join(SS.Forest, pub_SU) %>% select(PlotNumber, SiteUnit)
-BECv12_noSorts <- anti_join(SS.Forest, pub_SU) ### Accepted site series not found in any sorts
-fwrite(pub_SU2, "./outputs/BECv12_Forest_SU.csv")
-new_SU <-     list.files(path = "./new_SU/",
+BECv13_SU <-     list.files(path = "./inputs/BECv13_SU/",
                pattern = "*.csv", 
                full.names = T) %>% 
     map_df(~read_plus(.))
-fwrite(new_SU, "./outputs/BECv13_NewForest_SU.csv")
-BECv13_SU <- rbind(pub_SU2, new_SU)
+BECv13_SU <- BECv13_SU %>% distinct()
+fwrite(BECv13_SU, "./outputs/BECv13_Added_SU.csv")
 
-fwrite(BECv13_SU, "./outputs/BECv13_Forest_SU.csv")
+plot.dups <- left_join(BECv13_SU, BECv12_SU2 )
+plot.dups <- plot.dups$PlotNumber %>% as.character()
+BECv12_SU2 <- BECv12_SU2 [!PlotNumber %in% plot.dups]
+BECv13_SU <- rbind(BECv12_SU2, BECv13_SU) %>% distinct()
+
+fwrite(BECv13_SU, "./clean_tabs/BECv13_Forest_SU.txt")
 
 ```
 
@@ -82,7 +100,7 @@ SU_in_Hier <- full_join(BGCv13_nplots, Hier.clean)
 Hier.clean2 <- SU_in_Hier[!is.na(n),] #removes both hierarchy units without site series and site series without plots
 Hier.clean2 <- Hier.clean2 %>% mutate(Formation = ifelse(is.na(Formation), "NewUnitstoPlace", Formation)) # adds unplaced units into the hierarchy under NewUnitstoPlace Formation
 Hier.new <- Hier.clean2 %>% select(-n) %>% relocate(SiteUnit, .after = last_col())
-fwrite(Hier.new, './outputs/BECv13_Hierarchy_Matrix.csv')
+fwrite(Hier.new, './clean_tabs/BECv13_Hierarchy_Matrix.csv')
 ```
 
 
@@ -90,9 +108,10 @@ fwrite(Hier.new, './outputs/BECv13_Hierarchy_Matrix.csv')
 #Hier.new <- fread("./outputs/BECv13_Hierarchy_Matrix.csv")
 levelNames <- c("Formation", "Class", "Order", "Suborder", "Alliance", "Suball", 
 "Assoc", "Subass", "Facies", "Working", "SiteUnit")
-
+Hier.new <- as.data.table(Hier.new)
 testReverse <- tableToTree(hierWide = copy(Hier.new),levelNames)
-fwrite(testReverse, "./outputs/CleanedHierarchy.csv")
+testReverse$Parent <- ifelse(testReverse$Parent == 1, "", testReverse$Parent)
+fwrite(testReverse, "./outputs/CleanedVPROHierarchyTree.csv")
 ```
 
 
