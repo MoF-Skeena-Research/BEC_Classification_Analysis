@@ -15,7 +15,9 @@ require(data.tree)
 require(DataExplorer)
 require(C50)
 require(indicspecies)
-
+require(doParallel)
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
 cloud_dir <- "F:/OneDrive - Personal/OneDrive/BEC_Classification_Paper/"
 #cloud_dir <- "F:/OneDrive - Government of BC/CCISSv12/"
 ```
@@ -53,116 +55,78 @@ May wish to assign a temporary notree pseudo species to all units that have no t
 ### Vegetation From BECMaster cleaning script Long form Plot|Species|Cover (across all layers)
 ### or From Vpro export
 #BGCZone <- fread(paste0(cloud_dir,"All_BGCs_Info_v12_2.csv"), data.table=FALSE)
-vegDat2 <- fread(paste0(cloud_dir,"inputs/BECMaster_VegR_clean.csv"), data.table = FALSE)
-sppMaster <- fread('./inputs/SpeciesMaster05Oct2019.csv')
+vegDat2 <- fread("./inputs/BECMaster_VegR_clean.csv", data.table = FALSE)
+sppMaster <- fread('./inputs/SpeciesMaster05Oct2019.csv') %>% filter(Codetype == "U")
+
 #####################importing Vpro veg data########################################
 ############### Uses 3 column R export FORMAT FROM Vpro with Lifeform option selected
 #load("./inputs/VegDat_Raw.RData")##includes type field for lifeform
 #vegDat2 <- vegData %>% filter(!is.na(Type))
 ###SU table
-SUTab <- fread("./inputs/BECMster_V2020_2_SU.csv")
+SUTab <- fread("./inputs/ALLBECSU_2021_SU.csv")
 SUTab$SiteUnit <-  trimws(SUTab$SiteUnit)
 SS.names <- unique(SUTab$SiteUnit)
 
-#####list of official current and future correlated units from BECdb
-current <- c('Current', 'Future')
-ecotypes <- c("Forest", "Deciduous")
-#### cleaned list of official site series
-BECdb_SS <- fread("./inputs/BECdb_SiteSeriesv12.csv") %>% filter(Status %in% current) %>% filter(ArchivedinVersion == "") %>% filter(`Forest-NonForest` %in% ecotypes) %>% 
-  select(MergedBGC_SS, SS_NoSpace, SiteSeriesLongName, SiteSeriesScientificName) %>% rename (SiteUnit = 1, SSName = 3, SciName = 4) %>% distinct(SiteUnit, .keep_all = TRUE)
-#### compare SUTab to BECdb.  Whan all BECdb units to have data and SUTab to include no unofficial units
-SS_missing <- full_join(SUTab, BECdb_SS) %>% filter(is.na(PlotNumber))
+# #####list of official current and future correlated units from BECdb
+# current <- c('Current', 'Future')
+# ecotypes <- c("Forest", "Deciduous")
+# #### cleaned list of official site series
+# BECdb_SS <- fread("./inputs/BECdb_SiteUnitv12.csv") %>% filter(Status %in% current) %>% filter(ArchivedinVersion == "") %>% filter(`Forest-NonForest` %in% ecotypes) %>% 
+#   select(MergedBGC_SS, SS_NoSpace, SiteUnitLongName, SiteUnitScientificName) %>% rename (SiteUnit = 1, SSName = 3, SciName = 4) %>% distinct(SiteUnit, .keep_all = TRUE)
+# #### compare SUTab to BECdb.  Whan all BECdb units to have data and SUTab to include no unofficial units
+# SS_missing <- full_join(SUTab, BECdb_SS) %>% filter(is.na(PlotNumber))
 ##Import Vpro hierarchy table widen and reformat
-SUhier <- fread("./inputs/BECv12_Forests_July2020_Hierarchy.csv")
-### add any site units not in hierarchy to hierarchy
-
 ```
 
 
-```{r clean hierarchy}
-treeToTable <- function(SUhier){
-  hierLookup <- SUhier[,.(ID,Name)]
-  HierClean <- SUhier[,.(ID,Parent,Name,Level)]
-  roots <- HierClean$Parent[!HierClean$Parent %in% HierClean$ID]
-  roots <- unique(roots[!is.na(roots)])
-  if(length(roots) >= 1){
-    warning("There are duplicate roots. Please check ID ", roots)
-  }
-  HierClean[is.na(Parent), Parent := 1]
-  temp <- data.table(ID = roots,Parent = rep(1,length(roots)), Name = rep("XXX",length(roots)),Level = rep(1, length(roots)))
-  HierClean <- rbind(HierClean,temp)
-  
-  HierClean[hierLookup, ParentName := i.Name, on = c(Parent = "ID")]
-  HierClean[is.na(ParentName), ParentName := "root2"]
-  HierClean <- HierClean[,.(Name,ParentName,Level)]
-  HierClean$ParentName[!HierClean$ParentName %in% HierClean$Name]
-  tree <- FromDataFrameNetwork(HierClean)
-  wideTab <- ToDataFrameTypeCol(tree)
-  wideTab <- as.data.table(wideTab)
-  wideTab[,ID := 1:nrow(wideTab)]
-  wideTab[,level_1 := NULL]
-  tab2 <- melt(wideTab, id.vars = "ID")
-  tab2 <- na.omit(tab2)
-  tab2[HierClean, Level := i.Level, on = c(value = "Name")]
-  dupLevels <- tab2[,.(Len = .N), by = .(ID,Level)]
-  dupLevels <- dupLevels[Len > 1,]
-  dups <- tab2[ID %in% dupLevels$ID,]
-  setorder(dups,"ID")
-  dups[,variable := NULL] ##these are the branches with duplicates
-  tabOut <- dcast(tab2, ID ~ Level, value.var = "value", fun.aggregate = function(x){x[1]})
-  setnames(tabOut, c("ID","Formation","Class","Order","Suborder","Alliance","Suball","Assoc","Subass","Facies", "Working", "SiteSeries"))
-  tabOut[is.na(Subass), Subass := Assoc]
-  tabOut[is.na(Suborder), Suborder := Order]
-  tabOut[is.na(Suball), Suball := Alliance]
-  return(list(table = tabOut, duplicates = dups))
-}
-
-temp <- treeToTable(SUhier)
-Hier.clean <- temp$table
-fwrite(Hier.clean, './inputs/cleanedHierarchy.csv')
+```{r import hierarchy data}
+##Import cleaned wide matrix form 0_0
+SUhier <- fread("./clean_tabs/BECv13_Hierarchy_Matrix.csv")
 
 ```
 
-```{r check units in hierarchy}
-### remove units not in BECdb
-
-### add in official unit missing in hierarchy
-
-```
-
-
-
+##roll up into site series summary data
 ```{r summarize site series, echo=FALSE}
-
 #SUTab <- fread("./inputs/BECMster_V2020_2_SU.csv")
 ### Summarize by SU including mean cover and constancy percent
 ##roll up into site series summary data
 ### Filter out all species but tree species
-trees = c("1", "2") ### include only trees for hierarchy build
-vegDat2 <- as.data.table(vegDat2)
-vegDat_test <- vegDat2[Lifeform %in% trees,]
-vegDat_test <- vegDat_test %>% dplyr::filter(Cover > 0.1)
-
-constCut <- 0.1 ##remove species less than cutoff
-vegDat <- as.data.table(vegDat_test)
+vegDat <- as.data.table(vegDat2)
 
 vegDat[SUTab, SiteUnit := i.SiteUnit, on = "PlotNumber"]
+vegDat <- vegDat[!is.na(SiteUnit) & SiteUnit != "",]
+
 vegDat <- unique(vegDat[!is.na(SiteUnit) & SiteUnit != "",])
 vegDat3 <- vegDat[,if(.N > 1) .SD, by = .(SiteUnit,Species)]
 vegDat3[,nPlots := length(unique(PlotNumber)), by = .(SiteUnit)]
 vegSum <- vegDat3[,.(MeanCov = sum(Cover)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)]
-#vegDat <- as_tibble(vegDat)
-# vegDat$SiteUnit <- as.factor(vegDat$SiteUnit)
-# vegDat3 <- vegDat %>% group_by(SiteUnit, Species) %>% filter(n() > 1)
+fwrite(vegSum, './clean_tabs/BECv13SiteUnitSummary.csv')
+```
+
+
+```{r reduce summary for analysis, echo=FALSE}
+##limit life forms to tree species
+trees <- c(1,2)
+constCut <- 0.1 ##remove species less than cutoff
+covercut <- 0.1
+treespp <- sppMaster[Lifeform %in% trees, ] %>% dplyr::select(Code)
+treespp <- as.vector(treespp$Code)
+vegDat_test <- vegSum[Species %in% treespp,]### include only trees for hierarchy build
+vegDat_test <- vegDat_test %>% dplyr::filter(MeanCov > covercut) %>% dplyr::filter(Constancy > covercut)
+
+
+tree.sum <- as.data.table(vegDat_test)#vegDat <- as_tibble(vegDat)
+tree.sum$SiteUnit <- as.factor(tree.sum$SiteUnit)
+# vegDat3 <- vegDat %>% group_by(SiteUnit, Species) %>% filter(nPlots > 1)
 
 # vegDat3 <- vegDat %>% group_by(SiteUnit, Species) %>% mutate(nPlots = n_distinct(PlotNumber))
 # vegDat <- as.data.table(vegDat)
 
 #-------------problem with the mean cover calculation
 # 
-# vegSum <- vegDat[,.(MeanCov = sum(Cover)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)] %>% mutate(across(where(is.numeric), round, 3))
+#vegSum <- vegDat[,.(MeanCov = sum(Cover)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)] %>% mutate(across(where(is.numeric), round, 3))
 
-fwrite(vegSum, './inputs/SiteSeriesConiferSummary.csv')
+fwrite(tree.sum, './inputs/SiteUnitConiferSummary.csv')
 
 ##build grand summary table that then can be reduce to only species with high constancy in a least one unit. Probably not too useful for very large analyses
 
@@ -173,25 +137,27 @@ fwrite(vegSum, './inputs/SiteSeriesConiferSummary.csv')
 
 ```{r filter and prepare for analysis}
 #Hier.clean <- fread("./inputs/cleanedHierarchy.csv")
-#vegSum <- fread('./inputs/SiteSeriesForestedSummary.csv')
-
-SS_good <- vegSum %>% filter(nPlots >=3) %>% filter(Constancy >= 33) %>% rename(SiteSeries = SiteUnit) %>% distinct()## Select only site series will enough plots
-Hier.units <- Hier.clean %>% select(SiteSeries, Class, Order, Suborder) %>% distinct()
-#Hier.units <- Hier_update%>% select(SiteSeries, Class, Order, Suborder)
+#vegSum <- fread('./inputs/SiteUnitForestedSummary.csv')
+vegSum <- tree.sum
+SS_good <- vegSum %>% filter(nPlots >=3) %>% filter(Constancy >= 33)  %>% distinct()  #%>% rename(SiteUnit = SiteUnit))## Select only site series will enough plots
+Hier.units <- SUhier %>% dplyr::select(SiteUnit, Class, Order, Suborder) %>% distinct()
+#Hier.units <- Hier_update%>% select(SiteUnit, Class, Order, Suborder)
 Hier.data <- left_join(Hier.units, SS_good) %>% filter(!is.na(nPlots)) %>% arrange(Species) %>% distinct()
-fwrite(Hier.data, './inputs/SiteSeriesForested_w_HierarchyUnits.csv')
+fwrite(Hier.data, './inputs/SiteUnitForested_w_HierarchyUnits.csv')
 ```
 
 ```{r some hierarchy stats}
 classes <- unique(Hier.data$Class)
 orders <- unique(Hier.data$Order)
 suborders <- unique(Hier.data$Suborder)
+### Choose hierarchical level for analysis
+
 class.dat <-
-  Hier.data %>% select(SiteSeries, Class, Species, MeanCov) %>% 
-  pivot_wider(id_cols = c(SiteSeries, Class),
+  Hier.data %>% dplyr::select(SiteUnit, Order, Species, MeanCov) %>% 
+  pivot_wider(id_cols = c(SiteUnit, Order),
     names_from = Species,
     values_from = MeanCov) %>% 
-  mutate(Class = replace_na(Class, "unplaced")) %>% filter(!SiteSeries == "") %>% 
+  mutate(Order = ifelse(Order == "", "unplaced", Order)) %>% filter(!SiteUnit == "") %>% 
    replace(is.na(.),0) %>% 
   mutate_if(is.character, as.factor) %>% distinct()
 
@@ -201,21 +167,22 @@ Data pre-processing includes the following steps:
 
 ```{r prep data, include = TRUE, echo = FALSE}
 
-classID <- class.dat %>% select(SiteSeries, Class)
+classID <- class.dat %>% dplyr::select(SiteUnit, Order)
 #class.dat2 <- class.dat %>% select(-SiteUnit)
-BEC_all <- class.dat %>% arrange(SiteSeries)
-SU_names <- as.data.frame(BEC_all$SiteSeries) %>%  distinct() %>% rowid_to_column('.row') %>% rename("SiteSeries" = 2)
+BEC_good <- class.dat %>% filter(!Order == "unplaced") %>% arrange(SiteUnit)
+BEC_new <- class.dat %>% filter(Order == "unplaced") %>% arrange(SiteUnit)
+SU_names <- as.data.frame(BEC_good$SiteUnit) %>%  distinct() %>% rowid_to_column('.row') %>% dplyr::rename("SiteUnit" = 2)
 # 1: split into training and test data (0.75/0.25) training and testing 
 
 # BEC_split <-  initial_split(BEC_all, 
-#                               strata = Class,
+#                               strata = Order,
 #                               prop = 0.9)
 #   
 # BEC_train <- training(BEC_split)
 # BEC_test <- testing(BEC_split)
 BEC_recipe <-
-    recipe(Class ~ ., data = BEC_all) %>%
-     update_role(SiteSeries, new_role = "id variable") %>% 
+    recipe(Order ~ ., data = BEC_good) %>%
+     update_role(SiteUnit, new_role = "id variable") %>% 
   #update_role(-SiteUnit, new_role = "predictor") %>% 
     #step_corr(all_numeric()) %>%        # remove correlated covariates
     #step_dummy(all_nominal(),-all_outcomes()) %>%    
@@ -223,9 +190,64 @@ BEC_recipe <-
    # step_smote(Class) %>%
     prep() 
     summary(BEC_recipe)
+    
+BEC_fmodel <- rand_forest(mtry = 5, min_n = 2, trees = 501) %>%
+  set_mode("classification") %>%
+  set_engine("ranger", importance = "impurity") #or "permutations
 
 # note in RF as a tree based model it is not required to scale and normalize covariates and may have negative influence on the model performance  
 ```
+
+```{r build final model, include = FALSE}
+
+# 2: set up cross validation for parameter tuning data sets # note vc is default to 10 fold
+BEC_workflow <- workflow() %>%
+  add_model(BEC_fmodel) %>% 
+    add_recipe(BEC_recipe)
+
+BEC_ranger_model <- fit(BEC_workflow, BEC_good)
+BEC_ranger_model$fit
+
+BEC.missed <- predict(BEC_ranger_model, BEC_good) %>% bind_cols(BEC_good %>% dplyr::select(SiteUnit, Order)) %>% 
+  mutate(Compare = ifelse(.pred_class == Order, "Same", "Diff")) %>% filter(Compare == "Diff")
+BEC.mis.list <- BEC.missed$SiteUnit %>% as.character
+
+SS_misID_SU <- SUTab[SUTab$SiteUnit %in% BEC.mis.list,]
+fwrite(SS_misID_SU, "./outputs/WrongOrderPredicted_SU.csv")
+```
+
+
+```{r predict unplaced}
+newBEC <- predict(BEC_ranger_model, BEC_new) %>% bind_cols(BEC_new %>% dplyr::select(SiteUnit)) 
+newBEC$.pred_class <- newBEC$.pred_class  %>%  as.character
+
+Hier.update <- left_join(SUhier, newBEC) %>% mutate(Order = ifelse(!is.na(.pred_class), .pred_class, Order)) %>%
+        dplyr::select(-.pred_class) %>% filter(!Order == "")
+Hier.update <- as.data.table(Hier.update)
+```
+
+
+```{r create updated VPro hierarchy}
+##convert matrix to tree, add in new units
+levelNames <- c("Formation", "Class", "Order", "Suborder", "Alliance", "Suball", "Assoc", "Subass", "Facies", "Working", "SiteUnit")
+testReverse <- tableToTree(hierWide = copy(SUhier),levelNames) ## convert matrix to tree
+newBEC2 <- newBEC %>% rename(Name = .pred_class)
+pred.ID <- newBEC2 %>% select(Name) %>% distinct() %>% left_join(testReverse) %>% select(Name, ID) ## Parent Code for new predictions
+newBEC3 <- left_join(newBEC2, pred.ID, by = "Name") %>% select(-Name) %>% rename(Parentnew = ID, Name = SiteUnit)
+
+testReverse2 <- left_join(testReverse, newBEC3) %>% mutate(Parent, ifelse(!is.na(Parentnew), Parentnew, Parent)) %>% 
+            select(-Parent, -Parentnew) %>% rename (Parent = 4) %>% select(ID, Name, Parent, Level)
+testReverse2$Parent <- ifelse(testReverse2$Parent == 1, "", testReverse2$Parent)
+fwrite(testReverse2, "./outputs/UpdatedVPROHierarchyTree2.csv")
+
+```
+
+```{r merge predictions into hierarchy }
+
+
+
+```
+
 
 ## Tuning run to identify appropriate hyper parameters. Only needs to be run a single time for a particular model development
 
@@ -276,9 +298,14 @@ BEC_recipe <-
 
 ```
 
-## Run cross validation model of all data using tuning from previous step
+## Run cross validation model of all data using tuning from previous step. Can only be run with enough replicates
 ```{r define cv model with tuned parameters, echo = TRUE }
 # define model with set parameters from tuning
+
+split_data <- initial_split(model_data, prop = 0.6, strata = defense)
+training_data <- training(split_data)
+testing_data <- testing(split_data)
+
 
 BEC_fmodel <- rand_forest(mtry = 5, min_n = 2, trees = 501) %>%
   set_mode("classification") %>%
@@ -292,7 +319,7 @@ v = 10
 reps = 5
   
 set.seed(345)
-BEC_cvfold <- vfold_cv(BEC_all, 
+BEC_cvfold <- vfold_cv(BEC_good, 
                          v = v, 
                          repeats = reps, 
                          strata = Class)
@@ -321,7 +348,7 @@ BEC.pred2 <- BEC_cv_fitted %>% collect_predictions(summarize = TRUE)# collect pr
 BEC.pred3 <- left_join(SU_names, BEC.pred2)
 
 ## Identify misplaced site units
-MisID <- BEC.pred3 %>% select(SiteSeries, Class, .pred_class) %>% mutate(compare = if_else(Class == .pred_class, "Same", "Diff")) %>% filter(compare == "Diff")# %>% rename("SiteSeries" = SiteUnit)
+MisID <- BEC.pred3 %>% select(SiteUnit, Class, .pred_class) %>% mutate(compare = if_else(Class == .pred_class, "Same", "Diff")) %>% filter(compare == "Diff")# %>% rename("SiteUnit" = SiteUnit)
 fwrite(MisID, "Misplaced Site Series in Classes.csv")
 
 ##ID where there are different classifications predicted by fold **** this is not aligning SU_names properly
@@ -334,13 +361,13 @@ fwrite(MisID, "Misplaced Site Series in Classes.csv")
 ## review and reassign site units to correct hierarchy units
 ```{r reassign units}
 ##Update class by MisID in BEC_all (to build final model) and in Hier.clean (to update the hierachy table)
-UpdateClass <- MisID %>% select(SiteSeries, .pred_class)
-Hier_update <- left_join(Hier.clean, UpdateClass, by  = "SiteSeries") %>% mutate(newClass = coalesce(.pred_class, Class)) %>% select(-Class, -.pred_class) %>% rename(Class = newClass) %>% select(ID, Class, everything())
+UpdateClass <- MisID %>% select(SiteUnit, .pred_class)
+Hier_update <- left_join(Hier.clean, UpdateClass, by  = "SiteUnit") %>% mutate(newClass = coalesce(.pred_class, Class)) %>% select(-Class, -.pred_class) %>% rename(Class = newClass) %>% select(ID, Class, everything())
 ```
 
 ```{r reverse function to write hierarhcy back into Vpro format}
 levelNames <- c("Region", "Class", "Order", "Suborder", "Alliance", "Suball", 
-"Assoc", "Subass", "Facies", "SiteSeries")
+"Assoc", "Subass", "Facies", "SiteUnit")
 
 tableToTree <- function(hierWide, levelNames){
   levelID <- data.table(Name = levelNames, Level = 1:length(levelNames))
@@ -369,17 +396,7 @@ tableToTree <- function(hierWide, levelNames){
 testReverse <- tableToTree(hierWide = copy(Hier.clean),levelNames)
 ```
 
-```{r build final model, include = FALSE}
 
-# 2: set up cross validation for parameter tuning data sets # note vc is default to 10 fold
-BEC_workflow <- workflow() %>%
-  add_model(BEC_fmodel) %>% 
-    add_recipe(BEC_recipe)
-
-BEC_ranger_model <- fit(BEC_workflow, BEC_all)
-BEC_ranger_model$fit
-
-```
 
 ```{r C5 decision tree}
 #For interpretation of hierarchy
