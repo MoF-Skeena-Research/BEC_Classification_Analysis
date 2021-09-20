@@ -16,62 +16,70 @@ source("./_functions/_TabletoTree.R")
 
 ## Import SU table and BECv12 site series
 ```{r import data}
-#SU.tab <- fread("./inputs/BECMster_V2020_2_SU.csv", stringsAsFactors = FALSE)
-SU.tab <- fread("./inputs/ALLBECSU_2021_SU.csv", stringsAsFactors = FALSE)
-SU.tab$SiteUnit <- sub("a$|b$|c$", "", SU.tab$SiteUnit)
-SS.Forest <- fread("./inputs/tblBEC_SiteSeries_v12_new.csv", stringsAsFactors = FALSE) %>% 
+
+SU.tab <- fread("./clean_tabs/BECv13Analysis_Forest_17Sept2021_SU.txt", stringsAsFactors = FALSE) ##exported from Vpro
+SU.tab$SiteUnit <- sub("a$|b$|c$", "", SU.tab$SiteUnit)## remove phases
+
+#---- Build list of current and future codes
+##Import from BECdb v12 with units to be retired removed
+SS.Forest <- fread("./inputs/tblBEC_SiteSeries_v12_unique_analysis.txt", stringsAsFactors = FALSE) %>% 
   dplyr::rename(SiteUnit = SS_Label, SS_Name = SiteSeriesLongName, Type = `Forest-NonForest`) %>% 
   dplyr::filter(Type == "Forest"| Type == "Deciduous") %>% dplyr::select(SiteUnit, SS_Name)
 
 SS.Forest$SiteUnit <- sub("a$|b$|c$", "", SS.Forest$SiteUnit)
-SS.Forest <- SS.Forest %>%  distinct()
-BECv12_SS <- SS.Forest$SiteUnit %>% as.character
-BECv12_SU <- SU.tab[SU.tab$SiteUnit %in% BECv12_SS]
-fwrite(SS.Forest, "./outputs/BECv12_Forest_SiteSeries.csv")
-fwrite(BECv12_SU, "./outputs/BECv11_Forest_SU.csv")
+SS.Forest <- SS.Forest %>% dplyr::select(SiteUnit) %>% distinct()
+
+###merge in new site series
+SS.New <- fread("./clean_tabs/BECv13_Added_SU.csv", stringsAsFactors = FALSE) %>% dplyr::select(SiteUnit) %>%  distinct() ##exported from Vpro
+
+BGCv13_SS <- rbind(SS.Forest,SS.New)
+BECv13_SS <- BGCv13_SS$SiteUnit %>% as.character
+BECv13_SU <- SU.tab[SU.tab$SiteUnit %in% BECv13_SS,]
+fwrite(SS.Forest, "./clean_tabs/BECv13_Forest_SiteSeries.csv")
+fwrite(BECv13_SU, "./clean_tabs/BECv13_Forest_SU.csv")
 #newSS <- fread("./inputs/new_SiteSeries_v13.csv", stringsAsFactors = FALSE)##new units for analysis
 
 ```
 
 ## Create BECv12 SU from publication sorts
 ```{r read and merge original SUs from publications, message=FALSE}
-read_plus <- function(flnm) {
-    read_csv(flnm)# %>% 
-        #mutate(filename = flnm)##include this line if source file name is desired in output
-}
-
-corr1_SU <-
-    list.files(path = "./inputs/Correlation1_SU/",
-               pattern = "*.csv",
-               full.names = T) %>%
-    map_df(~read_plus(.))
-
-corr2_SU <-
-    list.files(path = "./inputs/Correlation2Published_SU/xlsx_SiteUnitTables/",
-               pattern = "*.csv", 
-               full.names = T) %>% 
-    map_df(~read_plus(.))
-BECv12_SU <- rbind(corr2_SU, corr1_SU)
-#BECv12_SU <- corr2_SU
-BECv12_SU <- BECv12_SU %>% distinct()
-BECv12_SU$SiteUnit <-  sub("a$|b$|c$", "", BECv12_SU$SiteUnit) ##converts phases to site series
-BECv12_SU2 <- left_join(SS.Forest, BECv12_SU) %>% dplyr::select(PlotNumber, SiteUnit)
-BECv12_noSorts <- anti_join(SS.Forest, BECv12_SU2) ### Accepted site series not found in any sorts
-fwrite(BECv12_SU2, "./outputs/BECv12_Forest_SU.csv")
-
-BECv13_SU <-     list.files(path = "./inputs/BECv13_SU/",
-               pattern = "*.csv", 
-               full.names = T) %>% 
-    map_df(~read_plus(.))
-BECv13_SU <- BECv13_SU %>% distinct()
-fwrite(BECv13_SU, "./outputs/BECv13_Added_SU.csv")
-
-plot.dups <- left_join(BECv13_SU, BECv12_SU2 )
-plot.dups <- plot.dups$PlotNumber %>% as.character()
-BECv12_SU2 <- BECv12_SU2 [!PlotNumber %in% plot.dups]
-BECv13_SU <- rbind(BECv12_SU2, BECv13_SU) %>% distinct()
-
-fwrite(BECv13_SU, "./clean_tabs/BECv13_Forest_SU.txt")
+# read_plus <- function(flnm) {
+#     read_csv(flnm)# %>% 
+#         #mutate(filename = flnm)##include this line if source file name is desired in output
+# }
+# 
+# corr1_SU <-
+#     list.files(path = "./inputs/Correlation1_SU/",
+#                pattern = "*.csv",
+#                full.names = T) %>%
+#     map_df(~read_plus(.))
+# 
+# corr2_SU <-
+#     list.files(path = "./inputs/Correlation2Published_SU/xlsx_SiteUnitTables/",
+#                pattern = "*.csv", 
+#                full.names = T) %>% 
+#     map_df(~read_plus(.))
+# BECv12_SU <- rbind(corr2_SU, corr1_SU)
+# #BECv12_SU <- corr2_SU
+# BECv12_SU <- BECv12_SU %>% distinct()
+# BECv12_SU$SiteUnit <-  sub("a$|b$|c$", "", BECv12_SU$SiteUnit) ##converts phases to site series
+# BECv12_SU2 <- left_join(SS.Forest, BECv12_SU) %>% dplyr::select(PlotNumber, SiteUnit)
+# BECv12_noSorts <- anti_join(SS.Forest, BECv12_SU2) ### Accepted site series not found in any sorts
+# fwrite(BECv12_SU2, "./outputs/BECv12_Forest_SU.csv")
+# 
+# BECv13_SU <-     list.files(path = "./inputs/BECv13_SU/",
+#                pattern = "*.csv", 
+#                full.names = T) %>% 
+#     map_df(~read_plus(.))
+# BECv13_SU <- BECv13_SU %>% distinct()
+# fwrite(BECv13_SU, "./outputs/BECv13_Added_SU.csv")
+# 
+# plot.dups <- left_join(BECv13_SU, BECv12_SU2 )
+# plot.dups <- plot.dups$PlotNumber %>% as.character()
+# BECv12_SU2 <- BECv12_SU2 [!PlotNumber %in% plot.dups]
+# BECv13_SU <- rbind(BECv12_SU2, BECv13_SU) %>% distinct()
+# 
+# fwrite(BECv13_SU, "./clean_tabs/BECv13_Forest_SU.txt")
 
 ```
 
@@ -91,10 +99,10 @@ fwrite(Hier.clean, './outputs/BECv12_Hierarchy_Matrix.csv')
 ```{r plots per SU, echo=FALSE}
 
 BGCv13_nplots <- BECv13_SU %>% count(SiteUnit) %>% distinct()##plots per SU
-BGCv13_missing <- anti_join(SS.Forest, BGCv13_nplots ) %>% select(-SS_Name) %>%  distinct()
+BGCv13_missing <- anti_join(SS.Forest, BGCv13_nplots )  %>%  distinct() #%>% select(-SS_Name)
 
 ```
-
+Exports hierarchy matrix with new units added into an unplaced Formation 
 ```{r check SU units in hierarchy}
 SU_in_Hier <- full_join(BGCv13_nplots, Hier.clean)
 Hier.clean2 <- SU_in_Hier[!is.na(n),] #removes both hierarchy units without site series and site series without plots
