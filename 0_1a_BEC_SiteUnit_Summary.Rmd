@@ -48,7 +48,8 @@ When you click the **Knit** button a document will be generated that includes bo
 
 ```{r import data}
 ###Import BECMaster vegetation plot data produced from 0_BEC_data_import_clean.R script
-load("./inputs/VegDat_Clean.RData")
+#load("./inputs/VegDat_Clean.RData")
+vegData <- fread("./inputs/BECMaster_VegR_clean.csv")
 vegDat2 <- vegData
 ##Import SU table for new Site Series of Interest
 NewSS <- read.csv("NewSiteSeries_SU.csv", stringsAsFactors = FALSE)
