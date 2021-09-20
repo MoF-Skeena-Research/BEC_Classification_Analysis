@@ -1,9 +1,29 @@
 ---
-title: "Hierarchy_Environment"
+title: "Create Environment Data sets and summaries"
 author: "Will MacKenzie"
 date: "16/01/2021"
 output: html_document
 ---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+require(tidyverse)
+require(tidymodels)
+require(data.table)
+require(data.tree)
+require(DataExplorer)
+require(C50)
+require(indicspecies)
+require(doParallel)
+require(Hmsc)
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+cloud_dir <- "F:/OneDrive - Personal/OneDrive/BEC_Classification_Paper/"
+#cloud_dir <- "F:/OneDrive - Government of BC/CCISSv12/"
+```
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -12,6 +32,9 @@ require(ggplot2)
 ```
 
 ## Environmental comparison of hierarchy units
+##Inputs are plots with environment data.
+Need to overlay clean locations in ClimateBC to get climate dataset for use in this script
+1. rSMR converts to aSMR, rSMR, exposure limiting factors, successional status, slope, aspect, meso slope, 
 ###Climate + BGC
 ###Site - aSMR, nutrients, topographic 
 ###Map
