@@ -1,7 +1,7 @@
 ---
-title: "MachineLearningHigherOrders"
+title: "Creating Alliances from Species Groups"
 author: "Will MacKenzie & Kiri Daust"
-date: "05/07/2021"
+date: "17/09/2021"
 output: html_document
 ---
 
@@ -16,32 +16,21 @@ require(DataExplorer)
 require(C50)
 require(indicspecies)
 require(doParallel)
+require(Hmsc)
 source("./_functions/_TabletoTree.R")
 source("./_functions/_TreetoTable.R")
 cloud_dir <- "F:/OneDrive - Personal/OneDrive/BEC_Classification_Paper/"
 #cloud_dir <- "F:/OneDrive - Government of BC/CCISSv12/"
 ```
 
-1. A machine learning model of high-level hierarchical BEC Forest units
-a. Create a ML model of Forested Orders using BECv11 site series that meet minimum plot requirements.
-b. Use only tree species for first round of model build for the forested Orders.
-c. Predict membership of new BECv12 units and assign to orders then rebuild ML model.
-d. Review any mis predicted site series for reassignment.
-e. Compare similarity of tree composition within units (noise clustering) to find outliers that may represent new Orders (test by leaving out known units)
-f. Create vegetation summaries of Orders and compare vegetation (all species now). Identify climatic indicator species groups.
-g. Create climatic and site attributes summary of Orders 
-h. Create maps of plot locations for each Order
-i. Hierarchy tree graphic
-
-2. Do pair-wise analysis of site series within Orders using high constancy species to analyze site series and create Associations/SubAssociations.
-
-3. Build Alliances. Focus should be on identifying species groups that reflect different site conditions.
-
+Alliance Scripts
+2. Build Alliances by Orders from NewML scripts. Focus should be on identifying species groups that reflect different site conditions.
+a. COuld use JSDM from Hmsc package to find species - specoes associations and joint species groups related to environmental variables. This would then allow climate change projections (disaggregation of species associations)
 a. Use some of the techniques of indicspecies package to create Alliances based on indicator group creation and analysis.
-b. Try to build a machine learning model of Alliances
+b. Try to build a machine learning model of Alliances?
 c. Vegetation and Environment summary of Alliances
 
-4. Document hierarchy
+3. Do pair-wise analysis of site series within Alliances using high constancy species to analyze site series and create Associations/SubAssociations.4. Document hierarchy
 
 5. Build model to assign new units and unassigned plots
 Challenge here is to make a constant list of species between model and new units.
@@ -50,110 +39,52 @@ b. Predict Order membership of BECMaster plots that are unassigned to existing s
 
 6. Build for non-forested units. Classes based on major site level differences rather than climate and using major species groups (e.g. Hydrophytic Carex spp )
 May wish to assign a temporary notree pseudo species to all units that have no trees to help separate forested hierarchy from non-forested hierarchy (Hurdle model)
+## Import SU table and BECv12 site series
 
 ```{r import data}
-### Vegetation From BECMaster cleaning script Long form Plot|Species|Cover (across all layers)
-### or From Vpro export
-#BGCZone <- fread(paste0(cloud_dir,"All_BGCs_Info_v12_2.csv"), data.table=FALSE)
-vegDat2 <- fread("./inputs/BECMaster_VegR_clean.csv", data.table = FALSE)
+vegDat2 <- fread("./clean_tabs/BECMaster_VegR_clean.csv", data.table = FALSE)
 sppMaster <- fread('./inputs/SpeciesMaster05Oct2019.csv') %>% filter(Codetype == "U")
-
-#####################importing Vpro veg data########################################
-############### Uses 3 column R export FORMAT FROM Vpro with Lifeform option selected
-#load("./inputs/VegDat_Raw.RData")##includes type field for lifeform
-#vegDat2 <- vegData %>% filter(!is.na(Type))
-###SU table
-SUTab <- fread("./inputs/ALLBECSU_2021_SU.csv")
-SUTab$SiteUnit <-  trimws(SUTab$SiteUnit)
-SS.names <- unique(SUTab$SiteUnit)
-
-# #####list of official current and future correlated units from BECdb
-# current <- c('Current', 'Future')
-# ecotypes <- c("Forest", "Deciduous")
-# #### cleaned list of official site series
-# BECdb_SS <- fread("./inputs/BECdb_SiteUnitv12.csv") %>% filter(Status %in% current) %>% filter(ArchivedinVersion == "") %>% filter(`Forest-NonForest` %in% ecotypes) %>% 
-#   select(MergedBGC_SS, SS_NoSpace, SiteUnitLongName, SiteUnitScientificName) %>% rename (SiteUnit = 1, SSName = 3, SciName = 4) %>% distinct(SiteUnit, .keep_all = TRUE)
-# #### compare SUTab to BECdb.  Whan all BECdb units to have data and SUTab to include no unofficial units
-# SS_missing <- full_join(SUTab, BECdb_SS) %>% filter(is.na(PlotNumber))
-##Import Vpro hierarchy table widen and reformat
-```
-
-
-```{r import hierarchy data}
-##Import cleaned wide matrix form 0_0
-SUhier <- fread("./clean_tabs/BECv13_Hierarchy_Matrix.csv")
+BECv13_SU <- fread("./clean_tabs/BECv13Analysis_Forest_17Sept2021_SU.txt", stringsAsFactors = FALSE)
+BECv13_Hier <- fread("./clean_tabs/BEC13_HierarchyMatrixModelled_v1.csv")
+BECv13_vegSum <- fread('./clean_tabs/BECv13SiteUnitSummary.csv', stringsAsFactors = FALSE)
+BECv13_env <- fread('./clean_tabs/BECMaster_env_climate_data.csv', stringsAsFactors = FALSE)
+#---------------
+BECv13Hier.data <- left_join(BECv13_vegSum,BECv13_Hier)
 
 ```
-
-##roll up into site series summary data
-```{r summarize site series, echo=FALSE}
-#SUTab <- fread("./inputs/BECMster_V2020_2_SU.csv")
-### Summarize by SU including mean cover and constancy percent
-##roll up into site series summary data
-### Filter out all species but tree species
-vegDat <- as.data.table(vegDat2)
-
-vegDat[SUTab, SiteUnit := i.SiteUnit, on = "PlotNumber"]
-vegDat <- vegDat[!is.na(SiteUnit) & SiteUnit != "",]
-
-vegDat <- unique(vegDat[!is.na(SiteUnit) & SiteUnit != "",])
-vegDat3 <- vegDat[,if(.N > 1) .SD, by = .(SiteUnit,Species)]
-vegDat3[,nPlots := length(unique(PlotNumber)), by = .(SiteUnit)]
-vegSum <- vegDat3[,.(MeanCov = sum(Cover)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)]
-fwrite(vegSum, './clean_tabs/BECv13SiteUnitSummary.csv')
-```
-
 
 ```{r reduce summary for analysis, echo=FALSE}
+#For each Order
+Orders <- unique(BECv13Hier.data$Order)
+Orders
+Order.dat <- BECv13Hier.data %>% filter(Order == "ORDER Picegla-Hylospl (BWBS/SWB) (Sw)")
 ##limit life forms to tree species
-trees <- c(1,2)
-constCut <- 0.1 ##remove species less than cutoff
-covercut <- 0.1
-treespp <- sppMaster[Lifeform %in% trees, ] %>% dplyr::select(Code)
-treespp <- as.vector(treespp$Code)
-vegDat_test <- vegSum[Species %in% treespp,]### include only trees for hierarchy build
-vegDat_test <- vegDat_test %>% dplyr::filter(MeanCov > covercut) %>% dplyr::filter(Constancy > covercut)
+#trees <- c(1,2)
+constcut <- 55 ##remove species less than cutoff
+covercut <- 0
+nplots <- 3
+##max constancy by species
+Spp.highconst <- Order.dat  %>%  group_by(Species) %>%
+  summarise(max = max(Constancy, na.rm=TRUE)) %>% filter(max > constcut) %>% select(Species) 
+Spp.highconst <- Spp.highconst$Species %>% as.character
 
-
-tree.sum <- as.data.table(vegDat_test)#vegDat <- as_tibble(vegDat)
-tree.sum$SiteUnit <- as.factor(tree.sum$SiteUnit)
-# vegDat3 <- vegDat %>% group_by(SiteUnit, Species) %>% filter(nPlots > 1)
-
-# vegDat3 <- vegDat %>% group_by(SiteUnit, Species) %>% mutate(nPlots = n_distinct(PlotNumber))
-# vegDat <- as.data.table(vegDat)
-
-#-------------problem with the mean cover calculation
-# 
-#vegSum <- vegDat[,.(MeanCov = sum(Cover)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)] %>% mutate(across(where(is.numeric), round, 3))
-
-fwrite(tree.sum, './inputs/SiteUnitConiferSummary.csv')
-
-##build grand summary table that then can be reduce to only species with high constancy in a least one unit. Probably not too useful for very large analyses
-
-#### linkages to Site Association Analysis Units from other script will replace this.
+Order.dat2 <- Order.dat[Order.dat$Species %in% Spp.highconst,] %>% dplyr::filter(MeanCov > covercut) %>% filter(nPlots >= nplots)
+Order.dat2 <- Order.dat2 %>% select(Order,SiteUnit, Species, MeanCov, Constancy)
 
 ```
 
-
-```{r filter and prepare for analysis}
-#Hier.clean <- fread("./inputs/cleanedHierarchy.csv")
-#vegSum <- fread('./inputs/SiteUnitForestedSummary.csv')
-vegSum <- tree.sum
-SS_good <- vegSum %>% filter(nPlots >=3) %>% filter(Constancy >= 33)  %>% distinct()  #%>% rename(SiteUnit = SiteUnit))## Select only site series will enough plots
-Hier.units <- SUhier %>% dplyr::select(SiteUnit, Class, Order, Suborder) %>% distinct()
-#Hier.units <- Hier_update%>% select(SiteUnit, Class, Order, Suborder)
-Hier.data <- left_join(Hier.units, SS_good) %>% filter(!is.na(nPlots)) %>% arrange(Species) %>% distinct()
-fwrite(Hier.data, './inputs/SiteUnitForested_w_HierarchyUnits.csv')
-```
 
 ```{r some hierarchy stats}
-classes <- unique(Hier.data$Class)
-orders <- unique(Hier.data$Order)
-suborders <- unique(Hier.data$Suborder)
+siteunits <- unique(Order.dat2$SiteUnit)
+siteunits
+species.const <- unique(Order.dat2$Species)
+species.const
+Order_SU <- BECv13_SU %>% filter(SiteUnit %in% siteunits)
+fwrite(Order_SU, "./outputs/Order_SU.csv")
 ### Choose hierarchical level for analysis
 
 class.dat <-
-  Hier.data %>% dplyr::select(SiteUnit, Order, Species, MeanCov) %>% 
+  Order.dat2 %>% dplyr::select(SiteUnit, Order, Species, MeanCov) %>% 
   pivot_wider(id_cols = c(SiteUnit, Order),
     names_from = Species,
     values_from = MeanCov) %>% 
@@ -163,67 +94,35 @@ class.dat <-
 
 #DataExplorer::create_report(class.dat)
 ```
-Data pre-processing includes the following steps:  
+```{r environmental summary by site series}
 
-```{r prep data, include = TRUE, echo = FALSE}
+Order_env <- left_join(Order_SU, BECv13_env, by = "PlotNumber") %>% filter(!MAT == -9999) %>% select(PlotNumber, SiteUnit,  CMD, DD5, DD1040, bFFP)
 
-classID <- class.dat %>% dplyr::select(SiteUnit, Order)
-#class.dat2 <- class.dat %>% select(-SiteUnit)
-BEC_good <- class.dat %>% filter(!Order == "unplaced") %>% arrange(SiteUnit)
-BEC_new <- class.dat %>% filter(Order == "unplaced") %>% arrange(SiteUnit)
-SU_names <- as.data.frame(BEC_good$SiteUnit) %>%  distinct() %>% rowid_to_column('.row') %>% dplyr::rename("SiteUnit" = 2)
-# 1: split into training and test data (0.75/0.25) training and testing 
+Order_env <- unique(Order_env[!is.na(SiteUnit) & SiteUnit != "",])
+Order_env3 <- Order_env[,if(.N > 1) .SD, by = .(SiteUnit)]
+Order_env3 [,nPlots := length(unique(PlotNumber)), by = .(SiteUnit)]
+SS_envsum <- Order_env3[,.(MeanCov = sum(Cover, na.rm = TRUE)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)]
+fwrite(vegSum, './clean_tabs/BECv13SiteUnitSummaryVegData.csv')
 
-# BEC_split <-  initial_split(BEC_all, 
-#                               strata = Order,
-#                               prop = 0.9)
-#   
-# BEC_train <- training(BEC_split)
-# BEC_test <- testing(BEC_split)
-BEC_recipe <-
-    recipe(Order ~ ., data = BEC_good) %>%
-     update_role(SiteUnit, new_role = "id variable") %>% 
-  #update_role(-SiteUnit, new_role = "predictor") %>% 
-    #step_corr(all_numeric()) %>%        # remove correlated covariates
-    #step_dummy(all_nominal(),-all_outcomes()) %>%    
-    #step_zv(all_numeric()) %>%          # remove values with no variance
-   # step_smote(Class) %>%
-    prep() 
-    summary(BEC_recipe)
-    
-BEC_fmodel <- rand_forest(mtry = 5, min_n = 2, trees = 501) %>%
-  set_mode("classification") %>%
-  set_engine("ranger", importance = "impurity") #or "permutations
-
-# note in RF as a tree based model it is not required to scale and normalize covariates and may have negative influence on the model performance  
-```
-
-```{r build final model, include = FALSE}
-
-# 2: set up cross validation for parameter tuning data sets # note vc is default to 10 fold
-BEC_workflow <- workflow() %>%
-  add_model(BEC_fmodel) %>% 
-    add_recipe(BEC_recipe)
-
-BEC_ranger_model <- fit(BEC_workflow, BEC_good)
-BEC_ranger_model$fit
-
-BEC.missed <- predict(BEC_ranger_model, BEC_good) %>% bind_cols(BEC_good %>% dplyr::select(SiteUnit, Order)) %>% 
-  mutate(Compare = ifelse(.pred_class == Order, "Same", "Diff")) %>% filter(Compare == "Diff")
-BEC.mis.list <- BEC.missed$SiteUnit %>% as.character
-
-SS_misID_SU <- SUTab[SUTab$SiteUnit %in% BEC.mis.list,]
-fwrite(SS_misID_SU, "./outputs/WrongOrderPredicted_SU.csv")
 ```
 
 
-```{r predict unplaced}
-newBEC <- predict(BEC_ranger_model, BEC_new) %>% bind_cols(BEC_new %>% dplyr::select(SiteUnit)) 
-newBEC$.pred_class <- newBEC$.pred_class  %>%  as.character
+```{r explore data}
+require(ExPanDaR)
+# export data and code to a notebook
+ExPanD(Order_env, export_nb_option = TRUE)
 
-Hier.update <- left_join(SUhier, newBEC) %>% mutate(Order = ifelse(!is.na(.pred_class), .pred_class, Order)) %>%
-        dplyr::select(-.pred_class) %>% filter(!Order == "")
-Hier.update <- as.data.table(Hier.update)
+# open a shiny app
+ExPanD(df) 
+
+
+```
+
+
+```{r joint distribution species model}
+#find species that jointly move with environment
+
+
 ```
 
 
