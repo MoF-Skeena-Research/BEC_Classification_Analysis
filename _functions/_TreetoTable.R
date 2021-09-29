@@ -1,3 +1,4 @@
+
 treeToTable <- function(SUhier){
   hierLookup <- SUhier[,.(ID,Name)]
   HierClean <- SUhier[,.(ID,Parent,Name,Level)]
@@ -21,13 +22,14 @@ treeToTable <- function(SUhier){
   wideTab[,level_1 := NULL]
   tab2 <- melt(wideTab, id.vars = "ID")
   tab2 <- na.omit(tab2)
+  tab2 <- as.data.table(tab2)
   tab2[HierClean, Level := i.Level, on = c(value = "Name")]
   dupLevels <- tab2[,.(Len = .N), by = .(ID,Level)]
   dupLevels <- dupLevels[Len > 1,]
   dups <- tab2[ID %in% dupLevels$ID,]
   setorder(dups,"ID")
   dups[,variable := NULL] ##these are the branches with duplicates
-  tabOut <- dcast(tab2, ID ~ Level, value.var = "value", fun.aggregate = function(x){x[1]})
+  tabOut <- dcast(tab2, ID ~ Level, value.var = "value", fun.aggregate = function(x){x[1]}) %>% as.data.table
   setnames(tabOut, c("ID","Formation","Class","Order","Suborder","Alliance","Suball","Assoc","Subass","Facies","Working", "SiteUnit"))
   tabOut[is.na(Subass), Subass := Assoc]
   tabOut[is.na(Suborder), Suborder := Order]

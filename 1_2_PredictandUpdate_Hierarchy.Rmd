@@ -60,7 +60,7 @@ May wish to assign a temporary notree pseudo species to all units that have no t
 ### Vegetation From BECMaster cleaning script Long form Plot|Species|Cover (across all layers)
 ### or From Vpro export
 #BGCZone <- fread(paste0(cloud_dir,"All_BGCs_Info_v12_2.csv"), data.table=FALSE)
-vegDat2 <- fread("./clean_tabs/BECMaster_VegR_clean.csv", data.table = FALSE)
+vegDat2 <- fread("../BECMaster_Cleaning/clean_data/BECMaster_VegR_clean.csv", data.table = FALSE)
 taxon.all <- fread("D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv", header = T, stringsAsFactors = F, strip.white = T) %>% filter(Codetype == "U")
 
 #####################importing Vpro veg data########################################
@@ -68,11 +68,12 @@ taxon.all <- fread("D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv", h
 #load("./inputs/VegDat_Raw.RData")##includes type field for lifeform
 #vegDat2 <- vegData %>% filter(!is.na(Type))
 ###SU table
-#SUTab <- fread("./inputs/ALLBECSU_2021_SU.csv")
-SUTab <- fread("./clean_tabs/BECv13Analysis_Forest_17Sept2021_SU.txt")
+SUTab <- fread("./clean_tabs/BECv13Analysis_Forest_17Sept2021_SU.csv")
+Vpro.hier <- fread("./clean_tabs/BECv13_ForestHierarchy_v2_26Sept2021_Hierarchy.csv")
 SUTab$SiteUnit <-  trimws(SUTab$SiteUnit)
 SS.names <- unique(SUTab$SiteUnit)
-
+Hier.matrix <- treeToTable(Vpro.hier)
+Hier.matrix <- Hier.matrix$table
 # #####list of official current and future correlated units from BECdb
 # current <- c('Current', 'Future')
 # ecotypes <- c("Forest", "Deciduous")
@@ -104,12 +105,11 @@ fwrite(vegSum, './clean_tabs/BECv13SiteUnitSummaryVegData.csv')
 ```
 
 
-
 ```{r reduce summary for analysis, echo=FALSE}
 ##limit life forms to tree species
 trees <- c(1,2)
-constCut <- 0.1 ##remove species less than cutoff
-covercut <- 0.1
+constCut <- 33 ##remove species less than cutoff
+covercut <- 1
 treespp <- taxon.all[Lifeform %in% trees, ] %>% dplyr::select(Code)
 treespp <- as.vector(treespp$Code)
 vegDat_test <- vegSum[Species %in% treespp,]### include only trees for hierarchy build
@@ -135,6 +135,14 @@ fwrite(tree.sum, './inputs/SiteUnitConiferSummary.csv')
 
 ```
 
+```{r filter and prepare for analysis}
+
+vegSum <- tree.sum
+SS_good <- vegSum %>% filter(nPlots >3) %>% filter(Constancy >= 33)  %>% distinct()  #%>% rename(SiteUnit = SiteUnit))## Select only site series will enough plots
+Hier.units <- Hier.matrix %>% dplyr::select(SiteUnit, Class, Order, Suborder) %>% distinct()
+Hier.data <- left_join(Hier.units, SS_good) %>% filter(!is.na(nPlots)) %>% arrange(Species) %>% distinct()
+#fwrite(Hier.data, './inputs/SiteUnitForested_w_HierarchyUnits.csv')
+```
 
 ```{r filter and prepare for analysis}
 #Hier.clean <- fread("./inputs/cleanedHierarchy.csv")
@@ -143,31 +151,32 @@ vegSum <- tree.sum
 SS_good <- vegSum %>% filter(nPlots >=3) %>% filter(Constancy >= 33)  %>% distinct()  #%>% rename(SiteUnit = SiteUnit))## Select only site series will enough plots
 
 class.dat <-
-  SS_good  %>% dplyr::select(SiteUnit, Species, MeanCov) %>% 
-  pivot_wider(id_cols = c(SiteUnit),
+  Hier.data %>% dplyr::select(SiteUnit, Suborder, Species, MeanCov, Constancy) %>% 
+  pivot_wider(id_cols = c(SiteUnit, Suborder),
     names_from = Species,
-    values_from = MeanCov) %>% 
-  #mutate(hierunit = ifelse(hierunit == "", "unplaced", hierunit)) %>% filter(!SiteUnit == "") %>% 
-   replace(is.na(.),0) %>% 
-  mutate_if(is.character, as.factor) %>% distinct()
+    values_from = c(MeanCov, Constancy)) %>% 
+  mutate(Suborder = ifelse(is.na(Suborder) | Suborder == "", "unplaced", Suborder)) %>% filter(!SiteUnit == "") %>%  mutate_if(is.character, as.factor) %>% 
+   replace(is.na(.),0) %>% distinct() %>% droplevels()
 ```
 
 
-```{r predict all v13 from original hierarchy in v12}
-load("./rFmodels/BECv12_Suborders_rFmodel_updated.Rdata")
-BEC_new <- class.dat
+```{r fix new data to match species of model}
+load("./rFmodels/BECv13_Suborders_rFmodel.Rdata")
+BEC_new <- class.dat %>% filter(Suborder == "unplaced")
+BEC_new2 <- BEC_new
 BGC_new.var <- colnames(class.dat)
 model_vars <- as.data.frame(BEC_ranger_model$fit$fit$fit$variable.importance) %>% tibble::rownames_to_column()
-newcols <- model_vars[!model_vars$rowname %in% BGC_new.var,] %>% select(1)
+newcols <- model_vars[!model_vars$rowname %in% BGC_new.var,] %>% dplyr::select(1)
 newcols <- newcols$rowname %>% as.character
-BEC_new2 <- cbind(BEC_new, setNames( lapply(newcols, function(x) x=NA), newcols) )
-BEC_new2$Suborder <- NA %>% as.factor
+#Run next line if species list does not match model
+##BEC_new2 <- cbind(BEC_new, setNames( lapply(newcols, function(x) x=NA), newcols) )
 BEC_new2 <- BEC_new2 %>%  replace(is.na(.),0)
+BEC_new2$Suborder <- NA %>% as.factor
 BEC_new2$SiteUnit <- BEC_new2$SiteUnit %>% as.factor %>% droplevels()
 #BEC_new2 <- BEC_new2 %>% dplyr::select(-SiteUnit)
 ```
 
-```{r}
+```{r predict units and add info to hierarchy}
 SU_names <- as.data.frame(BEC_new2$SiteUnit) %>%  distinct() %>% rowid_to_column('.row') %>% dplyr::rename("SiteUnit" = 2)
 
 BEC_recipe <-
@@ -176,7 +185,7 @@ BEC_recipe <-
     prep() 
     summary(BEC_recipe)
     
-BEC_fmodel <- rand_forest(mtry = 5, min_n = 2, trees = 501) %>%
+BEC_fmodel <- rand_forest(mtry = 8, min_n = 4, trees = 501) %>%
   set_mode("classification") %>%
   set_engine("ranger", importance = "impurity") #or "permutations
 
@@ -186,20 +195,44 @@ BEC_workflow <- workflow() %>%
 
 newBEC <- predict(BEC_ranger_model, BEC_new2) %>% bind_cols(BEC_new2 %>% dplyr::select(SiteUnit))# %>%  rename(Name = SiteUnit) %>% distinct()
 #newBEC$Name <- newBEC$Name  %>%  as.character
-
-SUhier <- fread("./inputs/Test3_Hierarchy.csv") %>% as.data.frame() ## import orginal tree for updating
-
+#####PROBLEM HERE
+SUhier <- Vpro.hier
+#SUhier <- fread("./outputs/UpdatedVPROHierarchyv12_updated.csv") %>% as.data.frame() ## import original tree for updating
+SUhier.suborder <- SUhier %>% filter(Level ==4)
 
 newBEC2 <- newBEC %>% rename(Name = .pred_class)
-pred.ID <- newBEC2 %>% select(Name) %>% distinct() %>% left_join(testReverse) %>% select(Name, ID) ## Parent Code for new predictions
-newBEC3 <- left_join(newBEC2, pred.ID, by = "Name") %>% select(-Name) %>% rename(Parentnew = ID, Name = SiteUnit)
-
+pred.ID <- newBEC2 %>% dplyr::select(Name) %>% distinct() %>% left_join(SUhier) %>% dplyr::select(Name, ID) ## Parent Code for new predictions
+newBEC3 <- left_join(newBEC2, pred.ID, by = "Name") %>% dplyr::select(-Name) %>% rename(Parentnew = ID, Name = SiteUnit)
+###updates units already in hierarchy
 SUhier2 <- left_join(SUhier, newBEC3) %>% mutate(Parent = ifelse(!is.na(Parentnew), Parentnew, Parent)) %>% 
-            select(-Parentnew) %>% select(ID, Name, Parent, Level)
-SUhier2$Parent <- ifelse(SUhier2$Parent == 1, "", SUhier2$Parent) %>% as.integer
-###write out to Vpro format to review
-fwrite(SUhier2, "./outputs/UpdatedVPROHierarchyv13_updated.csv")
+            dplyr::select(-Parentnew) %>% dplyr::select(ID, Name, Parent, Level)
+SUhier.names <- SUhier2$Name %>% as.character
+fwrite(SUhier2, "./outputs/UpdatedVPROHierarchyv13_updated_29Sept.csv")
+
 ```
+
+
+```{r append units not in hierarchy}
+##append units not already in hierarchy
+newunits <- newBEC3[!newBEC3$Name %in% SUhier.names,] %>% rename(Parent = Parentnew)
+newunits$Level <- 11
+#newunits$ID <- NA %>% as.integer
+
+### return max value of SUhier2 ID then add running ID numbers to new units from max + 1
+maxID <- max(SUhier2$ID) %>% as.integer
+newnum <- nrow(newunits)
+newunits$ID <-  (maxID +1):(maxID  + newnum)
+newunits <- newunits %>% dplyr::select(ID, Name, Parent, Level)
+SUhier3 <- rbind(SUhier2, newunits)
+
+
+SUhier3$Parent <- ifelse(SUhier3$Parent == 1, "", SUhier3$Parent) %>% as.integer
+###write out to Vpro format to review
+fwrite(SUhier3, "./outputs/UpdatedVPROHierarchyv13_updated_28Sept.csv")
+```
+
+
+############not used below
 
 
 ```{r}
@@ -207,9 +240,6 @@ SUhier.matrix <- treeToTable(testReverse2)
 
 
 Hier.clean2 <- SUhier2$table
-
-
-
 
 
 Hier.update <- left_join(SUhier, newBEC) %>% mutate(suborder = ifelse(!is.na(.pred_class), .pred_class, suborder)) %>%
@@ -229,6 +259,8 @@ Hier.update <- left_join(SUhier, newBEC) %>% mutate(hierunit = ifelse(!is.na(.pr
 Hier.update <- as.data.table(Hier.update)
 fwrite(Hier.update, "./clean_tabs/BEC13_HierarchyMatrixModelled_v1.csv")
 ```
+
+
 ```{r create updated VPro hierarchy}
 ##convert matrix to tree, add in new units
 Hier.update <- fread("./clean_tabs/BEC13_HierarchyMatrixModelled_v1.csv")
@@ -244,6 +276,7 @@ testReverse2$Parent <- ifelse(testReverse2$Parent == 1, "", testReverse2$Parent)
 fwrite(testReverse2, "./outputs/UpdatedVPROHierarchyv13.csv")
 
 ```
+
 ```{r some hierarchy stats}
 classes <- unique(Hier.data$Class)
 orders <- unique(Hier.data$Order)

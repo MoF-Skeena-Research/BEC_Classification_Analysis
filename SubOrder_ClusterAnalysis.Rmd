@@ -64,9 +64,9 @@ May wish to assign a temporary notree pseudo species to all units that have no t
 
 ```{r import data}
 vegDat2 <- fread("./clean_tabs/BECMaster_VegR_clean.csv", data.table = FALSE)
-sppMaster <- fread('D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv') %>% filter(Codetype == "U")
+taxon.all <- fread('D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv') %>% filter(Codetype == "U")
 BECv13_SU <- fread("./clean_tabs/BECv13Analysis_Forest_17Sept2021_SU.csv", stringsAsFactors = FALSE)
-BECv13_HierTree <- fread("./clean_tabs/BECv13Hierarchy_v1_22Sept2021_Hierarchy.csv")
+BECv13_HierTree <- fread("./clean_tabs/BECv13_ForestHierarchy_v2_26Sept2021_Hierarchy.csv")
 levelNames <- c("Formation", "Class", "Order", "Suborder", "Alliance", "Suball", "Assoc", "Subass", "Facies", "Working", "SiteUnit")
 BECv13_Hier <- treeToTable(BECv13_HierTree) ## convert matrix to tree
 BECv13_Hier <- BECv13_Hier$table
@@ -80,15 +80,19 @@ BECv13Hier.data <- left_join(vegSum,BECv13_Hier)
 
 ```
 
-```{r reduce summary for alliance analysis, echo=FALSE}
+```{r reduce summary for order analysis, echo=FALSE}
 #For each Order
-Orders <- unique(BECv13Hier.data$Suborder)
+Orders <- unique(BECv13Hier.data$Order)
 Orders
-Order.dat <- BECv13Hier.data %>% filter(Suborder == "SUBORDER FdPy-Pseuspi (PP transition)")
+Order.dat <- BECv13Hier.data %>% filter(Order == "ORDER Pseumen1-Calarub (Interior Fd forests(Fd or CALARUB)")
 ##limit life forms to tree species
-#trees <- c(1,2)
+trees <- c(1,2)
+treespp <- taxon.all[Lifeform %in% trees, ] %>% dplyr::select(Code)
+treespp <- as.vector(treespp$Code)
+Order.dat <- Order.dat[Species %in% treespp,]
+#
 constcut <- 55 ##remove species less than cutoff
-covercut <- 0
+covercut <- 1
 nplots <- 3
 ##max constancy by species
 Spp.highconst <- Order.dat  %>%  group_by(Species) %>%
@@ -122,29 +126,6 @@ class.dat <-
 
 #DataExplorer::create_report(class.dat)
 ```
-```{r environmental summary by site series}
-
-Order_env <- left_join(Order_SU, BECv13_env, by = "PlotNumber") %>% filter(!MAT == -9999) %>% dplyr::select(PlotNumber, SiteUnit,  CMD, DD5, DD1040, bFFP)
-
-Order_env <- unique(Order_env[!is.na(SiteUnit) & SiteUnit != "",])
-Order_env3 <- Order_env[,if(.N > 1) .SD, by = .(SiteUnit)]
-Order_env3 [,nPlots := length(unique(PlotNumber)), by = .(SiteUnit)]
-#SS_envsum <- Order_env3[,.(MeanCov = sum(Cover, na.rm = TRUE)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Sp)]
-#fwrite(vegSum, './clean_tabs/BECv13SiteUnitSummaryVegData.csv')
-
-```
-
-
-```{r explore data}
-require(ExPanDaR)
-# export data and code to a notebook
-ExPanD(Order_env, export_nb_option = TRUE)
-
-# open a shiny app
-ExPanD(df) 
-
-
-```
 
 ```{r cluster of veg summary}
 VegMatrix <- as.data.frame(Order.vegmatx)
@@ -155,8 +136,71 @@ VegMatrix[is.na(VegMatrix)] <- 0
 Vegchord = decostand(VegMatrix,"normalize")
 ```
 
+```{r cluster analysis}
+dd <- dist(Vegchord)
+hc <- hclust(dd, method = "ward.D2")
+
+flexbeta <- function (dis,beta) 
+{
+  alpha <- (1-beta)/2
+  out <- agnes(dis,meth='flex',par.method=alpha)
+  out
+}
+hc <- flexbeta(dd,-0.25)
+hc <- as.hclust(hc)
+dend <- as.dendrogram(hc)
+####plots from ape package
+plot(as.phylo(hc), type = "unrooted", cex = 0.5,no.margin = TRUE, lab4ut = "axial")
+
+plot(as.phylo(hc), cex = 0.5, label.offset = 0.5)
+#plot(as.phylo(hc), type = "cladogram", cex = 0.5, label.offset = 0.5)
+#plot(as.phylo(hc), type = "fan")
+```
 ```{r tidy models kmeans}
+#https://emilhvitfeldt.github.io/ISLR-tidymodels-labs/unsupervised-learning.html
 ###tidy models kmeans clustering
+flexbeta <- function (dis,beta) 
+{
+  alpha <- (1-beta)/2
+  out <- agnes(dis,meth='flex',par.method=alpha)
+  out
+}
+
+veg.clust <-
+VegMatrix %>%
+  scale() %>%
+  dist() %>%
+  flexbeta(-0.25)# %>% 
+ # hclust(method =  "ward.D2") %>%
+  fviz_dend(k = 4)
+
+veg.clust <- VegMatrix %>%
+proxy::dist(method = "correlation") %>%
+  flexbeta(-0.25)
+
+
+VegMatrix %>%
+proxy::dist(method = "correlation") %>%
+  flexbeta(-0.25) %>% 
+ # hclust(method =  "ward.D2") %>%
+  fviz_dend(k = 4,
+            cex = 0.5,
+            ggtheme = theme_dendro())
+
+
+siteunit.clst <- tibble(
+  label = row.names(VegMatrix),
+  cluster_id = cutree(veg.clust, k = 3))
+
+##create.hierarchy
+clust.unit <- siteunit.clst %>% dplyr::select(cluster_id) %>% distinct() %>% rename(Name = cluster_id) %>% mutate(ID = Name, Parent = NA, Level = 4) %>% dplyr::select(ID, Name, Parent, Level)
+siteunit.clst2 <- siteunit.clst %>% rename(Parent = cluster_id, Name = label) %>% mutate(Level = 11, ID = 4+(row_number()))%>% dplyr::select(ID, Name, Parent, Level)
+test.hier <- rbind (clust.unit, siteunit.clst2)
+fwrite(test.hier, "./outputs/clusterhierarchy.csv") 
+```
+
+
+```{r tidy models kmeans}
 points <- 
   Vegchord %>% 
   select(-cluster)
@@ -199,77 +243,40 @@ p1 <-
 plot(p1)
 ```
 
-
-
-```{r cluster analysis}
-dd <- dist(Vegchord)
-hc <- hclust(dd, method = "ward.D2")
-
-flexbeta <- function (dis,beta) 
-{
-  alpha <- (1-beta)/2
-  out <- agnes(dis,meth='flex',par.method=alpha)
-  out
-}
-hc <- flexbeta(dd,-0.25)
-hc <- as.hclust(hc)
-dend <- as.dendrogram(hc)
-####plots from ape package
-plot(as.phylo(hc), type = "unrooted", cex = 0.5,no.margin = TRUE, lab4ut = "axial")
-
-plot(as.phylo(hc), cex = 0.5, label.offset = 0.5)
-#plot(as.phylo(hc), type = "cladogram", cex = 0.5, label.offset = 0.5)
-#plot(as.phylo(hc), type = "fan")
+```{r}
+library(cluster)
+fit <- kmeans(dd, 5)
+clusplot(Vegchord, fit$cluster, color=TRUE, shade=TRUE, labels=2, lines=0)
+out <- as.data.frame(cbind(SiteUnit, clusterNum = fit$cluster))
+head(out)
+write.csv(out, "./outputs/ClusterMembership.csv", row.names = FALSE)
 ```
 
 
-```{r}
-library(cluster)
-fit <- kmeans(dd, 10)
-#clusplot(Vegchord, fit$cluster, color=TRUE, shade=TRUE, labels=2, lines=0)
-out <- cbind(Plots, clusterNum = fit$cluster)
-head(out)
-write.csv(out, "./outputs/ClusterMembership.csv", row.names = FALSE)
-
+```{r hdbscan does not do a good job with suborder tree differentiation}
 # Centroid Plot against 1st 2 discriminant functions
 library(fpc)
-plotcluster(dd, fit$cluster)
+require(dbscan)
+require(factoextra)
 
-##Import SU table of plots desired for cluster analysis
-#SUhier <- read.csv("FebHierarchyLevelSU.csv", stringsAsFactors = FALSE)
-#### Reduce vegdata to those listed in SUHier
+VegMatrix2 <- as.data.frame(scale(VegMatrix))
+Veg.dist <- dist(VegMatrix2)
+plot(Veg.dist)
+dbscan::kNNdistplot(Veg.dist, k =  14)
+eps_plot <-  kNNdistplot(VegMatrix2, k=7)%>% abline(h = 7, lty = 2)
 
-########Function to define optimal eps
-dbscan::kNNdistplot(dd, k =  4)
-abline(h = 0.4, lty = 2)
-###compute DBSAN using two different packages
-set.seed(123)
-# fpc package
-res.fpc <- fpc::dbscan(dd, eps = 0.4, MinPts = 4)
-# dbscan package
-res.db <- dbscan::dbscan(dd, 0.4, 4)
-#Make sure that both version produce the same results:
-  
-  all(res.fpc$cluster == res.db)
+d <- fpc::dbscan(VegMatrix2, eps = 2, MinPts =  3, method = c( "hybrid"))
+d
+fviz_cluster(d, data = VegMatrix2 , stand = FALSE,
+             ellipse = FALSE, show.clust.cent = FALSE,
+             geom = "point",palette = "jco", ggtheme = theme_classic())
+table(d$cluster, row.names(Vegchord))
+plot(d, Vegchord , main = "DBScan")
+```
 
- # The result can be visualized as follow:
-    
-    fviz_cluster(res.fpc, dd, geom = "point")
-    
-    
-  dbscan(data, eps, MinPts = 5, scale = FALSE, 
-       method = c("hybrid", "raw", "dist"))
-# Compute DBSCAN using fpc package
-set.seed(123)
-db <- fpc::dbscan(dd, eps = 0.15, MinPts = 5, method = "dist")
-# Plot DBSCAN results
-plot(db, df, main = "DBSCAN", frame = FALSE)
-# Print DBSCAN
-print(db)
-## or plot with factoextra
-fviz_cluster(db, dd, stand = FALSE, frame = FALSE, geom = "point")
-km.res <- kmeans(dd, 5, nstart = 25)
-fviz_cluster(km.res, dd, frame = FALSE, geom = "point")
+
+```{r }
+
 
 ```
 

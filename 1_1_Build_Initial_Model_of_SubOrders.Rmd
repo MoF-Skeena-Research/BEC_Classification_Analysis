@@ -18,6 +18,7 @@ require(indicspecies)
 require(doParallel)
 source("./_functions/_TabletoTree.R")
 source("./_functions/_TreetoTable.R")
+source("./_functions/_VegdatSUsummary.R")
 cloud_dir <- "F:/OneDrive - Personal/OneDrive/BEC_Classification_Paper/"
 #cloud_dir <- "F:/OneDrive - Government of BC/CCISSv12/"
 ```
@@ -65,6 +66,7 @@ taxon.all <- fread("D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv", h
 
 ###SU table
 SUTab <- fread("./inputs/ALLBECSU_2021_SU.csv")
+#SUTab <- fread("./inputs/BECv13Analysis_Forest_17Sept2021_SU.csv")
 SUTab$SiteUnit <-  trimws(SUTab$SiteUnit)
 SS.names <- unique(SUTab$SiteUnit)
 
@@ -86,27 +88,19 @@ SS.names <- unique(SUTab$SiteUnit)
 ### Summarize by SU including mean cover and constancy percent
 ##roll up into site series summary data
 ### Filter out all species but tree species
-vegDat <- as.data.table(vegDat2)
-
-vegDat[SUTab, SiteUnit := i.SiteUnit, on = "PlotNumber"]
-vegDat <- vegDat[!is.na(SiteUnit) & SiteUnit != "",]
-
-vegDat <- unique(vegDat[!is.na(SiteUnit) & SiteUnit != "",])
-vegDat3 <- vegDat[,if(.N > 1) .SD, by = .(SiteUnit,Species)]
-vegDat3[,nPlots := length(unique(PlotNumber)), by = .(SiteUnit)]
-vegSum <- vegDat3[,.(MeanCov = sum(Cover, na.rm = TRUE)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)]
-fwrite(vegSum, './clean_tabs/BECv12SiteUnitSummaryVegData.csv')
-```
-
-##Import hierarchy matrix from 0_0_Plot_SU_Hierarchy script with original placements plus all unassigned units added to an unplaced Formation category
-```{r import  hierarchy data}
-##Import wide matrix as training data
-#SUhier <- fread("./outputs/BECv12_Hierarchy_Matrix.csv")
-
-###Import Vpro hierarchy and turn to widematrix
-Vpro.hier <- fread("./inputs/BECv12_Forests_Jan2021_Hierarchy.csv")
-SUhier <- treeToTable(Vpro.hier)
-Hier.clean <- SUhier$table
+vegSum <- VegdatSUsummary(vegDat2, SUTab)
+#vegDat_test <- vegSum %>% dplyr::filter(MeanCov > covercut) %>% dplyr::filter(Constancy > covercut) ## remove rare or very low cover species in SU
+# 
+# vegDat <- as.data.table(vegDat2)
+# 
+# vegDat[SUTab, SiteUnit := i.SiteUnit, on = "PlotNumber"]
+# vegDat <- vegDat[!is.na(SiteUnit) & SiteUnit != "",]
+# 
+# vegDat <- unique(vegDat[!is.na(SiteUnit) & SiteUnit != "",])
+# vegDat3 <- vegDat[,if(.N > 1) .SD, by = .(SiteUnit,Species)]
+# vegDat3[,nPlots := length(unique(PlotNumber)), by = .(SiteUnit)]
+# vegSum <- vegDat3[,.(MeanCov = sum(Cover, na.rm = TRUE)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)]
+#fwrite(vegSum, './clean_tabs/BECv12SiteUnitSummaryVegData.csv')
 ```
 
 ```{r reduce summary for analysis, echo=FALSE}
@@ -119,15 +113,27 @@ treespp <- as.vector(treespp$Code)
 vegDat_test <- vegSum[Species %in% treespp,]### include only trees for hierarchy build
 vegDat_test <- vegDat_test %>% dplyr::filter(MeanCov > covercut) %>% dplyr::filter(Constancy > covercut)
 
-
 tree.sum <- as.data.table(vegDat_test)#vegDat <- as_tibble(vegDat)
 tree.sum$SiteUnit <- as.factor(tree.sum$SiteUnit)
 
 
-fwrite(tree.sum, './inputs/SiteUnitConiferSummary.csv')
-
+#fwrite(tree.sum, './inputs/SiteUnitConiferSummary.csv')
 
 ```
+##Import hierarchy matrix from 0_0_Plot_SU_Hierarchy script with original placements plus all unassigned units added to an unplaced Formation category
+```{r import  hierarchy data}
+##Import wide matrix as training data
+#SUhier <- fread("./outputs/BECv12_Hierarchy_Matrix.csv")
+
+###Import Vpro hierarchy and turn to widematrix
+Vpro.hier <- fread("./inputs/BECv12_Forests_Jan2021_Hierarchy.csv")
+Vpro.hier <- as.data.table(Vpro.hier)
+#Vpro.hier <- fread("./inputs/BECv13Hierarchy_v1_22Sept2021_Hierarchy.csv")
+SUhier <- treeToTable(Vpro.hier)
+Hier.clean <- SUhier$table
+
+```
+
 
 
 ```{r filter and prepare for analysis}
@@ -136,7 +142,7 @@ vegSum <- tree.sum
 SS_good <- vegSum %>% filter(nPlots >=3) %>% filter(Constancy >= 33)  %>% distinct()  #%>% rename(SiteUnit = SiteUnit))## Select only site series will enough plots
 Hier.units <- Hier.clean %>% dplyr::select(SiteUnit, Class, Order, Suborder) %>% distinct()
 Hier.data <- left_join(Hier.units, SS_good) %>% filter(!is.na(nPlots)) %>% arrange(Species) %>% distinct()
-fwrite(Hier.data, './inputs/SiteUnitForested_w_HierarchyUnits.csv')
+#fwrite(Hier.data, './inputs/SiteUnitForested_w_HierarchyUnits.csv')
 ```
 
 ```{r some hierarchy stats}
@@ -193,11 +199,13 @@ BEC_ranger_model$fit
 
 save(BEC_ranger_model, file = "./rFmodels/BECv12_Suborders_rFmodel.Rdata")
 
-BEC.pred <- predict(BEC_ranger_model, BEC_good) %>% bind_cols(BEC_good %>% dplyr::select(SiteUnit, Suborder)) #%>%    mutate(Compare = ifelse(.pred_class == Suborder, "Same", "Diff")) %>% filter(Compare == "Diff")
+BEC.pred <- predict(BEC_ranger_model, BEC_good) %>% bind_cols(BEC_good %>% dplyr::select(SiteUnit, Suborder)) %>%  metrics(truth = Suborder, estimate = .pred_class)
 BEC.pred.list <- BEC.pred$SiteUnit %>% as.character
-
+BEC.missed <- BEC.pred  %>%    mutate(Compare = ifelse(.pred_class == Suborder, "Same", "Diff")) %>% filter(Compare == "Diff")
+fwrite(BEC.missed, "./outputs/MidplacedSuborders.csv")
+BEC.mis.list <- BEC.missed$SiteUnit %>% as.character
 SS_misID_SU <- SUTab[SUTab$SiteUnit %in% BEC.mis.list,]
-fwrite(SS_misID_SU, "./outputs/WrongOrderPredicted_SU.csv")
+#fwrite(SS_misID_SU, "./outputs/WrongOrderPredicted_SU.csv")
 ```
 
 
@@ -208,8 +216,6 @@ Hier.update <- Hier.clean
 levelNames <- c("Formation", "Class", "Order", "Suborder", "Alliance", "Suball", "Assoc", "Subass", "Facies", "Working", "SiteUnit")
 testReverse <- tableToTree(hierWide = copy(Hier.update),levelNames) ## convert matrix to tree
 
-fwrite(testReverse, "./outputs/FunctionTest_updated.csv")
-
 newBEC <- BEC.pred
 newBEC2 <- newBEC %>% rename(Name = .pred_class)
 pred.ID <- newBEC2 %>% select(Name) %>% distinct() %>% left_join(testReverse) %>% select(Name, ID) ## Parent Code for new predictions
@@ -217,9 +223,16 @@ newBEC3 <- left_join(newBEC2, pred.ID, by = "Name") %>% select(-Name, -Suborder)
 
 testReverse2 <- left_join(testReverse, newBEC3) %>% mutate(Parent, ifelse(!is.na(Parentnew), Parentnew, Parent)) %>% 
             select(-Parent, -Parentnew) %>% rename (Parent = 4) %>% select(ID, Name, Parent, Level)
-testReverse2$Parent <- ifelse(testReverse2$Parent == 1, "", testReverse2$Parent) %>% as.integer
+#testReverse2$Parent <- ifelse(testReverse2$Parent == 1, "", testReverse2$Parent) %>% as.integer
+##remove old units from hierarchy.
+SS.v13 <- fread( "./clean_tabs/BECv13_Forest_SiteSeries.csv",  header = T, stringsAsFactors = F, sep = "") %>% rename(Name = SiteUnit)
+SS.v13$goodv13 <- "good"
+testReverse3 <- left_join(testReverse2, SS.v13) 
+testReverse3 <- testReverse3 %>%  mutate(Name = ifelse(!goodv13 %in% "good" & Level == 11, NA, Name)) %>% select(-goodv13) %>% na.omit()
+
+testReverse3$Parent <- ifelse(testReverse3$Parent == 1, "", testReverse3$Parent) %>% as.integer
 ###write out to Vpro format to review
-fwrite(testReverse2, "./outputs/UpdatedVPROHierarchyv12_updated.csv")
+fwrite(testReverse3, "./outputs/UpdatedVPROHierarchyv12_updated.csv")
 
 SUhier2 <- treeToTable(testReverse2)
 Hier.clean2 <- SUhier2$table
@@ -244,7 +257,7 @@ class.dat2 <-
 ```{r build new model}
 classID <- class.dat2 %>% dplyr::select(SiteUnit, Suborder)
 #class.dat2 <- class.dat %>% select(-SiteUnit)
-BEC_good2 <- class.dat2 %>% filter(!is.na(Suborder)) %>% arrange(SiteUnit)
+BEC_good2 <- class.dat2 %>% filter(!is.na(Suborder) & !Suborder %in% "unplaced") %>% arrange(SiteUnit)
 BEC_good2$SiteUnit <- BEC_good2$SiteUnit %>% as.factor
 SU_names <- as.data.frame(BEC_good2$SiteUnit) %>%  distinct() %>% rowid_to_column('.row') %>% dplyr::rename("SiteUnit" = 2)
 
@@ -259,6 +272,7 @@ BEC_fmodel <- rand_forest(mtry = 5, min_n = 2, trees = 501) %>%
   set_mode("classification") %>%
   set_engine("ranger", importance = "impurity") #or "permutations
 ```
+
 ```{r build  second model of suborders, include = FALSE}
 
 # 2: set up cross validation for parameter tuning data sets # note vc is default to 10 fold
@@ -273,7 +287,7 @@ save(BEC_ranger_model, file = "./rFmodels/BECv12_Suborders_rFmodel_Updated.Rdata
 
 BEC.missed2 <- predict(BEC_ranger_model, BEC_good2) %>% bind_cols(BEC_good2 %>% dplyr::select(SiteUnit, Suborder)) %>% 
   mutate(Compare = ifelse(.pred_class == Suborder, "Same", "Diff")) %>% filter(Compare == "Diff")
-BEC.mis.list2 <- BEC.missed$SiteUnit %>% as.character
+BEC.mis.list2 <- BEC.missed2$SiteUnit %>% as.character
 
 SS_misID_SU <- SUTab[SUTab$SiteUnit %in% BEC.mis.list2,]
 fwrite(SS_misID_SU, "./outputs/WrongOrderPredicted_SU.csv")
