@@ -99,6 +99,8 @@ Order.dat2 <- Order.dat[Order.dat$Species %in% Spp.highconst,] %>% dplyr::filter
 Order.dat2 <- Order.dat2 %>% dplyr::select(Order,SiteUnit, Species, MeanCov, Constancy)
 Order.vegmatx <- Order.dat2 %>% dplyr::select(SiteUnit, Species, MeanCov, Constancy)
 Order.vegmatx <- Order.vegmatx %>% pivot_wider(id_cols = SiteUnit, names_from = Species, values_from = c(MeanCov, Constancy))
+Order.covmatx <- Order.dat2 %>% dplyr::select(SiteUnit, Species, MeanCov)
+Order.covmatx <- Order.covmatx %>% pivot_wider(id_cols = SiteUnit, names_from = Species, values_from = MeanCov) %>% dplyr::select(-SiteUnit)
 ```
 
 
