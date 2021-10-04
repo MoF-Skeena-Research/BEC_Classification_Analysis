@@ -46,7 +46,8 @@ library(vegan)
 data(dune)
 str(dune) # 20 plots x 30 species
 vegmatrix <- dune
-vegmatrix <- Order.covmatx 
+vegmatrix <- Order.covmatx %>% replace(is.na(.),0) ##from alliance analysis - cocktail does not seem to work with summed data
+vegmatrix <- plot.matx %>% replace(is.na(.),0) %>% as.data.table %>% dplyr::select(-PlotNumber)## fropm alliance analysis - problem with data
 # vegmatrix holds the plots by species data
 
 ### 2. Calculate expected frequencies ###
@@ -154,6 +155,8 @@ Compare.obs.exp.freq <- function(Obs.freq, Exp.freq){
 
 ### 5. Prepare arrays ###
 Cluster.species <-  array(0,c(n-1,n)) 
+#Cluster.species <-  array(0,c(n,n)) 
+
 # Assignment matrix, dim: cluster x species
 # a 0/1 matrix showing which species belongs to which cluster (i.e. species group)
 dimnames(Cluster.species)[[2]] <- names(vegmatrix)
@@ -188,7 +191,7 @@ multiple.max <- 1
 # recalculating the phi similarity
 
 ### 6. cluster loop ###
-pb <- winProgressBar(title = "progress bar", min = 0, max =n-1, width = 300)
+#pb <- winProgressBar(title = "progress bar", min = 0, max =n-1, width = 300)
 while (i <= (n-2) ){
   # Calculate the whole phi distance matrix
   phi.index <- designdist(t(vegmatrix2), method = "(a*d-b*c)/sqrt((a+c)*(b+d)*(a+b)*(c+d))",
@@ -284,7 +287,7 @@ while (i <= (n-2) ){
     # The size of the spcies group is assigned to Cluster.info
     
     # Calculate "Observed.plot.freq"
-    species.in.plot <- rowSums(vegmatrix[,which(Cluster.species[i,]>0)])  
+    species.in.plot <- rowSums(vegmatrix[,which(Cluster.species[i,]>0)], na.rm = TRUE)  
     species.in.plot.table <- as.matrix(table(species.in.plot))
     Obs.plot.freq <- matrix(0, Cluster.info[i,1]+1, dimnames=list(0:Cluster.info[i,1]))
     index <- match(dimnames(Obs.plot.freq)[[1]],dimnames(table(species.in.plot))$species.in.plot)
@@ -355,9 +358,9 @@ while (i <= (n-2) ){
     }
     i <- j
   }
-  setWinProgressBar(pb, i, title=paste("Cluster ",i,"of ", n-1, " is processed"))
+  #setWinProgressBar(pb, i, title=paste("Cluster ",i,"of ", n-1, " is processed"))
 }
-close(pb)
+#close(pb)
 
 # write output files for subsequent use
 write.csv(Cluster.species,"./outputs/Cluster_species_dune.csv",row.names=F)
@@ -375,7 +378,7 @@ for (i in 1:n){
   }
 }
 plot(c(1:(n)),c(seq(0.1,-1,(-0.1-1)/(n-1))),type="n", xaxt = "n", yaxt = "n", xlab="", ylab=expression(paste(phi," coefficient")))
-axis(1, las=2,at=seq(1:n), labels=names(vegmatrix)[order(Species.sort)], cex.axis=1)
+axis(1, las=2,at=seq(1:n), labels=names(vegmatrix)[order(Species.sort)], cex.axis=0.2)
 axis(2, las=2,at=seq(0,-1,-0.2), labels=seq(0,1,0.2))  
 Cluster.position <- array(NA, c(n-1,6),dimnames=list(c(1:(n-1)), c("left.leg.x", "left.leg.y0", "left.leg.y1","right.leg.x", "right.leg.y0","right.leg.y1")))
 # Array with x and y coordinates for all clusters. Coordinates have a negative

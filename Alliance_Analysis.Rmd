@@ -64,7 +64,7 @@ May wish to assign a temporary notree pseudo species to all units that have no t
 
 ```{r import data}
 vegDat2 <- fread("./clean_tabs/BECMaster_VegR_clean.csv", data.table = FALSE)
-sppMaster <- fread('D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv') %>% filter(Codetype == "U")
+#sppMaster <- fread('D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv') %>% filter(Codetype == "U")
 BECv13_SU <- fread("./clean_tabs/BECv13Analysis_Forest_17Sept2021_SU.csv", stringsAsFactors = FALSE)
 BECv13_HierTree <- fread("./clean_tabs/BECv13Hierarchy_v1_22Sept2021_Hierarchy.csv")
 levelNames <- c("Formation", "Class", "Order", "Suborder", "Alliance", "Suball", "Assoc", "Subass", "Facies", "Working", "SiteUnit")
@@ -84,7 +84,8 @@ BECv13Hier.data <- left_join(vegSum,BECv13_Hier)
 #For each Order
 Orders <- unique(BECv13Hier.data$Suborder)
 Orders
-Order.dat <- BECv13Hier.data %>% filter(Suborder == "SUBORDER FdPy-Pseuspi (PP transition)")
+Order.dat <- BECv13Hier.data %>% filter(Suborder == "SUBORDER CwFd (No Hw ICHxw and xh)")
+Order.selected <- Order.dat$SiteUnit %>% as.character
 ##limit life forms to tree species
 #trees <- c(1,2)
 constcut <- 55 ##remove species less than cutoff
@@ -101,6 +102,13 @@ Order.vegmatx <- Order.dat2 %>% dplyr::select(SiteUnit, Species, MeanCov, Consta
 Order.vegmatx <- Order.vegmatx %>% pivot_wider(id_cols = SiteUnit, names_from = Species, values_from = c(MeanCov, Constancy))
 Order.covmatx <- Order.dat2 %>% dplyr::select(SiteUnit, Species, MeanCov)
 Order.covmatx <- Order.covmatx %>% pivot_wider(id_cols = SiteUnit, names_from = Species, values_from = MeanCov) %>% dplyr::select(-SiteUnit)
+plot.dat <- left_join(BECv13_SU ,vegDat2 ) %>% filter(SiteUnit %in% Order.selected, Species %in% Spp.highconst) %>% 
+  dplyr::select(PlotNumber, Species, Cover) 
+plot.dat2 <- plot.dat %>% group_by(PlotNumber,Species) %>% mutate(Cover2 = sum (Cover)) %>% dplyr::select(PlotNumber, Species, Cover2) %>% distinct() %>% as.data.table
+plot.spp <- plot.dat2$Species %>% as.data.frame %>% distinct() 
+                                                                  
+plot.matx <- plot.dat2 %>% pivot_wider(id_cols = PlotNumber, names_from = Species, values_from = Cover2) %>% as.data.frame
+
 ```
 
 
@@ -161,7 +169,7 @@ Vegchord = decostand(VegMatrix,"normalize")
 ###tidy models kmeans clustering
 points <- 
   Vegchord %>% 
-  select(-cluster)
+  dplyr::select(-cluster)
 
 kclust <- kmeans(points, centers = 3)
 kclust
