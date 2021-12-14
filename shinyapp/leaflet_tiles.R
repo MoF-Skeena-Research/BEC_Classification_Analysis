@@ -1,10 +1,7 @@
-bgc_tileserver <- "http://159.203.20.90/data/BC_BGC/{z}/{x}/{y}.pbf"
+bgc_tileserver <- "https://tileserver.thebeczone.ca/data/BC_BGC/{z}/{x}/{y}.pbf"
 bgc_tilelayer <- "BECMap"
-district_tileserver <- "http://159.203.20.90/data/Districts/{z}/{x}/{y}.pbf"
+district_tileserver <- "https://tileserver.thebeczone.ca/data/Districts/{z}/{x}/{y}.pbf"
 district_tilelayer <- "Districts"
-
-subzones_colours_ref <- fread("WNA_v12_HexCols.csv")
-setnames(subzones_colours_ref,c("BGC","Col"))
 
 plugins <- {list(vgplugin = 
                    htmltools::htmlDependency(
@@ -60,7 +57,7 @@ addBGCTiles <- function(map) {
       var subzLayer = L.vectorGrid.protobuf(
         "', bgc_tileserver, '",
         vectorTileOptions("bec_map", "', bgc_tilelayer, '", true,
-                          "tilePane", subzoneColors, "MAP_LABEL", "OBJECTID")
+                          "tilePane", subzoneColors, "BGC", "BGC")
       )
       this.layerManager.addLayer(subzLayer, "tile", "bec_map", "BGCs");
       
@@ -122,10 +119,10 @@ addBGCTiles <- function(map) {
       var selectedBGC = [];
       subzLayer.on("click", function(e){
         console.log(e.layer.properties);
-        Shiny.setInputValue("bgc_click",e.layer.properties.MAP_LABEL);
-        selectedBGC.push(e.layer.properties.OBJECTID);
+        Shiny.setInputValue("bgc_click",e.layer.properties.BGC);
+        selectedBGC.push(e.layer.properties.BGC);
         var properties = e.layer.properties
-			  highlight = properties.OBJECTID;
+			  highlight = properties.BGC;
         subzLayer.setFeatureStyle(highlight, styleHL);
       });
       
@@ -137,7 +134,7 @@ addBGCTiles <- function(map) {
       
       
       subzLayer.bindTooltip(function(e) {
-        return e.properties.MAP_LABEL;
+        return e.properties.BGC;
       }, {sticky: true, textsize: "10px", opacity: 1});
       
       distLayer.bindTooltip(function(e) {

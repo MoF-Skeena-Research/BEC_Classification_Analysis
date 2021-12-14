@@ -3,6 +3,7 @@ Sys.setenv(DO_PAT="eae4166ed2fac0e3c41660fe26a009bb0176ab8bceeaf753faf5189f58a06
 
 temp <- analogsea::droplets()
 server <- temp$`shiny-server`
+setwd("./shinyapp")
 analogsea::droplet_ssh(server,"rm -R /srv/shiny-server/becplots")
 analogsea::droplet_ssh(server, "mkdir /srv/shiny-server/becplots")
 analogsea::droplet_upload(server, "./app.R", "/srv/shiny-server/becplots/app.R")
