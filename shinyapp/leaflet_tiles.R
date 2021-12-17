@@ -27,8 +27,7 @@ addBGCTiles <- function(map) {
   map <- registerPlugin(map, plugins$vgplugin)
   map <- htmlwidgets::onRender(map, paste0('
     function(el, x, data) {
-      ', paste0("var subzoneColors = {", paste0("'", subzones_colours_ref$BGC, "':'", subzones_colours_ref$Col,"'", collapse = ","), "}"), '
-      console.log(subzoneColors);
+      ', paste0("var subzoneColors = {", paste0("'", subzones_colours_ref$classification, "':'", subzones_colours_ref$colour,"'", collapse = ","), "}"), '
       L.bec_layer_opacity = 0.6
       
       var vectorTileOptions=function(layerName, layerId, activ,
