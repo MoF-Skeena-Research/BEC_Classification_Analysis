@@ -1,3 +1,8 @@
+
+###THIS IS PRES/ABS ONLY. PROBABLY NEED ABUNDANCE TO BE USEFUL IN A BEC CONTEXT
+
+
+
 # R Code as published in Appendix S2
 # Bruelheide, H. (2016): Cocktail clustering - a new hierarchical agglomerative 
 # cluster algorithm for extracting species groups in vegetation databases. 
@@ -43,11 +48,12 @@
 ### 1. Test data ###
 library(vegan)
 # Using Ter Braak's dune data set as the first test example
-data(dune)
-str(dune) # 20 plots x 30 species
-vegmatrix <- dune
-vegmatrix <- Order.covmatx %>% replace(is.na(.),0) ##from alliance analysis - cocktail does not seem to work with summed data
-vegmatrix <- plot.matx %>% replace(is.na(.),0) %>% as.data.table %>% dplyr::select(-PlotNumber)## fropm alliance analysis - problem with data
+#data(dune)
+#str(dune) # 20 plots x 30 species
+#vegmatrix <- dune
+#vegmatrix <- Order.covmatx %>% replace(is.na(.),0) ##from alliance analysis - cocktail does not seem to work with summed data
+vegmatrix <- plot.matx %>% replace(is.na(.),0) %>% as.data.frame %>% dplyr::select(-PlotNumber)## fropm alliance analysis - problem with data
+#fwrite(vegmatrix, "./outputs/vegmatrix.csv")
 # vegmatrix holds the plots by species data
 
 ### 2. Calculate expected frequencies ###
@@ -378,7 +384,7 @@ for (i in 1:n){
   }
 }
 plot(c(1:(n)),c(seq(0.1,-1,(-0.1-1)/(n-1))),type="n", xaxt = "n", yaxt = "n", xlab="", ylab=expression(paste(phi," coefficient")))
-axis(1, las=2,at=seq(1:n), labels=names(vegmatrix)[order(Species.sort)], cex.axis=0.2)
+axis(1, las=2,at=seq(1:n), labels=names(vegmatrix)[order(Species.sort)], cex.axis=0.6)
 axis(2, las=2,at=seq(0,-1,-0.2), labels=seq(0,1,0.2))  
 Cluster.position <- array(NA, c(n-1,6),dimnames=list(c(1:(n-1)), c("left.leg.x", "left.leg.y0", "left.leg.y1","right.leg.x", "right.leg.y0","right.leg.y1")))
 # Array with x and y coordinates for all clusters. Coordinates have a negative
