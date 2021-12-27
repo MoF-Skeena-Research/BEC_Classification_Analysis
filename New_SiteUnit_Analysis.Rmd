@@ -1,0 +1,325 @@
+---
+title: "NewSiteUnitAnalysis"
+author: "Will MacKenzie"
+date: "05/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+require(tidyverse)
+require(tidymodels)
+require(data.table)
+require(data.tree)
+require(DataExplorer)
+require(C50)
+require(indicspecies)
+require(doParallel)
+require(philentropy)
+require(harrietr)
+require(factoextra)
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+source("./_functions/_VegdatSUsummary.R")
+source("./_functions/_spp_importance.R")
+cloud_dir <- "F:/OneDrive - Personal/OneDrive/BEC_Classification_Paper/"
+#cloud_dir <- "F:/OneDrive - Government of BC/CCISSv12/"
+```
+
+Steps to build classification hierarchy
+This script joins site series into Associations using cluster-analysis.
+The to success is appropriate transformation of the site series data
+1. Power 0.5 transform the data as per Chytry et al.
+2. Multiply transformed value by % constancy = species_importance
+3. Remove all records with low importance (<0.5)
+4. Remove all non-vascular species (these may be used to separate Associations at a SubAssociation level)
+** could look at including edatopic/climate similarity in the clustering equation (avalanching)
+
+5. Cluster using a quantitative distance metric (extended Jaccard)
+6. Use a complete chain clustering methods with will retain the dissimilarity metric as tree height
+7. Cut hierarchy at set dissimilarity height 1st approximation (to be reviewed)
+      <25%  = association level similarity
+      <50% = alliance level
+      <75% = suborder level
+      <95% = order level
+Add cluster info to a clean wide hierarchy with only site series
+Add Class level to hold unplaced Site Series (those with fewer than 5 plots)
+Export to Vpro Tree structure.
+
+1. A machine learning model of high-level hierarchical BEC Forest units
+a. Create a ML model of Forested SubOrders using BECv11 site series that meet minimum plot requirements. (going to Orders only causes issues where Pl is a dominant secondary species - many provincial units get placed into a Pinucon Order when applied only to the order level even though they have a subdominant tree species which places them in a different order)
+b. Use only tree species for first round of model build for the forested Orders.
+c. Predict membership of new BECv13 units and assign to orders then rebuild ML model.
+d. Review any mis predicted site series for reassignment.
+e. Compare similarity of tree composition within units (noise clustering) to find outliers that may represent new Orders (test by leaving out known units)
+f. Create vegetation summaries of Orders and compare vegetation (all species now). Identify climatic indicator species groups.
+g. Create climatic and site attributes summary of Orders 
+h. Create maps of plot locations for each Order
+i. Hierarchy tree graphic
+
+2. Build Alliances. Focus should be on identifying species groups that reflect different site conditions.
+
+a. Use some of the techniques of indicspecies package to create Alliances based on indicator group creation and analysis.
+b. Try to build a machine learning model of Alliances
+c. Vegetation and Environment summary of Alliances
+
+3. Do pair-wise analysis of site series within Orders/Alliances using high constancy species to analyze site series and create Associations/SubAssociations.
+a. Check for similarity between Associations of All orders
+b. Build relationship graphic
+
+
+4. Document hierarchy
+
+5. Build model to assign new units and unassigned plots
+Challenge here is to make a constant list of species between model and new units.
+a. Predict membership of new site series (draft BECv13). Noise Clustering to test for novel units that do not fit any existing. Use machine learning to hierarchy
+b. Predict Order membership of BECMaster plots that are unassigned to existing site series and add to an Order_unplaced site unit under each Order.
+
+6. Build for non-forested units. Classes based on major site level differences rather than climate and using major species groups (e.g. Hydrophytic Carex spp )
+May wish to assign a temporary notree pseudo species to all units that have no trees to help separate forested hierarchy from non-forested hierarchy (Hurdle model)
+
+```{r import data}
+### Vegetation From BECMaster cleaning script Long form Plot|Species|Cover (across all layers)
+### or From Vpro export
+#BGCZone <- fread(paste0(cloud_dir,"All_BGCs_Info_v12_2.csv"), data.table=FALSE)
+vegDat2 <- fread("./clean_tabs/BECMaster_VegR_clean.csv", data.table = FALSE)
+taxon.all <- fread("D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv", header = T, stringsAsFactors = F, strip.white = T) %>% filter(Codetype == "U")
+
+nonvasc = c(9, 10, 11)
+vegDat2 <- vegDat2 %>% filter(!Lifeform %in% nonvasc)
+###SU table
+#SUTab <- fread("./inputs/ALLBECSU_2021_SU.csv")
+SUTab <- fread("./inputs/BECv13Analysis_Forest_17Sept2021_SU.csv")
+SUTab$SiteUnit <-  trimws(SUTab$SiteUnit)
+SS.names <- unique(SUTab$SiteUnit)
+PlotsSS <- SUTab %>% group_by(SiteUnit) %>% summarize(plotcount = n())
+
+Vpro.hier <- fread("./clean_tabs/BECv13_ForestHierarchy.csv")
+SUhier <- treeToTable(Vpro.hier)
+#vegdat_test <- left_join(SUTab, vegDat2)
+# #####list of official current and future correlated units from BECdb
+# current <- c('Current', 'Future')
+# ecotypes <- c("Forest", "Deciduous")
+# #### cleaned list of official site series
+# BECdb_SS <- fread("./inputs/BECdb_SiteUnitv12.csv") %>% filter(Status %in% current) %>% filter(ArchivedinVersion == "") %>% filter(`Forest-NonForest` %in% ecotypes) %>% 
+#   select(MergedBGC_SS, SS_NoSpace, SiteUnitLongName, SiteUnitScientificName) %>% rename (SiteUnit = 1, SSName = 3, SciName = 4) %>% distinct(SiteUnit, .keep_all = TRUE)
+# #### compare SUTab to BECdb.  Whan all BECdb units to have data and SUTab to include no unofficial units
+# SS_missing <- full_join(SUTab, BECdb_SS) %>% filter(is.na(PlotNumber))
+##Import Vpro hierarchy table widen and reformat
+```
+
+
+##roll up into site series summary data
+### create species importance values by sqrt cover * constancy
+### filter out site units with few plots and species with low importance values
+```{r summarize site series, echo=FALSE}
+##roll up into site series summary data
+
+vegSum <- VegdatSUsummary(vegDat2, SUTab)
+source("./_functions/_spp_importance.R")
+vegSum <- spp_importance(vegSum) 
+
+### Filter out poor units and low importance species#
+vegDat_good <- vegSum %>% dplyr::filter(nPlots > 4) %>% dplyr::filter(spp_importance > 0.05) ## remove rare or very low cover species in SU
+
+Hier.clean <- SUhier$table
+ #%>% rename(SiteUnit = SiteUnit))## Select only site series will enough plots
+Hier.units <- Hier.clean %>% dplyr::select(SiteUnit, Class, Order, Suborder) %>% distinct()
+Hier.data <- left_join(Hier.units, vegDat_good) %>% filter(!is.na(nPlots)) %>% arrange(Species) %>% distinct()
+```
+
+
+```{r some hierarchy stats}
+classes <- unique(Hier.data$Class)
+orders <- unique(Hier.data$Order)
+suborders <- unique(Hier.data$Suborder)
+orders
+### Choose hierarchical level for analysis
+
+class.dat <-
+  Hier.data %>% dplyr::select(SiteUnit, Species, spp_importance) %>% matrify() #%>% filter(Order == "ORDER Pyi") 
+#%>% filter(Suborder == "SUBORDER PyFd-Pseuspi" |  Suborder == "SUBORDER FdPy-Pseuspi (PP transition)" ) 
+
+```
+## Cluster Analysis Species by Site eris
+
+``` {r cluster analysis, echo = F, result = F}
+### determine statistical number of clusters to use
+# n_clust <- fviz_nbclust(test.data, kmeans, nstart = 3, method = "gap_stat", nboot = 50, k.max = 5)#+
+# #geom_vline(xintercept = 6, linetype = 2)
+# #  labs(subtitle = "Gap statistic method")
+# plot(n_clust) ## "optimal" cluster number
+# 
+# n_clust<-n_clust$data
+# best.clust<-as.numeric(n_clust$clusters[which.max(n_clust$ymax)])
+# 
+# ## clusterability###numbers below 0.5 have low clusterability
+# res <- get_clust_tendency(class.dat, n = nrow(class.dat)-1, graph = F)
+# res$hopkins_stat
+# res
+
+```
+
+```{r cluster and cut  }
+ test.data <- class.dat# %>% filter(str_detect(row.names(class.dat), "ESSFwh"))%>% as.matrix# [7:8,] 
+# test_jac.vegan <- vegan::vegdist(test.data, method = "sorensen", binary = F) %>% as.matrix
+#test_jac <- philentropy::distance(test.data, method = "jaccard")
+test_jac <- proxy::dist(test.data, method="ejaccard", diag=TRUE, upper = TRUE) ## ejaccard and philentropy jaccard are real-data versions extended jaccard opr taimoto
+
+# , use.row.names = TRUE, as.dist.obj = TRUE)
+test_jac.tab <- test_jac %>% as.matrix
+test_jac.list <- melt_dist(test_jac.tab) %>% as.data.table %>% filter(dist < .25) %>% filter(str_detect(iso1, "ESSFwh"))
+
+ss_clst <- hclust(test_jac, method = "complete")
+ assocs <- cutree( ss_clst ,h =.25)
+ alliances <- cutree(ss_clst, h=.5)
+ suborders <- cutree(ss_clst, h=.75) 
+ orders <- cutree(ss_clst, h=.95)
+k = length(unique(assocs))
+k2 <- length(unique(alliances))
+k3 <- length(unique(suborders))
+k4 <- length(unique(orders))
+ss_dend <- fviz_dend (ss_clst , k=k4, color_labels_by_k = T, lwd = .5,
+                    rect = T, cex = .5, horiz = T) %>%    plot()
+  # 
+assoc_SU <- as.data.frame(assocs) %>% rownames_to_column("SiteUnit") %>% mutate(assocs = paste0("ASSOC-", assocs))
+newassocs <- unique(assoc_SU$assocs)
+alliance_SU <- as.data.frame(alliances) %>% rownames_to_column("SiteUnit") %>% mutate(alliances = paste0("ALLIANCE-", alliances))
+newalliance <- unique(alliance_SU$alliances)
+suborder_SU <- as.data.frame(suborders) %>% rownames_to_column("SiteUnit") %>% mutate(suborders = paste0("SUBORDER-", suborders))
+newsuborder <- unique(suborder_SU$suborders)
+order_SU <- as.data.frame(orders) %>% rownames_to_column("SiteUnit") %>% mutate(orders = paste0("ORDER-", orders))
+neworder <- unique(order_SU$orders)
+#(#left_join(names)
+    #ss_clst <- hcut(test_jac1,isdiss = TRUE, hc_method = "ward.D2")#k = best.clust,, hc_metric = "sorensen"
+#test.data[test.data == 0] <- NA
+# a=test.data[1,] %>% janitor::remove_empty(which = "cols") %>% colnames() ; b=test.data[2,]%>% janitor::remove_empty(which = "cols")%>% colnames()
+# jaccard <- function(a, b) {
+#     intersection = length(intersect(a, b))
+#     union = length(a) + length(b) - intersection
+#     return (intersection/union)
+# }
+# 
+# #find Jaccard Similarity between the two sets 
+# jaccard(a, b)
+# 
+# Stats123 <- dist( test.data, method="euclidean", diag=TRUE, upper = TRUE)
+# Proxy123 <- proxy::dist(test.data, method="ejaccard", diag=TRUE, upper = TRUE)
+# Philentropy123 <- philentropy::distance(test.data, method="jaccard")
+```
+
+
+
+```{r update hierarchy and then resubmit to create new model}
+##convert matrix to tree, add in new units
+#Hier.update <- fread("./clean_tabs/BEC13_HierarchyMatrixModelled_v1.csv")
+Vpro.hier <- fread("./clean_tabs/BECv13_ForestHierarchy.csv")
+SUhier <- treeToTable(Vpro.hier)
+Hier.clean <- SUhier$table
+Hier.clean[,c(1:11)] <- NA
+#Hier.new <- Hier.clean[0, ]
+#test <- left_join(assocs3, Hier.clean, by = c("siteunit" = "SiteUnit")) %>% dplyr::rename(SiteUnit = "siteunit")
+Hier2 <- Hier.clean[assoc_SU, Assoc := i.assocs, on = .(SiteUnit)] 
+Hier2 <- Hier2[alliance_SU, Alliance := i.alliances, on = .(SiteUnit)] 
+Hier2 <- Hier2[suborder_SU, Suborder := i.suborders, on = .(SiteUnit)] 
+Hier2 <- Hier2[order_SU, Order := i.orders, on = .(SiteUnit)] 
+Hier2 <- Hier2 %>% mutate(Class = ifelse(is.na(Assoc), "Unplaced", "Placed" ))
+#Hier3[,c(1:5,7)] <- NA#Assoc := assoc,
+#Hier2 <- Hier2 %>% dplyr::select(-ID)
+# # test2 <- test2 %>%  filter(Assoc == "Assoc_1")
+# Hier.data2 <- left_join(Hier2, vegDat_good) %>% filter(!is.na(nPlots)) %>% arrange(Species) %>% distinct()
+# ### prepare to rerun with new associations and unplaced site series
+# class.dat2 <-
+#   Hier.data2 %>% dplyr::select(Assoc, SiteUnit, Working, Species, spp_importance) %>% mutate(Working = ifelse(!is.na(Assoc), Assoc, SiteUnit)) %>% dplyr::select(Working, Species, spp_importance)
+# class.dat2 <- class.dat2[ , mean(spp_importance, na.rm = TRUE), by = c("Working", "Species")] %>% dplyr::rename(spp_importance = 3) %>% dplyr::filter(spp_importance > 0.05) %>% matrify() #%>% filter(Order == "ORDER Pyi") 
+# #%>% filter(Suborder == "SUBORDER PyFd-Pseuspi" |  Suborder == "SUBORDER FdPy-Pseuspi (PP transition)" ) 
+
+```
+
+
+
+```{r export to Vpro hierarchy tree}
+levelNames <- c("Formation", "Class", "Order", "Suborder", "Alliance", "Suball", "Assoc", "Subass", "Facies", "Working", "SiteUnit")
+#Hier.new <- Hier.clean[0, ]
+Hier.updated <- tableToTree(Hier2,levelNames)## convert matrix to tree
+
+Hier.updated$Parent[Hier.updated$Parent == 0] <- NA
+#Hier.updated <- Hier.updated %>% mutate(Parent = ifelse(Name %in% newassocs, NA, Parent))
+
+fwrite(Hier.updated, "./outputs/UpdatedVPROHierarchy_v13_assocs.csv")
+```
+
+
+
+```{r dendrogram output, fig.cap="Bray-Curtis Cluster of Mountain Flora with 6 Groups", fig.width = 8, fig.height=6 }
+# xx <- sNNclust(test_jac1, k = 1, eps = .2, minPts = 1)
+# xx$cluster
+# yy <- frNN(test_jac1, eps = .5, query = NULL, sort = TRUE, search = "kdtree", bucketSize = 10, splitRule = "suggest", approx = 0)
+# yy$dist
+# yy$eps
+# 
+#  clu.h80
+# test = c("CWH xm 1 /102", "CWH xm 2 /102")
+# #%>% filter(row.names(class.dat) %in% test)
+#  #test.data[test.data == 0] = NA
+# test_jac <- vegan::vegdist(test.data, method = "bray", binary = F, na.rm = TRUE)# %>% as.matrix
+# # %>% as.matrix
+#  test_jac2 <- philentropy::distance(test.data, method = "jaccard")
+# test_jac2 <- 1 - test_jac2
+# test_jac3 <- melt_dist(test_jac2) %>% as.data.table
+#  # ggsave("./outputs/Test_ClusterDendrogram.jpeg")
+#  test_jac1 <- vegan::vegdist(class.dat, method = "jaccard", binary = FALSE) 
+# 
+#  test_jac <- philentropy::distance(class.dat, method = "jaccard")
+# unitnames <- row.names(class.dat)
+# test_jac2 <- 1 - test_jac %>% as.data.frame 
+# names(test_jac2) <- unitnames
+# #test_jac2 <-  cbind(unitnames, test_jac2)
+# #test_jac2[test_jac2<.8]=NA ; test_jac2[test_jac2==1.00]=NA
+# #test_jac2 <- join_metadata(test_jac2,unitnames)#cbind(rownames(class.dat), test_jac2) %>% as.data.frame %>% remove_rownames() %>% column_to_rownames("V1")
+# 
+# 
+# test_jac <- philentropy::distance(class.dat, method = "jaccard")
+# unitnames <- row.names(class.dat)
+# test_jac3 <- melt_dist(test_jac2) %>% as.data.table
+#   test_jac3[unitnames, iso1 := V2, on = c(iso1 = 'V1')] 
+#   test_jac3[unitnames, iso2 := V2, on = c(iso2 = 'V1')] 
+#   
+#   assoc <- test_jac3 %>% filter(dist > .8)
+#   assoc1 <- test_jac3 %>% filter(dist > .8) %>% dplyr::rename("SiteUnit" = iso1, "Same" = iso2 )
+#   assoc2 <- test_jac3 %>% filter(dist > .8) %>% dplyr::rename("SiteUnit" = iso2, "Same" = iso1) %>% dplyr::select(SiteUnit, Same, dist)
+#   assocs_all <- rbind(assoc1,assoc2)
+# 
+#     assoc_num <- unique(assocs_all$SiteUnit) %>% data.frame %>% dplyr::rename("SiteUnit" = 1)%>% arrange(SiteUnit) %>% rownames_to_column("assoc")%>% mutate(assoc = paste0("Assoc-", assoc)) 
+#   assocs2 <- left_join(assoc_num, assocs_all)
+#   
+# assoc1 <- assocs 
+# 
+# 
+#   assocs <- test_jac3 %>% filter(dist > .7)  %>% rownames_to_column("assoc")#%>% data.frame
+# 
+# assoc1 <- assocs %>% dplyr::select(assoc, iso1, dist) %>% dplyr::rename("SiteUnit" = iso1)
+# assoc2 <- assocs %>% dplyr::select(assoc, iso2, dist) %>% dplyr::rename("SiteUnit" = iso2)
+# 
+# ##joins the closest pairs
+# assocs3 <- assocs2[ , .SD[which.max(dist)], by = SiteUnit] 
+# #assocs3 <- test_jac3 %>% filter(dist > .80) %>% group_by(iso1) %>% top_n(3, dist)
+# #combine units in to associations then rerun jaccard
+# 
+# assocs_test <- test_jac3 %>% filter(dist > .7)
+#  assocs_test2 <-  assocs_test [ , .SD[which.max(dist)], by = iso1]
+# assocs_add <- anti_join(assocs_test, assocs_test2)
+###build a dendrogram/cluster object and plot using dendextend
+# mnt_clst <- siteseries %>% # list data
+#         matrify %>% # convert to matrix
+#         vegdist (method = "bray", binary = TRUE) %>% # calculate a distance matrix,
+#         hclust(method = "ward.D2")%>% # Hierarchical clustering
+#         plot()# Turn the object into a dendrogram and plot
+# # 
+# ss_clst2 <- as.data.frame(cutree (ss_clst, best.clust))
+# colnames (ss_clst2) [1] <- "cluster"
+# mnt_clst2 <- tibble::rownames_to_column(ss_clst2, var = "mountain")
+# clust <- ss_clst2$cluster %>% count()
+
+```
