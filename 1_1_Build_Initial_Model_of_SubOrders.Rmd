@@ -16,9 +16,11 @@ require(DataExplorer)
 require(C50)
 require(indicspecies)
 require(doParallel)
+require(philentropy)
 source("./_functions/_TabletoTree.R")
 source("./_functions/_TreetoTable.R")
 source("./_functions/_VegdatSUsummary.R")
+source("./_functions/_spp_importance.R")
 cloud_dir <- "F:/OneDrive - Personal/OneDrive/BEC_Classification_Paper/"
 #cloud_dir <- "F:/OneDrive - Government of BC/CCISSv12/"
 ```
@@ -70,6 +72,7 @@ SUTab <- fread("./inputs/ALLBECSU_2021_SU.csv")
 SUTab$SiteUnit <-  trimws(SUTab$SiteUnit)
 SS.names <- unique(SUTab$SiteUnit)
 
+vegdat_test <- left_join(SUTab, vegDat2)
 # #####list of official current and future correlated units from BECdb
 # current <- c('Current', 'Future')
 # ecotypes <- c("Forest", "Deciduous")
@@ -89,6 +92,7 @@ SS.names <- unique(SUTab$SiteUnit)
 ##roll up into site series summary data
 ### Filter out all species but tree species
 vegSum <- VegdatSUsummary(vegDat2, SUTab)
+vegSum2 <- spp_importance(vegSum) 
 #vegDat_test <- vegSum %>% dplyr::filter(MeanCov > covercut) %>% dplyr::filter(Constancy > covercut) ## remove rare or very low cover species in SU
 # 
 # vegDat <- as.data.table(vegDat2)
