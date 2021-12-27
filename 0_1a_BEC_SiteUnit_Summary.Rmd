@@ -38,6 +38,7 @@ require(pvclust)
 require(dendextend)
 require(ape)
 require(doParallel)
+require(data.table)
 ```
 
 ## R Markdown
@@ -52,7 +53,7 @@ When you click the **Knit** button a document will be generated that includes bo
 vegData <- fread("./inputs/BECMaster_VegR_clean.csv")
 vegDat2 <- vegData
 ##Import SU table for new Site Series of Interest
-NewSS <- read.csv("NewSiteSeries_SU.csv", stringsAsFactors = FALSE)
+NewSS <- fread("./inputs/CoastAllv6_SU.csv")
 
 vegData2 <- merge(vegData, NewSS, by = "PlotNumber", all.x = TRUE)###Must select SiteSeries as level for now
 #colnames(vegData)[5] <- "SiteSeries" ##depending on previous optional runs the column number will need to be changed
@@ -71,7 +72,7 @@ set.seed(123321)
 coreNo <- makeCluster(detectCores() - 1)
 registerDoParallel(coreNo, cores = detectCores() - 1)
 Cores <- as.numeric(detectCores()-1)
-clusterEvalQ(coreNo, .libPaths("E:/R packages351"))
+#clusterEvalQ(coreNo, .libPaths("E:/R packages351"))
 
 constCut <- 0 ##remove species less than cutoff
 tic()
@@ -93,7 +94,7 @@ temp <- foreach(SS = unique(vegData2$SiteUnit), .combine = rbind, .packages = "f
 toc()
 NewSSSum <- temp
 colnames(NewSSSum) [1] <- "SiteSeries"
-save(NewSSSum, file = "NewSS_SummaryData.RData")
+save(NewSSSum, file = "NewSS_SummaryData2.RData")
 
 
 ```
@@ -104,18 +105,18 @@ save(NewSSSum, file = "NewSS_SummaryData.RData")
 
 NewSSUnits <- NewSSSum[,c(1,5)]
 UnitPlots <- unique(NewSSUnits)# plots per unit
-numspp <- ddply(NewSSSum,~SiteUnit,summarise,sppcount=length(unique(Species))) # number of species per unit
-NewSSUnits2 <-merge(NewSSSum, numspp, by = "SiteUnit")
-numspp2<-ddply(NewSSSum[NewSSSum$Constancy > 20,],~ SiteUnit,summarise,sppcount=length(unique(Species))) # number of non-accidental species per unit
-NewSSUnits2 <-merge(NewSSUnits2, numspp2, by = "SiteUnit" )
-constspp <-ddply(NewSSSum[NewSSSum$Constancy > 59,],~SiteUnit,summarise,sppcount=length(unique(Species))) # number of constant species per unit
-NewSSUnits2 <-merge(NewSSUnits2, constspp, by= "SiteUnit" )
+numspp <- ddply(NewSSSum,~SiteSeries,summarise,sppcount=length(unique(Species))) # number of species per unit
+NewSSUnits2 <-merge(NewSSSum, numspp, by = "SiteSeries")
+numspp2<-ddply(NewSSSum[NewSSSum$Constancy > 20,],~ SiteSeries,summarise,sppcount=length(unique(Species))) # number of non-accidental species per unit
+NewSSUnits2 <-merge(NewSSUnits2, numspp2, by = "SiteSeries" )
+constspp <-ddply(NewSSSum[NewSSSum$Constancy > 59,],~SiteSeries,summarise,sppcount=length(unique(Species))) # number of constant species per unit
+NewSSUnits2 <-merge(NewSSUnits2, constspp, by= "SiteSeries" )
   
 ##### create potential differential valueslist
   #CovConst <- melt(temp)
   selectUnits <- as.data.frame(unique(NewSSSum[,1]))
 len <- length(unique(NewSSSum[,1]))
-load("SppLifeForm.RData")
+load("./inputs/SppLifeForm.RData")
 differential <- foreach(rowNum = 1:len, .combine = rbind, .packages = c("foreach","reshape2")) %dopar% {
   select <- as.factor (selectUnits[rowNum,])
   CovTemp <- NewSSSum[NewSSSum$SiteSeries %in% select,]
@@ -141,7 +142,7 @@ differential <- foreach(rowNum = 1:len, .combine = rbind, .packages = c("foreach
 }
 differential[is.na(differential)] <- 0 ##without this trap some units end with N/A sum in summaryBy function
 ###Add Differential potential
-diffSum <-summaryBy(PotDiff + NoPlots ~ SiteUnit, data = differential, FUN = c(length, sum))
+diffSum <- summaryBy(PotDiff + NoPlots ~ SiteSeries, data = differential, FUN = c(length, sum))
 diffSum[,c(5)] <- diffSum[,c(5)]/diffSum[,c(3)]
 diffSum <- diffSum[,c(1,4)]
 ######
