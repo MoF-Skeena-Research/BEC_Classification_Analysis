@@ -20,16 +20,13 @@ require(doParallel)
 require(Hmsc)
 source("./_functions/_TabletoTree.R")
 source("./_functions/_TreetoTable.R")
+source("./_functions/_VegdatSUsummary.R")
+require(ggridges)
+require(ggplot2)
 cloud_dir <- "F:/OneDrive - Personal/OneDrive/BEC_Classification_Paper/"
 #cloud_dir <- "F:/OneDrive - Government of BC/CCISSv12/"
 ```
 
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-require(ggridges)
-require(ggplot2)
-```
 
 ## Environmental comparison of hierarchy units
 ##Inputs are plots with environment data.
@@ -39,21 +36,85 @@ Need to overlay clean locations in ClimateBC to get climate dataset for use in t
 ###Site - aSMR, nutrients, topographic 
 ###Map
 
+## Import Data
 
-```{r ridgeline plot by hierarhcy unit}
+```{r import data}
+vegDat2 <- fread("./clean_tabs/BECMaster_VegR_clean.csv", data.table = FALSE)
+#sppMaster <- fread('D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv') %>% filter(Codetype == "U")
+BECv13_SU <- fread("./clean_tabs/BECv13Analysis_Forest_17Sept2021_SU.csv", stringsAsFactors = FALSE)
+BECv13_HierTree <- fread("./clean_tabs/BECv13_ForestHierarchy.csv")
+levelNames <- c("Formation", "Class", "Order", "Suborder", "Alliance", "Suball", "Assoc", "Subass", "Facies", "Working", "SiteUnit")
+BECv13_Hier <- treeToTable(BECv13_HierTree) ## convert matrix to tree
+BECv13_Hier <- BECv13_Hier$table
+BECv13_Suborder <- BECv13_Hier %>% dplyr::select(SiteUnit, Order, Suborder) %>% drop_na()
 
-ggplot(diamonds, aes(x = price, y = cut, fill = cut)) +
-  geom_density_ridges() +
-  theme_ridges() + 
-  theme(legend.position = "none")
+#BECv13_vegSum <- fread('./clean_tabs/BECv13SiteUnitSummary.csv', stringsAsFactors = FALSE)
+BECv13_env <- fread('./clean_tabs/BECMaster_env_climate_data.csv', stringsAsFactors = FALSE)
+#---------------
+BECv13_env <- left_join(BECv13_SU, BECv13_env )
+BECv13Hier.envdata <- left_join(BECv13_Suborder, BECv13_env) %>% mutate(MAT = ifelse(MAT == -9999, NA, MAT)) %>% drop_na()
+
 ```
 
-## Including Plots
+```{r review data}
+require("skimr")
+Order.sum <- group_by(BECv13Hier.envdata, Order) %>%
+ skim()
+EnoughPlots <- Order.sum %>% filter(skim_variable == "PlotNumber", character.n_unique >50) %>% dplyr::select(Order)
+BECv13Hier.envdata2 <- BECv13Hier.envdata %>% filter(Order %in% EnoughPlots$Order)
+Order.sum2 <- group_by(BECv13Hier.envdata2, Order) %>%
+ skim()
 
-You can also embed plots, for example:
+require("summarytools")
+Order.sum3 <- dfSummary(BECv13Hier.envdata)
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+
+
+require("compareGroups")
+
+Order.stats <- as.data.table(BECv13Hier.envdata2)
+Order.stats <- Order.stats[,list(mean=mean(MAT),sd=sd(MAT)),by=Order]
+
+
+is_outlier <- function(x) {
+  return(x < quantile(x, 0.25) - 1.5 * IQR(x) | x > quantile(x, 0.75) + 1.5 * IQR(x))
+}
+plot.outlier <- BECv13Hier.envdata2 %>% group_by(Order) %>% mutate(outlier = ifelse(is_outlier(DD1040), DD1040, as.numeric(NA))) %>% filter(!is.na(outlier)) %>% select(PlotNumber, outlier)# %>% ggplot(., aes(x = factor(Chr.), y = value)) + geom_boxplot() + geom_text(aes(label = outlier), na.rm = TRUE, hjust = -0.3)
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r plot by hierarhcy unit}
+
+# ggplot(BECv13Hier.envdata2, aes(x = "Suborder", y = "MAT", fill = "Suborder")) +
+#   geom_density_ridges() +
+#   theme_ridges() + 
+#   theme(legend.position = "none")
+# require(ggstatsplot)
+# ggbetweenstats(data = BECv13Hier.envdata2, 
+#                x = Suborder,
+#                y = MSP,
+#                outlier.tagging = TRUE,
+#                outlier.label = PlotNumber)
+
+require("ggpubr")
+
+
+ggboxplot(BECv13Hier.envdata2, x = "Order", y = "CMD",
+          title = "CMD",color = "Order", orientation = "horizontal", legend = "none", ggtheme = theme_bw())
+
+ggboxplot(BECv13Hier.envdata2, x = "Order", y = "DD5",
+          title = "DD5",color = "Order", orientation = "horizontal", legend = "none", ggtheme = theme_bw())
+
+ggboxplot(BECv13Hier.envdata2, x = "Order", y = "DD1040",
+          title = "DD1040",color = "Order", orientation = "horizontal", legend = "none", ggtheme = theme_bw())
+
+ggboxplot(BECv13Hier.envdata2, x = "Order", y = "CMI",
+          title = "CMI",color = "Order", orientation = "horizontal", legend = "none", ggtheme = theme_bw())
+
+ggboxplot(BECv13Hier.envdata2, x = "Order", y = "SHM",
+           title = "SHM",color = "Order", orientation = "horizontal", legend = "none", ggtheme = theme_bw())
+
+```
+
+
