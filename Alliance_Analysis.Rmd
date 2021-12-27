@@ -76,39 +76,42 @@ BECv13_env <- fread('./clean_tabs/BECMaster_env_climate_data.csv', stringsAsFact
 #---------------
 vegSum <- VegdatSUsummary(vegDat2,BECv13_SU)
 
-BECv13Hier.data <- left_join(vegSum,BECv13_Hier)
+BECv13Hier.data <- left_join(vegSum,BECv13_Hier) %>% mutate(prominence = MeanCov * ((Constancy/100)^2))
 
 ```
-
 ```{r reduce summary for alliance analysis, echo=FALSE}
 #For each Order
 Orders <- unique(BECv13Hier.data$Suborder)
 Orders
-Order.dat <- BECv13Hier.data %>% filter(Suborder == "SUBORDER CwFd (No Hw ICHxw and xh)")
+Order.dat <- BECv13Hier.data %>% filter(Suborder == "SUBORDER Pseumen-Calarub (central concept)")
 Order.selected <- Order.dat$SiteUnit %>% as.character
 ##limit life forms to tree species
 #trees <- c(1,2)
 constcut <- 55 ##remove species less than cutoff
 covercut <- 0
+promcut <- 1
 nplots <- 3
 ##max constancy by species
 Spp.highconst <- Order.dat  %>%  group_by(Species) %>%
   summarise(max = max(Constancy, na.rm=TRUE)) %>% filter(max > constcut) %>% dplyr::select(Species) 
 Spp.highconst <- Spp.highconst$Species %>% as.character
 ###only keep species that have high constancy in at least 1 unit
-Order.dat2 <- Order.dat[Order.dat$Species %in% Spp.highconst,] %>% dplyr::filter(MeanCov > covercut) %>% filter(nPlots >= nplots)
-Order.dat2 <- Order.dat2 %>% dplyr::select(Order,SiteUnit, Species, MeanCov, Constancy)
+Order.dat2 <- Order.dat[Order.dat$Species %in% Spp.highconst,] %>% dplyr::filter(prominence > promcut) %>% filter(nPlots >= nplots)
+Order.dat2 <- Order.dat2 %>% dplyr::select(Order,SiteUnit, Species, MeanCov, Constancy, prominence)
 Order.vegmatx <- Order.dat2 %>% dplyr::select(SiteUnit, Species, MeanCov, Constancy)
 Order.vegmatx <- Order.vegmatx %>% pivot_wider(id_cols = SiteUnit, names_from = Species, values_from = c(MeanCov, Constancy))
 Order.covmatx <- Order.dat2 %>% dplyr::select(SiteUnit, Species, MeanCov)
 Order.covmatx <- Order.covmatx %>% pivot_wider(id_cols = SiteUnit, names_from = Species, values_from = MeanCov) %>% dplyr::select(-SiteUnit)
+Order.prommatx <- Order.dat2 %>% dplyr::select(SiteUnit, Species, prominence)
+Order.prommatx <- Order.prommatx %>% pivot_wider(id_cols = SiteUnit, names_from = Species, values_from = prominence)
+
 plot.dat <- left_join(BECv13_SU ,vegDat2 ) %>% filter(SiteUnit %in% Order.selected, Species %in% Spp.highconst) %>% 
   dplyr::select(PlotNumber, Species, Cover) 
 plot.dat2 <- plot.dat %>% group_by(PlotNumber,Species) %>% mutate(Cover2 = sum (Cover)) %>% dplyr::select(PlotNumber, Species, Cover2) %>% distinct() %>% as.data.table
 plot.spp <- plot.dat2$Species %>% as.data.frame %>% distinct() 
                                                                   
 plot.matx <- plot.dat2 %>% pivot_wider(id_cols = PlotNumber, names_from = Species, values_from = Cover2) %>% as.data.frame
-
+fwrite(plot.matx, "./outputs/plotmatrix.csv")
 ```
 
 
@@ -157,12 +160,110 @@ ExPanD(df)
 ```
 
 ```{r cluster of veg summary}
-VegMatrix <- as.data.frame(Order.vegmatx)
+
+###constancy or cover - or both
+#VegMatrix <- as.data.frame(Order.vegmatx)
+VegMatrix <- as.data.frame(Order.prommatx)
 SiteUnit <- VegMatrix$SiteUnit
 rownames(VegMatrix) <- VegMatrix$SiteUnit
 VegMatrix <- VegMatrix %>% dplyr::select(-SiteUnit)
 VegMatrix[is.na(VegMatrix)] <- 0
-Vegchord = decostand(VegMatrix,"normalize")
+Vegchord = decostand(VegMatrix,"hellinger")
+#Vegchord = decostand(VegMatrix,"normal")
+```
+
+``` {r number of clusters, echo = F, result = F}
+### determine statistical number of clusters to use
+n_clust <- fviz_nbclust(Vegchord, kmeans, nstart = 25, method = "silhouette", k.max = nrow(Vegchord) -1 )+
+#geom_vline(xintercept = 4, linetype = 2)+
+  labs(subtitle = "Silhouette method")
+plot(n_clust) ## "optimal" cluster number
+
+n_clust<-n_clust$data
+best.clust<-as.numeric(n_clust$clusters[which.max(n_clust$y)])
+```
+
+```{r dendrogram output }
+#best.clust = 4
+alliance_clst <- hcut(Vegchord, k = best.clust, hc_method = "ward.D2", hc_metric = "manhattan")
+alliance_dend <- fviz_dend (alliance_clst  ,  color_labels_by_k = T, lwd = .5,
+                   rect = T, cex = .5, horiz = T) %>% 
+  plot()
+ggsave("./outputs/Alliances_ClusterDendrogram.jpeg")
+alliance.ID <- alliance_clst$cluster  %>% as.data.frame %>% rename(AllianceID = 1) %>% rownames_to_column("SiteUnit")
+alliance.ID$AllianceID <- as.numeric(alliance.ID$AllianceID) %>% recode("A1", "B2", "C3", "D4", "E5", "F6", "G7", "H8", "I9", "J10", .default = "nothing") ##numbers cause problems in tabletoTree
+### need to right into a hierarchy to test
+BECv13_AllianceTest <- left_join(BECv13_Hier, alliance.ID) %>% mutate(Alliance = ifelse(!is.na(AllianceID), AllianceID, Alliance)) %>% filter(!is.na(AllianceID)) %>% dplyr::select(-AllianceID) %>% as.data.table
+BECv13_AllianceTest$Suball <- NA
+levelNames <- c("Formation", "Class", "Order", "Suborder", "Alliance", "Suball", "Assoc", "Subass", "Facies", "Working", "SiteUnit")
+Alliance_Hier <- tableToTree(BECv13_AllianceTest, levelNames)
+Alliance_Hier$Parent <- ifelse(Alliance_Hier$Parent == 1, "", Alliance_Hier$Parent) %>% as.integer
+fwrite(Alliance_Hier, "./outputs/AllianceCluster_test.csv")
+
+## clusterability###numbers below 0.5 have low clusterability
+res <- get_clust_tendency(Vegchord, n = nrow(Vegchord)-1, graph = F)
+res$hopkins_stat
+res
+
+```
+
+# ```{r cluster analysis}
+# dd <- dist(Vegchord)
+# hc <- hclust(dd, method = "ward.D2")
+# 
+# flexbeta <- function (dis,beta) 
+# {
+#   alpha <- (1-beta)/2
+#   out <- agnes(dis,meth='flex',par.method=alpha)
+#   out
+# }
+# hc <- flexbeta(dd,-0.25)
+# hc <- as.hclust(hc)
+# dend <- as.dendrogram(hc)
+# ####plots from ape package
+# plot(as.phylo(hc), type = "unrooted", cex = 0.5,no.margin = TRUE, lab4ut = "axial")
+# 
+# plot(as.phylo(hc), cex = 0.5, label.offset = 0.5)
+# #plot(as.phylo(hc), type = "cladogram", cex = 0.5, label.offset = 0.5)
+# #plot(as.phylo(hc), type = "fan")
+# ```
+
+```{r Species Indicators by Cluster, echo = FALSE }
+
+#constancy Table by cluster
+clust_const <- concov(Vegchord,alliance_clst$cluster ,digits=1,width=5,typical=TRUE,thresh=10)
+c = clustconst(Vegchord, memb = as.memb(alliance_clst$cluster))
+###indicator values by cluster from indicatorspecies package
+indval = multipatt(Vegchord,alliance_clst$cluster, control = how(nperm=999), max.order = 2)
+summary(indval, alpha = 1)
+alliance_inds <- indval$sign
+## S3 method for class 'indval'
+# ###indicator values by cluster
+# #clust_indval <- indval(spp_matrix,mnt_clst2$cluster,numitr=1000)
+# Indval_sum <-   summary(clust_indval, p= 0.1, type= 'long', digits=2, show = .1, sort=FALSE, too.many=100)#show=p,
+# spp_ind <- as.data.frame (clust_indval$maxcls)
+
+############# test for differences
+####Note that only the outliers have long lists of significant INDvals (Yukon, Elk, Columbia)
+statdiff <- anosim(Vegchord, alliance_clst$cluster, permutations = 999, distance = "manhattan", strata = NULL,
+parallel = getOption("mc.cores"))
+#plot (statdiff)
+
+adondiff <- adonis2 (Vegchord ~ alliance_clst$cluster, permutations = 999, distance = "manhattan", 
+parallel = getOption("mc.cores"))
+adondiff$F
+
+n_clust_spp <- specnumber(Vegchord, groups = alliance_clst$cluster)### number of species per cluster
+
+
+
+      ## Perform test
+    #anova(clst_disp)
+## Permutation test for F
+    #permutest(clst_disp, pairwise = TRUE, permutations = 99)
+## Tukey's Honest Significant Differences
+    #(mod.HSD <- TukeyHSD(clst_disp))
+    #plot(mod.HSD)
 ```
 
 ```{r tidy models kmeans}
