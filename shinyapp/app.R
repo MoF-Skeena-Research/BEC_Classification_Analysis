@@ -10,6 +10,7 @@ library(leafgl)
 library(shinyjs)
 library(RPostgreSQL)
 library(sf)
+library(ccissdev)
 
 source("leaflet_tiles.R")
 
@@ -19,7 +20,7 @@ mbsty="whmacken/ckph5e7y01fhr17qk5nhnpo10"
 
 drv <- dbDriver("PostgreSQL")
 sapply(dbListConnections(drv), dbDisconnect)
-con <- dbConnect(drv, user = "postgres", password = "postgres", host = "138.197.168.220", 
+con <- dbConnect(drv, user = "postgres", password = "PowerOfBEC", host = "138.197.168.220", 
                  port = 5432, dbname = "bec_master")
 selectedCols = c("plotnumber","projectid","date","zone","subzone",
              "siteseries","moistureregime","nutrientregime",
@@ -107,12 +108,17 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$showplots,{
-    withProgress(message = "Working...", {
-      dat <- st_read(con, query = "select plotnumber,geom from env")
-    })
-    
-    leafletProxy("map") %>%
-      addGlPoints(data = dat, layerId = "plots", popup = ~ plotnumber)
+    if(input$showplots %% 2 == 0){
+      leafletProxy("map") %>%
+        removeGlPoints(layerId = "plots")
+    }else{
+      withProgress(message = "Working...", {
+        dat <- st_read(con, query = "select plotnumber,geom from env")
+      })
+      
+      leafletProxy("map") %>%
+        addGlPoints(data = dat, layerId = "plots", popup = ~ plotnumber)
+    }
   })
   
   observeEvent(input$selectlayer,{
@@ -140,7 +146,7 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$runquery,{
-    if(input$selectlayer == "Districts"){
+    if(input$selectlayer == "Districts"){##need to fix for BUL
       plotnums <- RPostgreSQL::dbGetQuery(con,paste0("SELECT plotnumber 
                                                      from plotid 
                                                      where dist_code IN ('",
