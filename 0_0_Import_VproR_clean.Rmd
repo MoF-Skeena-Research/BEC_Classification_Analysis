@@ -39,91 +39,105 @@ require(psych)
 ```
 
 ##IMPORT AND CLEAN DATA
- Uses 3 column R export FORMAT FROM Vpro with Lifeform option selected
+Imports from _VEG table of a BECmaster Vpro dataset cleans and saves to a 3-column format.
+Saves data to a .RDATA file which can be used instead of pulling from the database to save time.
+ 
+```{r import data and convert to a 3-column}
+require(DBI) #loads odbc as well
+becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster19/BECMaster19.accdb;")
 
-```{r import data}
+# envdata <- dbReadTable(becmaster, "BECMaster19_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
+# admindata <- dbReadTable(becmaster, "BECMaster19_Admin")
+vegdataraw <- dbReadTable(becmaster, "BECMaster19_Veg") 
+dbDisconnect(becmaster)
+sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Government of BC/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
+taxa  <- dbReadTable(sppmaster, "SpeciesMaster01Jan2023")
+dbDisconnect(sppmaster)
+#taxon.all <- fread("D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv", header = T, stringsAsFactors = F, strip.white = T)
+taxon_info <- taxa %>% filter(Codetype == "U" | Codetype == "D") %>% dplyr::select(-ID)%>% mutate(Species = Code)
 
-vegData <- fread("./inputs/BECMasterVeg_15Sept_2021.txt", header = TRUE) 
-vegData <- separate(vegData, Species, c("Species","Type"), "-", remove = TRUE)
+#### veg data into a 3-column dataset for analysis}
+vegdata <- vegdataraw %>% select(PlotNumber, Species, TotalA, TotalB, Cover6, Cover7) %>% data.table
+vegdata[, totalcov := rowSums(.SD, na.rm = TRUE), .SDcols = 3:6]
+vegdata <- vegdata %>% filter(totalcov > 0)## remove species with zero cover
+vegdata <- vegdata %>% mutate(Species = toupper(Species)) %>% mutate_at(vars(contains('cov')), ~ifelse(. <.1, .1, .))## converts lower case characters to upper and low values to 0.1
+## join lifeform
+vegdata[taxon_info, "lifeform" := Lifeform, on = .(Species = Code)]
+vegdata <- vegdata %>% mutate_at(vars(contains('cov')), ~ifelse(. <.1, .1, .)) %>% select(PlotNumber, Species, lifeform, totalcov) %>% filter(!is.na(lifeform))
+save(vegdata, file = "./inputs/VegDat_Raw.RData")
 
-vegData <- mutate_all(vegData, funs(toupper)) ### converts lower case characters to upper
-vegData$Cover <- as.numeric(vegData$Cover)
-###return on significant decimal places
-vegData$Cover <- round(vegData$Cover, digits = 3)
-## remove species with zero cover
-vegData <- vegData[vegData$Cover > 0,]
-save(vegData, file = "./inputs/VegDat_Raw.RData")##includes type field for lifeform
-lifeform <- unique(vegData[,c(2:3)])
-save(lifeform, file= "./inputs/SppLifeForm.RData")###library list of species lifeform codes
+```
+
+
+```{r Summary statistics of vegetation data}
 load("./inputs/VegDat_Raw.RData")
-##############Some stats on imported data
-####Count number of columns (species) required
+###clean data for use
 
 NTaxa = ""
-NTaxa$Plots <- length(unique(vegData$PlotNumber))
-NTaxa$NTaxa = length(unique(vegData$Species))
-NTaxa$NVegRecords <- length(str_sub(vegData$Species,1,7))
+NTaxa$Plots <- length(unique(vegdata$PlotNumber))
+NTaxa$NTaxa = length(unique(vegdata$Species))
+NTaxa$NVegRecords <- length(str_sub(vegdata$Species,1,7))
 NTaxa <- as.data.frame(NTaxa)
 
 
 
 ####Counts the number of instances of each unique species
-CountsTaxa <- ddply(vegData,~Species,summarise,sppcount=length(Plots))
-CountsSpp <- ddply(vegData,~str_sub(vegData$Species,1,7),summarise,sppcount=length(unique(PlotNumber)))
+CountsTaxa <- ddply(vegdata,~Species,summarise,sppcount=length(Plots))
+CountsSpp <- ddply(vegdata,~str_sub(vegdata$Species,1,7),summarise,sppcount=length(unique(PlotNumber)))
 CountsSpp <- arrange(CountsSpp, -sppcount)
 colnames (CountsSpp) [1] <- "Species"
 rareSpp <- as.data.frame (CountsSpp[CountsSpp$sppcount <= 3,]) # set level for rare species removal
 CountsSppReduced <- CountsSpp[!CountsSpp$Species %in% rareSpp$Species,]
 
 #############Optional -- Remove subtaxa coding
-vegData$Species <-str_sub(vegData$Species,1,7) ### adds field with only species codes (no spp or varieties)
-vegData$Species <- as.factor(vegData$Species)
+vegdata$Species <-str_sub(vegdata$Species,1,7) ### adds field with only species codes (no spp or varieties)
+vegdata$Species <- as.factor(vegdata$Species)
 
 ###Plot number of species in density graph
 ggplot(data=CountsSpp,aes(x=reorder(Species, -sppcount), y=sppcount))+
  geom_point()
-vegDatareduced <- vegData[!vegData$Species %in% rareSpp$Species,]
-ggplot(vegDatareduced,aes(Species))+
+vegdatareduced <- vegdata[!vegdata$Species %in% rareSpp$Species,]
+ggplot(vegdatareduced,aes(Species))+
   geom_density(adjust = 5)
   #theme(axis.text.x=element_text(angle = 90, hjust=1))))))
-#####reduce vegData by eliminating rareSpp
-vegData <- vegData[!vegData$Species %in% rareSpp$SppOnly,]
+#####reduce vegdata by eliminating rareSpp
+vegdata <- vegdata[!vegdata$Species %in% rareSpp$SppOnly,]
 
-#####reduce vegData to only lifeforms listede (lifeform 1 and 2 = trees; 6 = grasses) only
-#vegData <- vegData[vegData$Type %in% c(3,4,6),]
-#vegData <- vegData[!is.na(vegData$Species),]
+#####reduce vegdata to only lifeforms listede (lifeform 1 and 2 = trees; 6 = grasses) only
+#vegdata <- vegdata[vegdata$Type %in% c(3,4,6),]
+#vegdata <- vegdata[!is.na(vegdata$Species),]
 
-treeSpp <- as.character(unique(vegData$Species))
+treeSpp <- as.character(unique(vegdata$Species))
 
 
 #####################################################
 
-#vegData$Species <- unlist(lapply(vegData$Species, toupper))
-vegData3c <- vegData[,-3]##removes type field and setsback to 3-column format
-save(vegData3c, file = "VegDat_Raw_3column.RData")
+#vegdata$Species <- unlist(lapply(vegdata$Species, toupper))
+vegdata3c <- vegdata[,-3]##removes type field and setsback to 3-column format
+save(vegdata3c, file = "VegDat_Raw_3column.RData")
 load("VegDat_Raw3column.RData")
 
 ###update old codes
 masterList <- fread("./inputs/SpeciesMaster05Oct2019.csv", stringsAsFactors = FALSE)
 noMatch <- masterList[masterList$OldCode != masterList$Code,5:6]
-temp <- merge(vegData,noMatch,by.x = "Species", by.y = "OldCode")
+temp <- merge(vegdata,noMatch,by.x = "Species", by.y = "OldCode")
 temp$Species <- temp$Code
 temp <- temp[,-5]
-vegData <- rbind(vegData,temp) ###Add section with new names
-vegData <- vegData[!vegData$Species %in% noMatch$OldCode,] ##remove old codes
+vegdata <- rbind(vegdata,temp) ###Add section with new names
+vegdata <- vegdata[!vegdata$Species %in% noMatch$OldCode,] ##remove old codes
 
 ###remove codes not in master list
-notIn <- vegData[!vegData$Species %in% masterList$Code,]
- vegData <- vegData[vegData$Species %in% masterList$Code,]
+notIn <- vegdata[!vegdata$Species %in% masterList$Code,]
+ vegdata <- vegdata[vegdata$Species %in% masterList$Code,]
 
 if(length(notIn$Species) > 0){
   notIn <- dcast(notIn, PlotNumber ~ Species, value.var = "Species", fun.aggregate = length)
   write.csv(notIn, file = "CodesNotInMasterList.csv")
 }
-vegRemove <- vegData[vegData$Cover <= 0,] 
+vegRemove <- vegdata[vegdata$Cover <= 0,] 
 write.csv(vegRemove, file = "Plots_0Cover.csv") ## output of species with zero cover for review
-vegData <- vegData[vegData$Cover > 0,]## remove records with zero cover
-save(vegData, file = "./outputs/VegDat_Clean.RData")
+vegdata <- vegdata[vegdata$Cover > 0,]## remove records with zero cover
+save(vegdata, file = "./outputs/VegDat_Clean.RData")
 #load("VegDat_Clean.RData")
 
 ###Optional application of lump species
@@ -131,11 +145,11 @@ lump <- read.csv("NewSppLump27Oct2018_Lump.csv", stringsAsFactors = FALSE)
 lump$Lump <- unlist(lapply(lump$Lump, tolower))
 lump <- lump[,1:2]
 colnames(lump)[1:2] <- c("Lump","Species")
-vegData <- merge(vegData, lump, by.x = "Species", all.x = TRUE) ##lump data
-vegData$Species <- as.character(vegData$Species)
-vegData$Species <- ifelse(!is.na(vegData$Lump), vegData$Lump, vegData$Species)
-vegData <- vegData[-5]
-save(vegData, file = "VegDat_Lumped.RData")
+vegdata <- merge(vegdata, lump, by.x = "Species", all.x = TRUE) ##lump data
+vegdata$Species <- as.character(vegdata$Species)
+vegdata$Species <- ifelse(!is.na(vegdata$Lump), vegdata$Lump, vegdata$Species)
+vegdata <- vegdata[-5]
+save(vegdata, file = "VegDat_Lumped.RData")
 load("VegDat_Lumped.RData")
 
 ```
