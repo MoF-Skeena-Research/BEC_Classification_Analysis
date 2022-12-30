@@ -7,7 +7,7 @@ treeToTable <- function(SUhier){
   if(length(roots) >= 1){
     warning("There are duplicate roots. Please check ID ", roots)
   }
-  HierClean[is.na(Parent), Parent := 1]
+  HierClean[is.na(Parent), Parent := 0]
   temp <- data.table(ID = roots,Parent = rep(1,length(roots)), Name = rep("XXX",length(roots)),Level = rep(1, length(roots)))
   HierClean <- rbind(HierClean,temp)
   
@@ -29,7 +29,9 @@ treeToTable <- function(SUhier){
   dups <- tab2[ID %in% dupLevels$ID,]
   setorder(dups,"ID")
   dups[,variable := NULL] ##these are the branches with duplicates
-  tabOut <- dcast(tab2, ID ~ Level, value.var = "value", fun.aggregate = function(x){x[1]}) %>% as.data.table
+  tabOut <- dcast(tab2, ID ~ Level, value.var = "value", fun.aggregate = function(x){x[1]}) %>% as.data.table %>% mutate_if(is.integer, as.character)
+  tab_standard <- setNames(data.table(matrix(nrow = 0, ncol = 12)), c('ID', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11')) %>% mutate_if(is.logical, as.character)
+  tabOut <- dplyr::bind_rows(tab_standard, tabOut)
   setnames(tabOut, c("ID","Formation","Class","Order","Suborder","Alliance","Suball","Assoc","Subass","Facies","Working", "SiteUnit"))
   tabOut[is.na(Subass), Subass := Assoc]
   tabOut[is.na(Suborder), Suborder := Order]
