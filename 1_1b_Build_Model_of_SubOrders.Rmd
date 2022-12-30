@@ -74,18 +74,23 @@ SS.names <- unique(SUTab$SiteUnit)
 
 ##roll up into site series summary data
 ```{r summarize site series, echo=FALSE}
+source("./_functions/_create_su_vegdata.R")
 
-vegDat <- as.data.table(vegDat2)
+vegsum <- create_su_vegdata(vegDat2, SUTab)
 
-vegDat[SUTab, SiteUnit := i.SiteUnit, on = "PlotNumber"]
-vegDat <- vegDat[!is.na(SiteUnit) & SiteUnit != "",]
+##roll up into site series summary data
 
-vegDat <- unique(vegDat[!is.na(SiteUnit) & SiteUnit != "",])
-vegDat3 <- vegDat[,if(.N > 1) .SD, by = .(SiteUnit,Species)]
-vegDat3[,nPlots := length(unique(PlotNumber)), by = .(SiteUnit)]
-vegSum <- vegDat3[,.(MeanCov = sum(Cover, na.rm = TRUE)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)]
-Units.toofew <- vegSum %>% dplyr::filter(nPlots <4) %>% dplyr::select(SiteUnit) %>% distinct()
-Units.toofew <- Units.toofew$SiteUnit
+source("./_functions/_spp_importance.R")
+vegsum <- spp_importance(vegsum) 
+
+### Filter out poor units and low importance species#
+vegDat_good <- vegsum %>% dplyr::filter(nPlots > 4) %>% dplyr::filter(spp_importance > 0.05) ## remove rare or very low cover species in SU
+
+
+Hier.clean <- SUhier$table
+ #%>% rename(SiteUnit = SiteUnit))## Select only site series will enough plots
+Hier.units <- Hier.clean %>% dplyr::select(SiteUnit, Class, Order, Suborder) %>% distinct()
+Hier.data <- left_join(Hier.units, vegDat_good) %>% filter(!is.na(nPlots)) %>% arrange(Species) %>% distinct()
 #fwrite(vegSum, './clean_tabs/BECv12SiteUnitSummaryVegData.csv')
 ```
 
@@ -109,7 +114,7 @@ constcut <- 33 ##remove species less than cutoff
 covercut <- 1
 treespp <- taxon.all[Lifeform %in% trees, ] %>% dplyr::select(Code)
 treespp <- as.vector(treespp$Code)
-vegDat_test <- vegSum[Species %in% treespp,]### include only trees for hierarchy build
+vegDat_test <- vegsum[Species %in% treespp,]### include only trees for hierarchy build
 vegDat_test <- vegDat_test %>% dplyr::filter(MeanCov > covercut) %>% dplyr::filter(Constancy > constcut)
 
 
