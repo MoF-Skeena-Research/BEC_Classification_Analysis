@@ -1,4 +1,4 @@
-#hierWide = Hier2
+#hierWide = Hier.new
 tableToTree <- function(hierWide, levelNames){
   levelID <- data.table(Name = levelNames, Level = 1:length(levelNames))
   hierWide[,ID := 1:nrow(hierWide)]
