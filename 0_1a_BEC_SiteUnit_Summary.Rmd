@@ -47,6 +47,45 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
+
+```{r import data}
+### Vegetation From BECMaster cleaning script Long form Plot|Species|Cover (across all layers)
+### or From Vpro export
+#BGCZone <- fread(paste0(cloud_dir,"All_BGCs_Info_v12_2.csv"), data.table=FALSE)
+vegDat2 <- fread("../BECMaster_Cleaning/clean_data/BECMaster_VegR_clean.csv", data.table = FALSE)
+taxon.all <- fread("D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv", header = T, stringsAsFactors = F, strip.white = T) %>% filter(Codetype == "U")
+###SU table
+#SUTab <- fread("./inputs/ALLBECSU_2021_SU.csv")
+SUTab <- fread("./clean_tabs/BECv13Analysis_Forest_17Sept2021_SU.csv")
+SUTab$SiteUnit <-  trimws(SUTab$SiteUnit)
+SS.names <- unique(SUTab$SiteUnit)
+
+```
+
+
+##roll up into site series summary data
+```{r summarize site series, echo=FALSE}
+source("./_functions/_create_su_vegdata.R")
+
+vegsum <- create_su_vegdata(vegDat2, SUTab)
+
+##roll up into site series summary data
+
+source("./_functions/_spp_importance.R")
+vegsum <- spp_importance(vegsum) 
+
+### Filter out poor units and low importance species#
+vegDat_good <- vegsum %>% dplyr::filter(nPlots > 4) %>% dplyr::filter(spp_importance > 0.05) ## remove rare or very low cover species in SU
+
+
+Hier.clean <- SUhier$table
+ #%>% rename(SiteUnit = SiteUnit))## Select only site series will enough plots
+Hier.units <- Hier.clean %>% dplyr::select(SiteUnit, Class, Order, Suborder) %>% distinct()
+Hier.data <- left_join(Hier.units, vegDat_good) %>% filter(!is.na(nPlots)) %>% arrange(Species) %>% distinct()
+#fwrite(vegSum, './clean_tabs/BECv12SiteUnitSummaryVegData.csv')
+```
+
+
 ```{r import data}
 ###Import BECMaster vegetation plot data produced from 0_BEC_data_import_clean.R script
 #load("./inputs/VegDat_Clean.RData")
