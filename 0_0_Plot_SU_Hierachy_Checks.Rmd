@@ -1,5 +1,5 @@
 ---
-title: "Check Site Series for Plot Data"
+title: "Check SU tables"
 author: "Will MacKenzie"
 date: "13/09/2021"
 output: html_document
@@ -35,57 +35,29 @@ correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft A
 all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
 dbDisconnect(correlation)
 SU <- do.call(rbind.data.frame, all_su)
-SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na()
-fwrite(SU, "./clean_tabs/CoastGuide_Forest_SU.csv")
+SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct()
+fwrite(SU, "./clean_tabs/CoastGuide_All_BGC_Forest_SU.csv")
+###remove phases and seral units
+SU_siteseries <- SU %>% 
+  filter(!str_detect(SiteUnit, '[$]'))
+phases = c("a", "b", "c")
+SU_siteseries$SiteUnit <- str_replace(SU_siteseries$SiteUnit, "[abc]", "")
+fwrite(SU_siteseries, "./clean_tabs/CoastGuide_All_BGC_Forest_SS.csv")
 
+SU <- SU_siteseries
 ###Check that there is plot data for all
 missingplots <- anti_join(SU, ENV)
+plots <- right_join(SU, ENV)
 ### Check for duplicate plot usage
 usemorethanone <- SU %>% dplyr::group_by(PlotNumber) %>% dplyr::mutate(dups = n()) %>% filter(dups >1) %>% ungroup() %>% arrange(PlotNumber)
 fwrite(usemorethanone, "./outputs/Coast_Plots_Used_Morethan_Once.csv")
 ###Summaries by BGC and by SS
 plots_bgc <- SU %>% group_by(bgc) %>% dplyr::summarise(plots = n())
 plots_SS <- SU %>% group_by(SiteUnit) %>% dplyr::summarise(plots = n())
-siteunits_toofew <- plots_SS %>% filter(plots <5)
-fwrite(usemorethanone, "./outputs/Coast_SiteUnits_w_lessthan5plots.csv")
-```
-## Import a Vpro hierarchy tree and covert to matrix
-```{r clean hierarchy}
+SS_count <- length(unique(SU$SiteUnit))
+siteunits_toofew <- plots_SS %>% filter(plots <5) #%>% dplyr::select(- PlotNumber) %>% distinct
 
-# SUhier <- fread("./inputs/BECv12_Forests_Jan2021_Hierarchy.csv")
-# ### add any hierarchical levels not in hierarchy table
-# temp <- treeToTable(SUhier)
-# Hier.clean <- temp$table
-# fwrite(Hier.clean, './outputs/BECv12_Hierarchy_Matrix.csv')
-
-```
-
-## Check for plots for each SU
-
-```{r plots per SU, echo=FALSE}
-
-# BGCv13_nplots <- BECv13_SU %>% count(SiteUnit) %>% distinct()##plots per SU
-# BGCv13_missing <- anti_join(SS.Forest, BGCv13_nplots )  %>%  distinct() #%>% select(-SS_Name)
-
-```
-Exports hierarchy matrix with new units added into an unplaced Formation 
-```{r check SU units in hierarchy}
-# SU_in_Hier <- full_join(BGCv13_nplots, Hier.clean)
-# Hier.clean2 <- SU_in_Hier[!is.na(n),] #removes both hierarchy units without site series and site series without plots
-# Hier.clean2 <- Hier.clean2 %>% mutate(Formation = ifelse(is.na(Formation), "NewUnitstoPlace", Formation)) # adds unplaced units into the hierarchy under NewUnitstoPlace Formation
-# Hier.new <- Hier.clean2 %>% select(-n) %>% relocate(SiteUnit, .after = last_col())
-# fwrite(Hier.new, './clean_tabs/BECv13_Hierarchy_Matrix.csv')
-```
-
-
-```{r reverse function to write hierarhcy back into Vpro format}
-#Hier.new <- fread("./outputs/BECv13_Hierarchy_Matrix.csv")
-# levelNames <- c("Formation", "Class", "Order", "Suborder", "Alliance", "Suball",
-# "Assoc", "Subass", "Facies", "Working", "SiteUnit")
-# Hier.new <- as.data.table(Hier.new)
-# testReverse <- tableToTree(hierWide = copy(Hier.new),levelNames)
-# testReverse$Parent <- ifelse(testReverse$Parent == 1, "", testReverse$Parent)
-# fwrite(testReverse, "./outputs/CleanedVPROHierarchyTree.csv")
+fwrite(siteunits_toofew, "./outputs/Coast_SiteUnits_w_lessthan5plots.csv")
 ```
 
 
