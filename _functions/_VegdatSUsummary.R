@@ -1,6 +1,6 @@
 #SUTab = BECv13_SU
 #vegdata
-VegdatSUsummary <- function(vegdata, SUTab){
+create_vegsummary <- function(vegdata, SUTab){
  
   vegDat <- as.data.table(vegdata)
   
