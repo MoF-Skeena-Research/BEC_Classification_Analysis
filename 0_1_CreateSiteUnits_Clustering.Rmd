@@ -56,8 +56,8 @@ SU.list <- fread("./inputs/AlpineAll_2020_SU.txt", data.table = FALSE)
 nonvasc = c(9, 10, 11)
 genera = c("Salix", "Carex")
 vegDat2 <- cov_rescale(vegDat2) %>% filter(!Lifeform %in% nonvasc) %>% filter(Cover2 > .5)
-salix_carex <- vegDat2 %>% filter(Species == "SALIX" | Species == "CAREX") %>% filter(Cover>9) %>% select(PlotNumber) %>% unique() ## plot with undetermined dominants to remove
-vegDat2 <- left_join(SU.list, vegDat2) %>% filter (!PlotNumber %in% salix_carex$PlotNumber) %>% filter(!Species %in% genera )
+#salix_carex <- vegDat2 %>% filter(Species == "SALIX" | Species == "CAREX") %>% filter(Cover>9) %>% select(PlotNumber) %>% unique() ## plot with undetermined dominants to remove
+#vegDat2 <- left_join(SU.list, vegDat2) %>% filter (!PlotNumber %in% salix_carex$PlotNumber) %>% filter(!Species %in% genera )
 veg.dat <-
   vegDat2 %>% dplyr::select(PlotNumber, Species, Cover2) %>% matrify()
 ```
@@ -67,7 +67,7 @@ veg.dat <-
 test.data <- veg.dat# [1:30,]# %>% filter(str_detect(row.names(class.dat), "ESSFwh"))%>% as.matrix#  
 # test_jac.vegan <- vegan::vegdist(test.data, method = "sorensen", binary = F) %>% as.matrix
 #test_jac <- philentropy::distance(test.data, method = "jaccard")
-test_jac <- proxy::dist(test.data, method="ejaccard", diag=TRUE, upper = TRUE) ## ejaccard and philentropy jaccard are real-data versions extended jaccard opr taimoto
+test_jac <- proxy::dist(test.data, method="ejaccard", diag=TRUE, upper = FALSE) ## ejaccard and philentropy jaccard are real-data versions extended jaccard opr taimoto
 
 # , use.row.names = TRUE, as.dist.obj = TRUE)
 test_jac.tab <- test_jac %>% as.matrix
@@ -76,28 +76,29 @@ test_jac.list <- melt_dist(test_jac.tab) %>% as.data.table #%>% filter(dist < .2
 ss_clst <- hclust(test_jac, method = "complete")
 xx <- ss_clst$height %>% as.data.frame
  assocs <- cutree( ss_clst ,h =.25)
- alliances <- cutree(ss_clst, h=.5)
- suborders <- cutree(ss_clst, h=.75) 
- orders <- cutree(ss_clst, h=.9999)
+ # alliances <- cutree(ss_clst, h=.5)
+ # suborders <- cutree(ss_clst, h=.75) 
+ # orders <- cutree(ss_clst, h=.9999)
 k = length(unique(assocs))
-k2 <- length(unique(alliances))
-k3 <- length(unique(suborders))
-k4 <- length(unique(orders))
+# k2 <- length(unique(alliances))
+# k3 <- length(unique(suborders))
+# k4 <- length(unique(orders))
 # ss_dend <- fviz_dend (ss_clst , k=k, color_labels_by_k = T, lwd = .5,
 #                     rect = T, cex = .5, horiz = T) %>%    plot()
   # 
-assoc_SU <- as.data.frame(assocs) %>% rownames_to_column("PlotNumber") %>% mutate(assocs = paste0("SiteUnit-", assocs)) %>% arrange(desc(PlotNumber))
-newassocs <- unique(assoc_SU$assocs)
-alliance_SU <- as.data.frame(alliances) %>% rownames_to_column("PlotNumber") %>% mutate(alliances = paste0("SiteUnit-", alliances))%>% arrange(desc(PlotNumber))
-newalliance <- unique(alliance_SU$alliances)
-suborder_SU <- as.data.frame(suborders) %>% rownames_to_column("PlotNumber") %>% mutate(suborders = paste0("SiteUnit-", suborders))%>% arrange(desc(PlotNumber))
-newsuborder <- unique(suborder_SU$suborders)
-order_SU <- as.data.frame(orders) %>% rownames_to_column("PlotNumber") %>% mutate(orders = paste0("SiteUnit-", orders))%>% arrange(desc(PlotNumber))
-fewplots <- count(order_SU$orders) %>% filter(freq <5)# %>% select(or)
-order_SU <- order_SU %>% mutate(orders = ifelse((orders %in% fewplots$x), "Unplaced", orders))
-neworder <- unique(order_SU$orders)
+assoc_SU <- as.data.frame(assocs) %>% rownames_to_column("siteseries") %>% mutate(assocs = paste0("assoc-", assocs)) %>% arrange(desc(PlotNumber))
+asspc
+assoc_SU <- assoc_SU %>% left_join(veg
+# alliance_SU <- as.data.frame(alliances) %>% rownames_to_column("PlotNumber") %>% mutate(alliances = paste0("SiteUnit-", alliances))%>% arrange(desc(PlotNumber))
+# newalliance <- unique(alliance_SU$alliances)
+# suborder_SU <- as.data.frame(suborders) %>% rownames_to_column("PlotNumber") %>% mutate(suborders = paste0("SiteUnit-", suborders))%>% arrange(desc(PlotNumber))
+# newsuborder <- unique(suborder_SU$suborders)
+# order_SU <- as.data.frame(orders) %>% rownames_to_column("PlotNumber") %>% mutate(orders = paste0("SiteUnit-", orders))%>% arrange(desc(PlotNumber))
+# fewplots <- count(order_SU$orders) %>% filter(freq <5)# %>% select(or)
+# order_SU <- order_SU %>% mutate(orders = ifelse((orders %in% fewplots$x), "Unplaced", orders))
+# neworder <- unique(order_SU$orders)
 
-fwrite(order_SU, "./outputs/Alpine_SU.csv")
+fwrite(assoc_SU, "./outputs/CoastForestAssocs_SU.csv")
 ```
 
 ```{r dendrogram}
