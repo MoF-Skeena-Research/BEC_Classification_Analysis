@@ -21,21 +21,25 @@ require(DBI) #loads odbc as well
 
 ENV <- dbReadTable(becmaster, "BECMaster19_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
 ADMIN<- dbReadTable(becmaster, "BECMaster19_Admin")
-VEG <- dbReadTable(becmaster, "BECMaster19_Veg")
+#VEG <- dbReadTable(becmaster, "BECMaster19_Veg")
 env.fields <- colnames(ENV)
 odbc::odbcListColumns(becmaster, table = "BECMaster19_ENV")
-dbDisconnect(becmaster)
+dbDisconnect(becmaster) 
+load("./clean_data/veg_plot_data.RData")
+VEG <- vegdata
 ```
 
 ## Import SU table and BECdb for current BGC units and site series. Look for missing units. Create complete SU 
 
 ```{r import SU tables and look for errors}
 require(DBI) #loads odbc as well
-correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb;")
+correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested_01Jan2023.accdb;")
 all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
 dbDisconnect(correlation)
 SU <- do.call(rbind.data.frame, all_su)
-SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct()
+SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
+  arrange(desc(PlotNumber))
 fwrite(SU, "./clean_tabs/CoastGuide_All_BGC_Forest_SU.csv")
 ###remove phases and seral units
 SU_siteseries <- SU %>% 
