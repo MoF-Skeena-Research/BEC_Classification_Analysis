@@ -53,7 +53,9 @@ becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Acc
 # admindata <- dbReadTable(becmaster, "BECMaster19_Admin")
 vegdataraw <- dbReadTable(becmaster, "BECMaster19_Veg") 
 dbDisconnect(becmaster)
-sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Government of BC/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
+sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+   DBQ=C:/Users/whmacken/OneDrive - Government of BC/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")                       
+#DBQ=F:/OneDrive - Government of BC/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
 taxa  <- dbReadTable(sppmaster, "SpeciesMaster01Jan2023")
 dbDisconnect(sppmaster)
 #taxon.all <- fread("D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv", header = T, stringsAsFactors = F, strip.white = T)
