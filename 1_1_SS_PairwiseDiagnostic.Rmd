@@ -1,0 +1,39 @@
+---
+title: "Pairwise_Diagnostic"
+author: "WH MacKenzie"
+date: "08/01/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(reshape2)
+require(plyr)
+require(dplyr)
+require(tidyr)
+require(ggplot2)
+require(magrittr)
+require(foreach)
+require(tcltk)
+require(openxlsx)
+require(doParallel)
+require(doBy)
+require(doParallel)
+
+```
+
+## Read in analysis vegdata
+
+```{r load data}
+load(file = "./clean_data/SS_sum_analysis_data.RData")
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

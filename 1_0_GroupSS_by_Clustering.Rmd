@@ -27,19 +27,30 @@ ADMIN<- dbReadTable(becmaster, "BECMaster19_Admin")
 env.fields <- colnames(ENV)
 odbc::odbcListColumns(becmaster, table = "BECMaster19_ENV")
 dbDisconnect(becmaster)
+
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+SU <- dbReadTable(master_su, "All_Coast_Forest_SU")
+dbDisconnect(master_su)
+###created in 0_0_Plot_SU_Hierarchy checks script
+#SU <- fread("./clean_tabs/CoastGuide_All_BGC_Forest_SS.csv")
+
+veglump <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Spp_Lump.accdb;")
+LUMP <- dbReadTable(veglump, "CoastGuide2023_Lump")
+dbDisconnect(veglump) 
 ```
 
 
 ## Import SU table and BECdb for current BGC units and site series. Look for missing units. Create complete SU 
 
 ```{r import SU tables and look for errors}
-require(DBI) #loads odbc as well
-correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb;")
-all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
-dbDisconnect(correlation)
-SU <- do.call(rbind.data.frame, all_su)
-SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct()
-fwrite(SU, "./clean_tabs/CoastGuide_All_BGC_Forest_SU.csv")
+# require(DBI) #loads odbc as well
+# correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb;")
+# all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
+# dbDisconnect(correlation)
+# SU <- do.call(rbind.data.frame, all_su)
+# SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct()
+# fwrite(SU, "./clean_tabs/CoastGuide_All_BGC_Forest_SU.csv")
 ###remove phases and seral units
 SU_siteseries <- SU %>% 
   filter(!str_detect(SiteUnit, '[$]'))
@@ -55,7 +66,7 @@ plots <- right_join(SU, ENV)
 usemorethanone <- SU %>% dplyr::group_by(PlotNumber) %>% dplyr::mutate(dups = n()) %>% filter(dups >1) %>% ungroup() %>% arrange(PlotNumber)
 fwrite(usemorethanone, "./outputs/Coast_Plots_Used_Morethan_Once.csv")
 ###Summaries by BGC and by SS
-plots_bgc <- SU %>% group_by(bgc) %>% dplyr::summarise(plots = n())
+#plots_bgc <- SU %>% group_by(bgc) %>% dplyr::summarise(plots = n())
 plots_SS <- SU %>% group_by(SiteUnit) %>% dplyr::summarise(plots = n())
 SS_count <- length(unique(SU$SiteUnit))
 siteunits_toofew <- plots_SS %>% filter(plots <5) #%>% dplyr::select(- PlotNumber) %>% distinct
@@ -66,15 +77,23 @@ fwrite(siteunits_toofew, "./outputs/Coast_SiteUnits_w_lessthan5plots.csv")
 ##roll up into site series summary data and reduce to analysis set
 ```{r summarize site series, echo=FALSE}
 ### test run without non-vasculars
-vegdata <- vegdata %>% filter(lifeform <9 | lifeform == 12)
+vegdata2 <- vegdata %>% filter(lifeform <9 | lifeform == 12)
+
+source("./_functions/_lump_species.R")
+vegdata2 <- lump_species(vegdata2, LUMP)
+
 #vegdata <- vegdata %>% filter(lifeform <3)
 source("./_functions/_create_su_vegdata.R")
-vegsum <- create_su_vegdata(vegdata, SU)
+vegsum <- create_su_vegdata(vegdata2, SU)
 
 source("./_functions/_create_analysis_vegsum.R")
-veg_anal <- create_analysis_vegsum (vegsum, importance = 0.5, constancy = 60, minplots = 5) 
-SS_reduced_list <- unique(veg_anal$SiteUnit)
-SU_reduced <- SU %>% filter(SiteUnit %in% SS_reduced_list)
+veg_anal <- create_analysis_vegsum (vegsum, importance = 0.5, constancy = 60, minplots = 5)
+
+save(veg_anal, file = "./clean_data/SS_sum_analysis.RData")
+
+fwrite(veg_anal, "./outputs/Coast_SiteUnits_w_lessthan5plots.csv")
+SS_reduced_list <- unique(veg_anal$SiteUnit) %>% as.data.frame %>% dplyr::rename(SS = 1)
+SU_reduced <- SU %>% filter(SiteUnit %in% SS_reduced_list$SS)
 ```
 
 Cluster of site units to create associations.
@@ -92,10 +111,16 @@ test_jac <- proxy::dist(veg.dat, method="ejaccard", diag=TRUE, upper = FALSE) ##
 # units <- as.data.frame(rownames(xx))
 
 # , use.row.names = TRUE, as.dist.obj = TRUE)
-test_jac.tab <- test_jac %>% as.matrix
+test_jac.tab <- test_jac %>% as.matrix %>% as.data.frame
 test_jac.list <- harrietr::melt_dist(test_jac.tab) %>% as.data.table #%>% filter(dist < .25)
-fwrite(test_jac.tab, "./outputs/dissimtest.csv")
+minimum.iso1 <- test_jac.list %>% group_by(iso1) %>%  slice_min(order_by = dist) %>% filter(dist<.2) %>% select(iso1) %>% dplyr::rename(SS = iso1)
+minimum.iso2 <- test_jac.list %>% group_by(iso2) %>%  slice_min(order_by = dist) %>% filter(dist<.2) %>% select(iso2) %>% dplyr::rename(SS = iso2)
+SS_w_neighbours <- rbind(minimum.iso1,  minimum.iso2) %>% unique
+SS_no_neighbours <- anti_join(SS_reduced_list, SS_w_neighbours)
+fwrite(test_jac.tab, "./outputs/dissim_matrix.csv")
 fwrite(test_jac.list, "./outputs/dissim_pairwise.csv")
+fwrite(SS_no_neighbours, "./outputs/SS_with_no_similar.csv")
+
 ```
 
 Use agnes algorithms to build bottom-up hierarchy. Cutting the dendrogram at a low dissimilarity threshold (0.25) seems to make good working groups that pass the second pair-wise test. However, the structure of the higher level groups seems odd in some cases where similar site series end up in very different upper units.
@@ -105,7 +130,7 @@ Might need to develop an alternative grouping mechanism
 library(cluster)
 ss_clst = agnes(test_jac, diss = TRUE, stand = FALSE,
       method = "complete")
-ht_dendro <- max(ss_clst$height)*.999
+ht_dendro <- max(ss_clst$height)*.25
 dendro_test =as.dendrogram(ss_clst)
 plot(dendro_test)
 
@@ -113,21 +138,23 @@ par(mfrow=c(3,1))
 
 plot(dendro_test, main="Main")
 plot(cut(dendro_test, h = ht_dendro)$upper,
-     main="Upper tree of cut at h=75")
+     main="Upper tree of cut at h=25")
 plot(cut(dendro_test, h = ht_dendro)$lower[[4]],
-     main="Second branch of lower tree with cut at h=75")
+     main="Second branch of lower tree with cut at h=25")
 
  orders <- cutree(as.hclust(ss_clst), h=ht_dendro)
- order_SU <- as.data.frame(orders) %>% rownames_to_column("SiteUnit")# %>% mutate(orders = paste0("order-", orders))
+ order_SU <- as.data.frame(orders) %>% rownames_to_column("SiteUnit")# %>% mutate(working = paste0("working-", orders))
  order_SU <- left_join(SU, order_SU, by = "SiteUnit")
- fwrite(order_SU, "./outputs/orders_SU.csv")
+ groups <- order_SU %>% column_to_rownames("PlotNumber") %>% select(orders) %>% t
+
+ fwrite(order_SU, "./outputs/working_SU.csv")
 ```
 The cut-offs representing each level are approximate. Really only the lowest level c
 ```{r cut cluster }
  working <- cutree(as.hclust(ss_clst),h =.25)
-alliances <- cutree(as.hclust(ss_clst), h=.5)
- suborders <- cutree(as.hclust(ss_clst), h=.75)
- orders <- cutree(as.hclust(ss_clst), h=.999)
+alliances <- cutree(as.hclust(ss_clst), h=1)
+ suborders <- cutree(as.hclust(ss_clst), h=1)
+ orders <- cutree(as.hclust(ss_clst), h=1)
 # k = length(unique(working))
 # k2 <- length(unique(alliances))
 # k3 <- length(unique(suborders))
@@ -148,6 +175,7 @@ Hier_SU <- left_join(SU, working_SU, by = "SiteUnit") %>%
 left_join(alliance_SU, by = "SiteUnit") %>% 
   left_join(suborder_SU, by = "SiteUnit") %>% 
   left_join(order_SU, by = "SiteUnit") %>% distinct() %>% drop_na()
+working_count <- length(unique(Hier_SU$working))
 
 fwrite(Hier_SU, "./outputs/CoastForestClusteredUnits_SU.csv")
 ```
@@ -164,7 +192,7 @@ Hier.new  <- Hier.new  %>% mutate(class = ifelse(is.na(working), "unplaced", "pl
 Hier.new <- as.data.table(Hier.new)
 testReverse <- tableToTree(hierWide = copy(Hier.new),levelNames)
 testReverse$Parent <- ifelse(testReverse$Parent == 1, "", testReverse$Parent)
-fwrite(testReverse, "./outputs/CoastForestHierarchyTree.csv")
+fwrite(testReverse, "./outputs/CoastForestHierarchyTreev2.csv")
 ```
 
 ####______________SOME OTHER TESTS_______________________
@@ -202,20 +230,23 @@ ss_clst2 = agnes(test_jac, diss = TRUE, stand = FALSE,
 assoc_SU2 <- left_join(SU3, assoc_SU2, by = "SiteUnit") %>% select (PlotNumber, SiteUnit, assocs, assocs2) %>% rename(working = assocs, assocs = assocs2) %>% distinct %>% drop_na
 assoc_SS2 <- assoc_SU2 %>% select (-PlotNumber) %>% distinct %>% drop_na
 count_assocs2 <- length(unique(assoc_SS2$assocs))
+Hier_SU <- Hier_SU %>% select(-assocs)
+assoc_SU2 <- assoc_SU2 %>% select(SiteUnit, assocs)
+Hier_SU2 <- left_join(Hier_SU, assoc_SU2, by = "SiteUnit")
 
 # working <- cutree(as.hclust(ss_clst),h =.25)
-alliances <- cutree(as.hclust(ss_clst), h=.5)
- suborders <- cutree(as.hclust(ss_clst), h=.80)
- orders <- cutree(as.hclust(ss_clst), h=.995)
-  # 
-alliance_SU <- as.data.frame(alliances) %>% rownames_to_column("SiteUnit") %>% mutate(alliances = paste0("alliance-", alliances))
-suborder_SU <- as.data.frame(suborders) %>% rownames_to_column("SiteUnit") %>% mutate(suborders = paste0("suborder-", suborders))
-newsuborder <- unique(suborder_SU$suborders)
-order_SU <- as.data.frame(orders) %>% rownames_to_column("SiteUnit") %>% mutate(orders = paste0("order-", orders))
-#order_SU <- order_SU %>% mutate(orders = ifelse((orders %in% fewplots$x), "Unplaced", orders))
-#neworder <- unique(order_SU$orders)
+# alliances <- cutree(as.hclust(ss_clst), h=.5)
+#  suborders <- cutree(as.hclust(ss_clst), h=.80)
+#  orders <- cutree(as.hclust(ss_clst), h=1)
+#   # 
+# alliance_SU <- as.data.frame(alliances) %>% rownames_to_column("SiteUnit") %>% mutate(alliances = paste0("alliance-", alliances))
+# suborder_SU <- as.data.frame(suborders) %>% rownames_to_column("SiteUnit") %>% mutate(suborders = paste0("suborder-", suborders))
+# newsuborder <- unique(suborder_SU$suborders)
+# order_SU <- as.data.frame(orders) %>% rownames_to_column("SiteUnit") %>% mutate(orders = paste0("order-", orders))
+# #order_SU <- order_SU %>% mutate(orders = ifelse((orders %in% fewplots$x), "Unplaced", orders))
+# #neworder <- unique(order_SU$orders)
 
-Hier_SU <- left_join(assoc_SU2, alliance_SU, by = "SiteUnit") %>% 
+Hier_SU2 <- left_join(assoc_SU2, alliance_SU, by = "SiteUnit") %>% 
   left_join(suborder_SU, by = "SiteUnit") %>% 
   left_join(order_SU, by = "SiteUnit") %>% distinct() %>% drop_na()
 
@@ -223,7 +254,7 @@ fwrite(Hier_SU, "./outputs/CoastForest2stepClusteredUnits_SU.csv")
 ```
 
 ```{r rebuild the hierarchy using the new assoc as the root}
-Hier.new <- Hier_SU %>% mutate(formation = "-", class = "-", suball = "-", subass = "-", facies = "-") %>%   
+Hier.new <- Hier_SU2 %>% mutate(formation = "-", class = "-", suball = "-", subass = "-", facies = "-") %>%   
   select(formation, class, orders, suborders,alliances, suball, assocs, subass, facies, working, SiteUnit) %>% 
   distinct()
 Hier.new  <- Hier.new  %>% mutate(class = ifelse(is.na(working), "unplaced", "placed" ))

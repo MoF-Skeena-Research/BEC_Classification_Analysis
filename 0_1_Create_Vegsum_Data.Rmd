@@ -1,5 +1,5 @@
 ---
-title: "Check SU tables"
+title: "Create Vegetation Summary data"
 author: "Will MacKenzie"
 date: "13/09/2021"
 output: html_document
@@ -27,6 +27,7 @@ odbc::odbcListColumns(becmaster, table = "BECMaster19_ENV")
 dbDisconnect(becmaster) 
 load("./clean_data/veg_plot_data.RData")
 VEG <- vegdata
+
 ```
 
 ## Import SU table and BECdb for current BGC units and site series. Look for missing units. Create complete SU 
@@ -40,7 +41,15 @@ dbDisconnect(correlation)
 SU <- do.call(rbind.data.frame, all_su)
 SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
   arrange(desc(PlotNumber))
-fwrite(SU, "./clean_tabs/CoastGuide_All_BGC_Forest_SU.csv")
+SU2 <- SU %>% select(PlotNumber, SiteUnit)
+
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+dbWriteTable(master_su, "All_Coast_Forest_SU",  SU2, overwrite = TRUE, batch_rows = 1)
+dbDisconnect(master_su)
+
+#%>% mutate(PlotNumber = paste0("'",PlotNumber))
+#fwrite(SU, "./clean_tabs/CoastGuide_All_BGC_Forest_SU.csv")
 ###remove phases and seral units
 SU_siteseries <- SU %>% 
   filter(!str_detect(SiteUnit, '[$]'))
@@ -63,7 +72,21 @@ siteunits_toofew <- plots_SS %>% filter(plots <5) #%>% dplyr::select(- PlotNumbe
 
 fwrite(siteunits_toofew, "./outputs/Coast_SiteUnits_w_lessthan5plots.csv")
 ```
-
+Site unit statistics
+```{r}
+###some evaluative stats for  units
+temp2 <- temp[,c(1,5)]
+VegUnits <- unique(temp2)# number of plots per unit
+numspp <- ddply(temp,~Group,summarise,sppcount=length(unique(Species))) # number of species per unit
+VegUnits2 <-merge(VegUnits, numspp, by= "Group" )
+numspp2<-ddply(temp[temp$Constancy > 20,],~Group,summarise,sppcount=length(unique(Species))) # number of non-accidental species per unit
+VegUnits2 <-merge(VegUnits2, numspp2, by= "Group" )
+constspp <-ddply(temp[temp$Constancy > 59,],~Group,summarise,sppcount=length(unique(Species))) # number of constant species per unit
+VegUnits2 <-merge(VegUnits2, constspp, by= "Group" )
+colnames(VegUnits2)[3:5] <- c("TotalSpp","NonrareSpp","ConstSpp")
+VegUnits2$Poor <- ifelse(VegUnits2$NoPlots < 5 | VegUnits2$ConstSpp<5, "Poor", "OK")
+write.csv(VegUnits2, "GrasslandsUnitSpeciesTotals.csv")
+```
 
 ### Compare BGCv12 and Hierarchy SU
 ```{r check for inclusion of classification units}
