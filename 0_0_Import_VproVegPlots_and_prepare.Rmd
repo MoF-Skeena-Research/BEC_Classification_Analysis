@@ -11,33 +11,6 @@ require(DBI) #loads odbc as well
 require(data.table)
 require(tidyverse)
 require(plyr)
-# require(reshape)
-# require(reshape2)
-# require(vegan)
-# require(caret)
-# require(tcltk)
-# require(randomForest)
-# require(Matrix)
-# require(labdsv)
-# require(gdata)
-# require(MASS)
-# require(openxlsx)
-# require (C50)
-# require(tidyr)
-# require(stringr)
-# require(rpart)
-# require(tree)
-# require(rattle)
-# require(rpart.plot)
-# require(partykit)
-# require(vegclust)
-# require(standardize)
-# require(dplyr)
-# require(tictoc)
-
-# require(Hmisc)
-
-# require(psych)
 
 ```
 
@@ -47,14 +20,14 @@ Saves data to a .RDATA file which can be used instead of pulling from the databa
  
 ```{r import data and convert to a 3-column}
 
-becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster19/BECMaster19.accdb;")
+becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster64/BECMaster64.accdb;")
 
 # envdata <- dbReadTable(becmaster, "BECMaster19_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
 # admindata <- dbReadTable(becmaster, "BECMaster19_Admin")
-vegdataraw <- dbReadTable(becmaster, "BECMaster19_Veg") 
+vegdataraw <- dbReadTable(becmaster, "BECMaster64_Veg") 
 dbDisconnect(becmaster)
 sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Government of BC/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
-taxa  <- dbReadTable(sppmaster, "SpeciesMaster01Jan2023")
+taxa  <- dbReadTable(sppmaster, "UsysAllSpecs")
 dbDisconnect(sppmaster)
 #taxon.all <- fread("D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv", header = T, stringsAsFactors = F, strip.white = T)
 taxon_info <- taxa %>% filter(Codetype == "U" | Codetype == "D") %>% dplyr::select(-ID)%>% mutate(Species = Code)
@@ -67,7 +40,7 @@ vegdata <- vegdata %>% mutate(Species = toupper(Species)) %>% mutate_at(vars(con
 ## join lifeform
 vegdata[taxon_info, "lifeform" := Lifeform, on = .(Species = Code)]
 vegdata <- vegdata %>% mutate_at(vars(contains('cov')), ~ifelse(. <.1, .1, .)) %>% dplyr::select(PlotNumber, Species, lifeform, totalcov) %>% filter(!is.na(lifeform))
-save(vegdata, file = "./clean_data/veg_plot_data.RData")
+#save(vegdata, file = "./clean_data/veg_plot_data.RData")
 
 ```
 
