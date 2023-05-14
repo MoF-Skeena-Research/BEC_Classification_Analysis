@@ -17,13 +17,13 @@ source("./_functions/_TabletoTree.R")
 #### Import all raw vpro tables in /raw_data folder
 ```{r set folders, include=FALSE}
 require(DBI) #loads odbc as well
- becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster19/BECMaster19.accdb;")
+ becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster64/BECMaster64.accdb;")
 
-ENV <- dbReadTable(becmaster, "BECMaster19_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
-ADMIN<- dbReadTable(becmaster, "BECMaster19_Admin")
-VEG <- dbReadTable(becmaster, "BECMaster19_Veg")
+ENV <- dbReadTable(becmaster, "BECMaster64_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
+ADMIN<- dbReadTable(becmaster, "BECMaster64_Admin")
+VEG <- dbReadTable(becmaster, "BECMaster64_Veg")
 env.fields <- colnames(ENV)
-odbc::odbcListColumns(becmaster, table = "BECMaster19_ENV")
+odbc::odbcListColumns(becmaster, table = "BECMaster64_ENV")
 dbDisconnect(becmaster)
 ```
 
