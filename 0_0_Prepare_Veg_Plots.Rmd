@@ -26,16 +26,19 @@ becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Acc
 # admindata <- dbReadTable(becmaster, "BECMaster19_Admin")
 vegdataraw <- dbReadTable(becmaster, "BECMaster64_Veg") 
 dbDisconnect(becmaster)
+
 sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Government of BC/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
 taxa  <- dbReadTable(sppmaster, "UsysAllSpecs")
+
 dbDisconnect(sppmaster)
 #taxon.all <- fread("D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv", header = T, stringsAsFactors = F, strip.white = T)
 taxon_info <- taxa %>% filter(Codetype == "U" | Codetype == "D") %>% dplyr::select(-ID)%>% mutate(Species = Code)
 
+
 #### veg data into a 3-column dataset for analysis}
 vegdata <- vegdataraw %>% dplyr::select(PlotNumber, Species, TotalA, TotalB, Cover6, Cover7) %>% data.table
 vegdata[, totalcov := rowSums(.SD, na.rm = TRUE), .SDcols = 3:6]
-vegdata <- vegdata %>% filter(totalcov > 0)## remove species with zero cover
+vegdata <- vegdata %>% filter(totalcov > 0) %>% mutate(totalcov = ifelse(totalcov >100, 100, totalcov))## remove species with zero cover
 vegdata <- vegdata %>% mutate(Species = toupper(Species)) %>% mutate_at(vars(contains('cov')), ~ifelse(. <.1, .1, .))## converts lower case characters to upper and low values to 0.1
 ## join lifeform
 vegdata[taxon_info, "lifeform" := Lifeform, on = .(Species = Code)]
