@@ -22,18 +22,20 @@ require(doParallel)
 
 ```
 
-## Read in analysis vegdata
+## Read in data and sorts and spp lumping
 
 ```{r load data}
 load(file = "./clean_data/SS_sum_analysis_data.RData")
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
+## Calculate constancy and mean cover
 
 ```{r pressure, echo=FALSE}
 plot(pressure)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## Create constancy classes for species by unit
+
+## Pairwise comparison to create differential and dominant differential codes
+
+
