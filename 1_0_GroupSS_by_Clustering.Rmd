@@ -85,9 +85,9 @@ vegdata2 <- lump_species(vegdata2, LUMP)
 #vegdata <- vegdata %>% filter(lifeform <3)
 source("./_functions/_create_su_vegdata.R")
 vegsum <- create_su_vegdata(vegdata2, SU)
-
+#vegsum <- vegsum %>% filter(SiteUnit %in% c("CWH vm 2 /110", "CWH vm 3 /110"), !Species %in% c("PTERAQU"))
 source("./_functions/_create_analysis_vegsum.R")
-veg_anal <- create_analysis_vegsum (vegsum, importance = 0.5, constancy = 60, minplots = 5)
+veg_anal <- create_analysis_vegsum (vegsum, importance = 0.5, constancy = 55, minplots = 5)
 
 save(veg_anal, file = "./clean_data/SS_sum_analysis.RData")
 
@@ -117,16 +117,147 @@ minimum.iso1 <- test_jac.list %>% group_by(iso1) %>%  slice_min(order_by = dist)
 minimum.iso2 <- test_jac.list %>% group_by(iso2) %>%  slice_min(order_by = dist) %>% filter(dist<.2) %>% select(iso2) %>% dplyr::rename(SS = iso2)
 SS_w_neighbours <- rbind(minimum.iso1,  minimum.iso2) %>% unique
 SS_no_neighbours <- anti_join(SS_reduced_list, SS_w_neighbours)
-fwrite(test_jac.tab, "./outputs/dissim_matrix.csv")
-fwrite(test_jac.list, "./outputs/dissim_pairwise.csv")
-fwrite(SS_no_neighbours, "./outputs/SS_with_no_similar.csv")
+fwrite(test_jac.tab, "./outputs/dissim_matrix1.csv")
+fwrite(test_jac.list, "./outputs/dissim_pairwise1.csv")
+fwrite(SS_no_neighbours, "./outputs/SS_with_no_similar1.csv")
+```
+
+
+```{r merge very similar units}
+test_jac.list2 <- test_jac.list %>% rename(iso2 = 1, iso1 = 2) %>% select(iso1, everything())
+test_jac.list <- rbind(test_jac.list, test_jac.list2)
+setDT(test_jac.list)[ , .SD[which.min(dist)], by = iso1]
+automerge <- test_jac.list %>% filter(dist < .075) %>% mutate(SiteUnit_new = paste0(pmin(iso1,iso2),"-",  pmax(iso1,iso2))) %>% arrange(dist) %>% distinct %>% rename(SiteUnit = iso1)
+### need to flag which site units have already been used in a unit 
+
+#%>% distinct(iso1, .keep_all = TRUE) %>% select(-iso2) 
+# automerge1 <- test_jac.list %>% filter(dist < .15) %>% mutate(SiteUnit_new = paste0(iso1, "-", iso2)) %>% arrange(dist) %>% distinct(iso2, .keep_all = TRUE)%>% select(-iso1) %>% rename(SiteUnit = iso2)
+# automerge2 <- rbind(automerge, automerge1) %>% arrange(dist) %>% distinct(SiteUnit, .keep_all = TRUE)
+fwrite(automerge, "./outputs/first_merge_lowdiss_units.csv")
+SU2 = SU
+setDT(SU2)[automerge, "SiteUnit" := SiteUnit_new, on = .(SiteUnit)]
 
 ```
 
-Use agnes algorithms to build bottom-up hierarchy. Cutting the dendrogram at a low dissimilarity threshold (0.25) seems to make good working groups that pass the second pair-wise test. However, the structure of the higher level groups seems odd in some cases where similar site series end up in very different upper units.
-Might need to develop an alternative grouping mechanism
-```{r cluster and cut - standard algorithms}
-#ss_clst <- hclust(test_jac, method = "complete")
+```{r round 2 merge together very similar}
+vegsum <- create_su_vegdata(vegdata2, SU2)
+
+source("./_functions/_create_analysis_vegsum.R")
+veg_anal <- create_analysis_vegsum (vegsum, importance = 0.5, constancy = 60, minplots = 5)
+
+veg.dat <-
+  veg_anal %>% dplyr::select(SiteUnit, Species, spp_importance) %>% matrify()
+# test_jac.vegan <- vegan::vegdist(test.data, method = "sorensen", binary = F) %>% as.matrix
+#test_jac <- philentropy::distance(test.data, method = "jaccard")
+test_jac <- proxy::dist(veg.dat, method="ejaccard", diag=TRUE, upper = FALSE) ## ejaccard and philentropy jaccard are real-data versions extended jaccard opr taimoto
+# xx <- as.matrix(test_jac)
+# units <- as.data.frame(rownames(xx))
+
+# , use.row.names = TRUE, as.dist.obj = TRUE)
+test_jac.tab <- test_jac %>% as.matrix %>% as.data.frame
+test_jac.list <- harrietr::melt_dist(test_jac.tab) %>% as.data.table #%>% filter(dist < .25)
+minimum.iso1 <- test_jac.list %>% group_by(iso1) %>%  slice_min(order_by = dist) %>% filter(dist<.2) %>% select(iso1) %>% dplyr::rename(SS = iso1)
+minimum.iso2 <- test_jac.list %>% group_by(iso2) %>%  slice_min(order_by = dist) %>% filter(dist<.2) %>% select(iso2) %>% dplyr::rename(SS = iso2)
+SS_w_neighbours <- rbind(minimum.iso1,  minimum.iso2) %>% unique
+SS_no_neighbours <- anti_join(SS_reduced_list, SS_w_neighbours)
+test_jac.list2 <- test_jac.list %>% rename(iso2 = 1, iso1 = 2) %>% select(iso1, everything())
+test_jac.list <- rbind(test_jac.list, test_jac.list2)
+setDT(test_jac.list)[ , .SD[which.min(dist)], by = iso1]
+automerge <- test_jac.list %>% filter(dist < .075) %>% mutate(SiteUnit_new = paste0(pmin(iso1,iso2),"-",  pmax(iso1,iso2))) %>% arrange(dist) %>% distinct %>% rename(SiteUnit = iso1)
+fwrite(test_jac.tab, "./outputs/dissim_matrix2.csv")
+fwrite(test_jac.list, "./outputs/dissim_pairwise2.csv")
+fwrite(SS_no_neighbours, "./outputs/SS_with_no_similar2.csv")
+
+#%>% distinct(iso1, .keep_all = TRUE) %>% select(-iso2) 
+# automerge1 <- test_jac.list %>% filter(dist < .15) %>% mutate(SiteUnit_new = paste0(iso1, "-", iso2)) %>% arrange(dist) %>% distinct(iso2, .keep_all = TRUE)%>% select(-iso1) %>% rename(SiteUnit = iso2)
+# automerge2 <- rbind(automerge, automerge1) %>% arrange(dist) %>% distinct(SiteUnit, .keep_all = TRUE)
+fwrite(automerge, "./outputs/first_merge_lowdiss_units.csv")
+SU3 = SU2
+setDT(SU3)[automerge, "SiteUnit" := SiteUnit_new, on = .(SiteUnit)]
+```
+
+```{r round 3}
+vegsum <- create_su_vegdata(vegdata2, SU3)
+
+souvegsum <- create_su_vegdata(vegdata2, SU3)
+
+source("./_functions/_create_analysis_vegsum.R")
+veg_anal <- create_analysis_vegsum (vegsum, importance = 0.5, constancy = 60, minplots = 5)
+
+veg.dat <-
+  veg_anal %>% dplyr::select(SiteUnit, Species, spp_importance) %>% matrify()
+# test_jac.vegan <- vegan::vegdist(test.data, method = "sorensen", binary = F) %>% as.matrix
+#test_jac <- philentropy::distance(test.data, method = "jaccard")
+test_jac <- proxy::dist(veg.dat, method="ejaccard", diag=TRUE, upper = FALSE) ## ejaccard and philentropy jaccard are real-data versions extended jaccard opr taimoto
+# xx <- as.matrix(test_jac)
+# units <- as.data.frame(rownames(xx))
+
+# , use.row.names = TRUE, as.dist.obj = TRUE)
+test_jac.tab <- test_jac %>% as.matrix %>% as.data.frame
+test_jac.list <- harrietr::melt_dist(test_jac.tab) %>% as.data.table #%>% filter(dist < .25)
+minimum.iso1 <- test_jac.list %>% group_by(iso1) %>%  slice_min(order_by = dist) %>% filter(dist<.2) %>% select(iso1) %>% dplyr::rename(SS = iso1)
+minimum.iso2 <- test_jac.list %>% group_by(iso2) %>%  slice_min(order_by = dist) %>% filter(dist<.2) %>% select(iso2) %>% dplyr::rename(SS = iso2)
+SS_w_neighbours <- rbind(minimum.iso1,  minimum.iso2) %>% unique
+SS_no_neighbours <- anti_join(SS_reduced_list, SS_w_neighbours)
+test_jac.list2 <- test_jac.list %>% rename(iso2 = 1, iso1 = 2) %>% select(iso1, everything())
+test_jac.list <- rbind(test_jac.list, test_jac.list2)
+setDT(test_jac.list)[ , .SD[which.min(dist)], by = iso1]
+automerge <- test_jac.list %>% filter(dist < .vegsum <- create_su_vegdata(vegdata2, SU3)
+
+source("./_functions/_create_analysis_vegsum.R")
+veg_anal <- create_analysis_vegsum (vegsum, importance = 0.5, constancy = 60, minplots = 5)
+
+veg.dat <-
+  veg_anal %>% dplyr::select(SiteUnit, Species, spp_importance) %>% matrify()
+# test_jac.vegan <- vegan::vegdist(test.data, method = "sorensen", binary = F) %>% as.matrix
+#test_jac <- philentropy::distance(test.data, method = "jaccard")
+test_jac <- proxy::dist(veg.dat, method="ejaccard", diag=TRUE, upper = FALSE) ## ejaccard and philentropy jaccard are real-data versions extended jaccard opr taimoto
+# xx <- as.matrix(test_jac)
+# units <- as.data.frame(rownames(xx))
+
+# , use.row.names = TRUE, as.dist.obj = TRUE)
+test_jac.tab <- test_jac %>% as.matrix %>% as.data.frame
+test_jac.list <- harrietr::melt_dist(test_jac.tab) %>% as.data.table #%>% filter(dist < .25)
+minimum.iso1 <- test_jac.list %>% group_by(iso1) %>%  slice_min(order_by = dist) %>% filter(dist<.2) %>% select(iso1) %>% dplyr::rename(SS = iso1)
+minimum.iso2 <- test_jac.list %>% group_by(iso2) %>%  slice_min(order_by = dist) %>% filter(dist<.2) %>% select(iso2) %>% dplyr::rename(SS = iso2)
+SS_w_neighbours <- rbind(minimum.iso1,  minimum.iso2) %>% unique
+SS_no_neighbours <- anti_join(SS_reduced_list, SS_w_neighbours)
+test_jac.list2 <- test_jac.list %>% rename(iso2 = 1, iso1 = 2) %>% select(iso1, everything())
+test_jac.list <- rbind(test_jac.list, test_jac.list2)
+setDT(test_jac.list)[ , .SD[which.min(dist)], by = iso1]
+automerge <- test_jac.list %>% filter(dist < .
+# units <- as.data.frame(rownames(xx))
+
+# , use.row.names = TRUE, as.dist.obj = TRUE)
+test_jac.tab <- test_jac %>% as.matrix %>% as.data.frame
+test_jac.list <- harrietr::melt_dist(test_jac.tab) %>% as.data.table #%>% filter(dist < .25)
+minimum.iso1 <- test_jac.list %>% group_by(iso1) %>%  slice_min(order_by = dist) %>% filter(dist<.2) %>% select(iso1) %>% dplyr::rename(SS = iso1)
+minimum.iso2 <- test_jac.list %>% group_by(iso2) %>%  slice_min(order_by = dist) %>% filter(dist<.2) %>% select(iso2) %>% dplyr::rename(SS = iso2)
+SS_w_neighbours <- rbind(minimum.iso1,  minimum.iso2) %>% unique
+SS_no_neighbours <- anti_join(SS_reduced_list, SS_w_neighbours)
+test_jac.list2 <- test_jac.list %>% rename(iso2 = 1, iso1 = 2) %>% select(iso1, everything())
+test_jac.list <- rbind(test_jac.list, test_jac.list2)
+setDT(test_jac.list)[ , .SD[which.min(dist)], by = iso1]
+automerge <- test_jac.list %>% filter(dist < .15) # %>% mutate(SiteUnit_new = paste0(pmin(iso1,iso2),"-",  pmax(iso1,iso2))) %>% arrange(dist) %>% distinct %>% rename(SiteUnit = iso1)
+
+fwrite(test_jac.tab, "./outputs/dissim_matrix3.csv")
+fwrite(test_jac.list, "./outputs/dissim_pairwise3.csv")
+fwrite(SS_no_neighbours, "./outputs/SS_with_no_similar3.csv")
+
+#%>% distinct(iso1, .keep_all = TRUE) %>% select(-iso2) 
+# automerge1 <- test_jac.list %>% filter(dist < .15) %>% mutate(SiteUnit_new = paste0(iso1, "-", iso2)) %>% arrange(dist) %>% distinct(iso2, .keep_all = TRUE)%>% select(-iso1) %>% rename(SiteUnit = iso2)
+# automerge2 <- rbind(automerge, automerge1) %>%) %>% mutate(SiteUnit_new = paste0(pmin(iso1,iso2),"-",  pmax(iso1,iso2))) %>% arrange(dist) %>% distinct %>% rename(SiteUnit = iso1)
+
+fwrite(test_jac.tab, "./outputs/dissim_matrix3.csv")
+fwrite(test_jac.list, "./outputs/dissim_pairwise3.csv")
+fwrite(SS_no_neighbours, "./outputs/SS_with_no_similar3.csv")
+
+#%>% distinct(iso1, .keep_all = TRUE) %>% select(-iso2) 
+# automerge1 <- test_jac.list %>% filter(dist < .15) %>% mutate(SiteUnit_new = paste0(iso1, "-", iso2)) %>% arrange(dist) %>% distinct(iso2, .keep_all = TRUE)%>% select(-iso1) %>% rename(SiteUnit = iso2)
+# automerge2 <- rbind(automerge, automerge1) %>% arrange(dist) %>% distinct(SiteUnit, .keep_all = TRUE)
+fwrite(automerge, "./outputs/first_merge_lowdiss_units.csv")
+SU4 = SU3
+setDT(SU4)[automerge, "SiteUnit" := SiteUnit_new, on = .(SiteUnit)]
 library(cluster)
 ss_clst = agnes(test_jac, diss = TRUE, stand = FALSE,
       method = "complete")
@@ -178,6 +309,9 @@ left_join(alliance_SU, by = "SiteUnit") %>%
 working_count <- length(unique(Hier_SU$working))
 
 fwrite(Hier_SU, "./outputs/CoastForestClusteredUnits_SU.csv")
+
+grouped_SS <- Hier_SU %>% select(SiteUnit, working) %>% distinct
+grouped_Assocs <- grouped_SS %>% select(working) %>% distinct
 ```
 
 Build a Vpro hierachy style to be copied into a copy of the sample hier and then save as to a real hierarchy where the ID can be turned back into an autonumber for proper working of Vpro hierarchy functions
