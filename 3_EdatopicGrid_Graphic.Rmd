@@ -1,0 +1,225 @@
+---
+title: "Edatopic_Diagram"
+author: "Will MacKenzie"
+date: "2023-02-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(ggplot2)
+require(RColorBrewer)
+require(kableExtra)
+require(data.table)
+library(stringr)
+library(ggraph)
+library(igraph)
+library(tidyverse)
+library(rgdal)
+library(broom)
+library(ggplot2)
+library("rjson")
+library("readxl")
+```
+
+## 
+```{r set folders, include=FALSE}
+require(DBI) #loads odbc as well
+ becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster64/BECMaster64.accdb;")
+
+ENV <- dbReadTable(becmaster, "BECMaster64_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
+ADMIN<- dbReadTable(becmaster, "BECMaster64_Admin")
+#VEG <- dbReadTable(becmaster, "BECMaster64_Veg")
+env.fields <- colnames(ENV)
+odbc::odbcListColumns(becmaster, table = "BECMaster64_ENV")
+dbDisconnect(becmaster)
+```
+
+## Import SU table and BECdb for current BGC units and site series. Look for missing units. Create complete SU 
+
+```{r count of edatopic position}
+require(DBI) #loads odbc as well
+correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb;")
+all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
+dbDisconnect(correlation)
+SU <- do.call(rbind.data.frame, all_su)
+SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct()# %>% mutate(SS_label = str_replace_all(SiteUnit, " ", ""))
+#fwrite(SU, "./clean_tabs/CoastGuide_All_BGC_Forest_SU.csv")
+###remove phases and seral units
+smr_snr <- ENV %>% select(PlotNumber, MoistureRegime, NutrientRegime) %>% dplyr::rename(rSMR = MoistureRegime, SNR = NutrientRegime) 
+SU_edatopic <- left_join(SU, smr_snr)%>% distinct() %>% mutate(bgc = str_replace_all(bgc, pattern=" ", repl="")) %>% mutate(SiteUnit = str_replace_all(SiteUnit, pattern=" ", repl="")) %>% mutate(SNR = str_sub(SNR,1,1), rSMR = str_sub(rSMR,1,1)) %>% 
+  filter(SNR %in% good_snr, rSMR %in% good_smr) %>%   as.data.frame %>% arrange(SNR) %>%  mutate(rSMR_num = as.integer(rSMR), SNR_num =(as.factor(SNR) %>% as.integer(SNR))) %>%  mutate(rSMR_rev = abs(9 - rSMR_num))
+
+###Summaries by BGC and by SS
+good_snr <- c("A", "B", "C", "D", "E")
+good_smr <- c(0,1,2,3,4,5,6,7,8)
+edatopic_count <- SU_edatopic %>% distinct() %>% group_by(bgc, SiteUnit, SNR, rSMR) %>% mutate(bgc = str_replace_all(bgc, pattern=" ", repl="")) %>% mutate(SiteUnit = str_replace_all(SiteUnit, pattern=" ", repl="")) %>% dplyr::summarise(plots = n()) %>% filter(SNR %in% good_snr, rSMR %in% good_smr) %>%   as.data.frame %>% arrange(SNR) %>%  mutate(rSMR_num = as.integer(rSMR), SNR_num =(as.factor(SNR) %>% as.integer(SNR))) 
+
+```
+
+```{r base grid}
+# require(gridExtra)
+# require(grid)
+# test.grid <- edatopic_count %>% filter(SiteUnit == "CWHwm/110" ) %>% select(SNR, rSMR, plots) %>% arrange(rSMR) %>% pivot_wider(id_cols = rSMR, names_from = SNR, values_from = plots)
+# windows()
+# grid.table(test.grid)
+# x <- tableGrob(test.grid)
+# grid.draw(x)
+# my_rect <- rectGrob(x = 0.5, y = 0.5, width = 0.8, height = 0.3)
+# pdf()
+# grid.newpage()
+# x <- tableGrob(test.grid)
+# grid.draw(x)
+# dev.off()
+# grid.newpage(grid.draw(x))
+# grid.draw(my_rect)
+# dev.off()
+```
+
+
+```{r base grid}
+library(gridExtra)
+
+x_lab = x_lab = c("v.           \npoor            ", "poor            ", "med            ", "rich            ", "v.            \nrich            ")
+#y_lab = c( "0", "1", "2", "3", "4", "5", "6", "7","8")
+y_lab = c( "8", "7", "6", "5", "4", "3", "2", "1","0")
+edatopic_all <- SU_edatopic   %>% filter(bgc == c("CDFmm", "CWHwm"))%>% mutate(bgc = as.factor(bgc)) %>% droplevels
+
+data = edatopic_all
+units = data$bgc
+category = "bgc"
+
+gsub('["]', "", category1)
+#pdf("plots.pdf", onefile = TRUE)
+# bgcs <- unique(edatopic_all$bgc)
+# n_bgcs <- length(bgcs)
+#i = 1
+# for(i in unique(bgcs)){
+#     edatopic1 <- subset(edatopic_all, bgc==bgcs[i])
+
+#p <- lapply(bgcs, function(x) {
+my_string <- deparse(substitute(category)) 
+ 
+edatopic_plotcount <-  function(data, category){
+data = data %>% droplevels
+  units = data %>% dplyr::select(category) %>% distinct
+for(i in 1:levels(units)){
+  bgc1 <- as.character(units[2,])
+data1 <- subset(data, category==bgc1)
+p <- ggplot(data1, aes(SNR_num, rSMR_rev)) + 
+  #xlim(1, 5) + ylim(1, 9) +
+scale_x_continuous(name="Soil Nutrient Regime", labels=x_lab,  limits=c(0,5), breaks=c(1,2,3,4,5), expand = c(0, 0), position = "top") + 
+scale_y_continuous(name="relative Soil Moisture Regime", labels=y_lab, limits=c(0,9), breaks=c(1,2,3,4,5,6,7,8,9), expand=c(0, 0)) +
+coord_fixed() +
+#geom_rect(data=df, mapping=aes(xmin=1, xmax=2, ymin=1, ymax=2), fill=df$colour, color="black", alpha=0.5) +
+#geom_text(data=df, aes(x=x1+(x2-x1)/2, y=y1+(y2-y1)/2, label=r), size=4) + 
+theme(
+  panel.grid.major = element_line(linetype = 2, color="#A7A7A7", size = 0.3),
+  panel.grid.minor.x = element_blank(),
+  panel.grid.minor.y = element_blank(),
+  panel.border = element_rect(colour = "black", size=1, fill=NA),
+  panel.background = element_rect(fill="#F2F2F2"),
+  axis.ticks.x = element_blank(),
+  axis.ticks.y = element_blank(),
+  axis.ticks = element_blank(),
+  axis.text.x = element_text(face="bold", size=10),
+  axis.text.y = element_text(face="bold", size=10, vjust=2.75),
+  axis.title = element_text(face="bold")
+ )+
+  stat_bin_2d(binwidth = c(1, 1))+
+    scale_fill_gradient(low = "white", high = "red")+
+  stat_bin2d(geom = "text", aes(label = ..count..), binwidth = c(1,1))
+   # ggtitle(bgc)
+ # grid.arrange(edatopic_grid)
+#plot(edatopic_grid)
+}
+}
+
+xx <- edatopic_plotcount(edatopic_all, "bgc")
+
+# p <- #i = 1
+#  for(i in unique(bgcs)){
+#     edatopic1 <- subset(edatopic_all, bgc==bgcs[i])
+#     p = edatopic_plotcount(edatopic1)
+#  }
+# plots <- names(edatopic_all)[3] %>% 
+#   purrr::map(~edatopic_plotcount(data = edatopic_all, unit = bgc))
+# plots
+
+# ggplots <-  lapply(edatopic_all, edatopic_grid)
+# ggsave(
+#    filename = "plots.pdf", 
+#    plot = marrangeGrob(p, nrow=n_bgcs, ncol=1), 
+#    width = 15, height = 9
+# )
+
+```
+
+```{r import data, echo=FALSE}
+env_summary <- fromJSON(file=file.path("../level", level_name, level_value, "summaries", "env", paste(str_replace_all(level_value, " ", "_"), ".JSON",  sep="")))
+
+soil_moisture_regime <- env_summary$MoistureRegime
+soil_moisture_regime_values <- as.numeric(names(soil_moisture_regime$summary))
+
+soil_moisture_regime_values <- soil_moisture_regime_values[!is.na(soil_moisture_regime_values)]
+
+y_range <- range(soil_moisture_regime_values)
+
+y_1 <- y_range[1]
+y_2 <- y_range[2]
+
+```
+```{r Get aSMR data, echo=FALSE}
+  
+aSMR_Plot_data_for_level <- read.csv(file=file.path("../level", level_name, level_value,"aSMR_Plot_data_for_level.csv"))
+asmr <- aSMR_Plot_data_for_level$aSMR
+asmr <- asmr[!is.na(asmr)]
+x_range <- range(asmr)
+
+x_1 <- x_range[1]
+x_2 <- x_range[2]
+```
+
+
+```{r plot relative edaptopic grid, echo=FALSE}
+```
+
+
+```{r convert to actual edaptopic grid, echo=FALSE}
+df=data.frame(x1=c(x_1), x2=c(x_2), y1=c(y_1), y2=c(y_2), colour=c('green'), r=c(1))
+x_lab = c("v.           \npoor            ", "poor            ", "medium            ", "rich            ", "v.            \nrich            ")
+y_lab = c("very wet", "wet", "very moist", "moist", "fresh", "slightly dry", "moderely dry", "very dry", "extremely dry", "excessively dry")
+
+edatopic <- ggplot() + 
+scale_x_continuous(name="Soil Nutrient Regime", labels=x_lab, limits=c(0,5), breaks=c(1,2,3,4,5), expand = c(0, 0), position = "top") + 
+scale_y_continuous(name="actual Soil Moisture Regime", labels=y_lab, limits=c(0,10), breaks=c(1,2,3,4,5,6,7,8,9,10), expand=c(0, 0)) +
+coord_fixed() +
+geom_rect(data=df, mapping=aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2), fill=df$colour, color="black", alpha=0.5) +
+geom_text(data=df, aes(x=x1+(x2-x1)/2, y=y1+(y2-y1)/2, label=r), size=4) + 
+theme(
+  panel.grid.major = element_line(linetype = 2, color="#A7A7A7", size = 0.3),
+  panel.grid.minor.x = element_blank(),
+  panel.grid.minor.y = element_blank(),
+  panel.border = element_rect(colour = "black", size=1, fill=NA),
+  panel.background = element_rect(fill="#F2F2F2"),
+  axis.ticks.x = element_blank(),
+  axis.ticks.y = element_blank(),
+  axis.ticks = element_blank(),
+  axis.text.x = element_text(face="bold", size=10),
+  axis.text.y = element_text(face="bold", size=10, vjust=2.75),
+  axis.title = element_text(face="bold") 
+ )
+
+ggsave("edatpic.png")
+```
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
