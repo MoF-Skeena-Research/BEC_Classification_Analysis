@@ -1,0 +1,397 @@
+---
+title: "MachineLearning of associations"
+author: "Will MacKenzie & Kiri Daust"
+date: "05/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+require(tidyverse)
+require(tidymodels)
+require(data.table)
+require(data.tree)
+require(DataExplorer)
+require(C50)
+require(indicspecies)
+require(doParallel)
+require(vip)
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+cloud_dir <- "F:/OneDrive - Personal/OneDrive/BEC_Classification_Paper/"
+#cloud_dir <- "F:/OneDrive - Government of BC/CCISSv12/"
+```
+
+Steps to build classification hierarchy
+
+1. A machine learning model of high-level hierarchical BEC Forest units
+a. Create a ML model of Forested SubOrders using BECv11 site series that meet minimum plot requirements. (going to Orders only causes issues where Pl is a dominant secondary species - many provincial units get placed into a Pinucon Order when applied only to the order level even though they have a subdominant tree species which places them in a different order)
+b. Use only tree species for first round of model build for the forested Orders.
+c. Predict membership of new BECv13 units and assign to orders then rebuild ML model.
+d. Review any mis predicted site series for reassignment.
+e. Compare similarity of tree composition within units (noise clustering) to find outliers that may represent new Orders (test by leaving out known units)
+f. Create vegetation summaries of Orders and compare vegetation (all species now). Identify climatic indicator species groups.
+g. Create climatic and site attributes summary of Orders 
+h. Create maps of plot locations for each Order
+i. Hierarchy tree graphic
+
+2. Build Alliances. Focus should be on identifying species groups that reflect different site conditions.
+
+a. Use some of the techniques of indicspecies package to create Alliances based on indicator group creation and analysis.
+b. Try to build a machine learning model of Alliances
+c. Vegetation and Environment summary of Alliances
+
+3. Do pair-wise analysis of site series within Orders/Alliances using high constancy species to analyze site series and create Associations/SubAssociations.
+a. Check for similarity between Associations of All orders
+b. Build relationship graphic
+
+
+4. Document hierarchy
+
+5. Build model to assign new units and unassigned plots
+Challenge here is to make a constant list of species between model and new units.
+a. Predict membership of new site series (draft BECv13). Noise Clustering to test for novel units that do not fit any existing. Use machine learning to hierarchy
+b. Predict Order membership of BECMaster plots that are unassigned to existing site series and add to an Order_unplaced site unit under each Order.
+
+6. Build for non-forested units. Classes based on major site level differences rather than climate and using major species groups (e.g. Hydrophytic Carex spp )
+May wish to assign a temporary notree pseudo species to all units that have no trees to help separate forested hierarchy from non-forested hierarchy (Hurdle model)
+
+```{r import data}
+### Vegetation From BECMaster cleaning script Long form Plot|Species|Cover (across all layers)
+load("./clean_data/Analysis_BECMaster_Veg.RData") 
+
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+su <- dbReadTable(master_su, "All_Coast_Forest_su")
+dbDisconnect(master_su)
+
+sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Personal/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
+taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
+dbDisconnect(sppmaster)
+taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X") %>% dplyr::select(Code, Lifeform) %>% distinct
+
+veglump <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Spp_lump.accdb;")
+lump <- dbReadTable(veglump, "CoastGuide2023_lump")
+dbDisconnect(veglump) 
+```
+
+
+##roll up into site series summary data
+```{r summarize site series, echo=FALSE}
+source("./_functions/_create_su_vegdata.R")
+
+vegsum <- create_su_vegdata(veg.dat, su)
+
+##roll up into site series summary data
+
+source("./_functions/_spp_importance.R")
+vegsum <- spp_importance(vegsum) 
+
+### Filter out poor units and low importance species#
+vegDat_good <- vegsum %>% dplyr::filter(nplots > 4) %>% dplyr::filter(spp_importance > 0.05) ## remove rare or very low cover species in SU
+
+```
+
+##Import hierarchy matrix from 0_0_Plot_SU_Hierarchy script with original placements plus all unassigned units added to an unplaced Formation category
+```{r import  hierarchy data}
+Vpro.hier <- fread("./clean_tabs/BECv13_ForestHierarchy.csv")
+
+###move SU with <4 plots to the UnitsTooFew formation (=2)
+#Vpro.hier[Name %in% Units.toofew, Parent:= 2]
+#fwrite(Vpro.hier, "./outputs/UpdatedVPROHierarchyv13_updated.csv")
+
+SUhier <- treeToTable(Vpro.hier)
+Hier.clean <- SUhier$table
+
+```
+
+```{r reduce summary for analysis, echo=FALSE}
+##limit life forms to tree species
+trees <- c(1,2)
+constcut <- 33 ##remove species less than cutoff
+covercut <- 1
+treespp <- taxon.all[Lifeform %in% trees, ] %>% dplyr::select(Code)
+treespp <- as.vector(treespp$Code)
+vegDat_test <- vegsum[Species %in% treespp,]### include only trees for hierarchy build
+vegDat_test <- vegDat_test %>% dplyr::filter(MeanCov > covercut) %>% dplyr::filter(Constancy > constcut)
+
+
+tree.sum <- as.data.table(vegDat_test)#vegDat <- as_tibble(vegDat)
+tree.sum$SiteUnit <- as.factor(tree.sum$SiteUnit)
+
+
+#fwrite(tree.sum, './inputs/SiteUnitConiferSummary.csv')
+
+
+```
+
+
+```{r filter and prepare for analysis}
+
+vegSum <- tree.sum
+SS_good <- vegSum %>% filter(nPlots >3) %>% filter(Constancy >= 33)  %>% distinct()  #%>% rename(SiteUnit = SiteUnit))## Select only site series will enough plots
+Hier.units <- Hier.clean %>% dplyr::select(SiteUnit, Class, Order, Suborder) %>% distinct()
+Hier.data <- left_join(Hier.units, SS_good) %>% filter(!is.na(nPlots)) %>% arrange(Species) %>% distinct()
+#fwrite(Hier.data, './inputs/SiteUnitForested_w_HierarchyUnits.csv')
+```
+
+```{r some hierarchy stats}
+classes <- unique(Hier.data$Class)
+orders <- unique(Hier.data$Order)
+suborders <- unique(Hier.data$Suborder)
+suborders
+### Choose hierarchical level for analysis
+
+class.dat <-
+  Hier.data %>% dplyr::select(SiteUnit, Suborder, Species, MeanCov, Constancy) %>% 
+  pivot_wider(id_cols = c(SiteUnit, Suborder),
+    names_from = Species,
+    values_from = c(MeanCov, Constancy)) %>% 
+  mutate(Suborder = ifelse(is.na(Suborder) | Suborder == "", "unplaced", Suborder)) %>% filter(!SiteUnit == "") %>%  mutate_if(is.character, as.factor) %>% 
+   replace(is.na(.),0) %>% distinct() %>% droplevels()
+
+#DataExplorer::create_report(class.dat)
+```
+Data pre-processing includes the following steps:  
+
+```{r prep data, include = TRUE, echo = FALSE}
+
+classID <- class.dat %>% dplyr::select(SiteUnit, Suborder)
+#class.dat2 <- class.dat %>% select(-SiteUnit)
+BEC_good <- class.dat %>% filter(!Suborder == "unplaced") %>% arrange(SiteUnit)
+BEC_good$SiteUnit <- BEC_good$SiteUnit %>% as.factor
+BEC_new <- class.dat %>% filter(Suborder == "unplaced") %>% arrange(SiteUnit)
+
+set.seed(123)
+BEC_split <- initial_split(BEC_good,strata = Suborder)
+BEC_train <- training(BEC_split)
+BEC_test  <- testing(BEC_split)
+
+SU_names <- as.data.frame(BEC_good$SiteUnit) %>%  distinct() %>% rowid_to_column('.row') %>% dplyr::rename("SiteUnit" = 2)
+
+BEC_recipe <-
+    recipe(Suborder ~ ., data = BEC_train) %>%
+     update_role(SiteUnit, new_role = "id variable") %>% 
+  step_novel(SiteUnit) %>% 
+    prep() 
+    summary(BEC_recipe)
+    
+BEC_fmodel <- rand_forest(mtry = 5, min_n = 2, trees = 501) %>%
+  set_mode("classification") %>%
+  set_engine("ranger", importance = "impurity") #or "permutations
+
+# note in RF as a tree based model it is not required to scale and normalize covariates and may have negative influence on the model performance  
+```
+
+
+```{r tune cv model of suborders, include = FALSE}
+# define model with set parameters from tuning
+#set.seed(123)
+BEC_split <- initial_split(BEC_good,prop = .9, strata = Suborder)
+BEC_train <- training(BEC_split)
+BEC_test  <- testing(BEC_split)
+BEC_val_set <- validation_split(BEC_train, 
+                            strata = Suborder, 
+                            prop = 0.70)
+
+BEC_fmodel <- rand_forest(mtry = tune(), min_n = tune(), trees = 101) %>%
+  set_mode("classification") %>%
+  set_engine("ranger", importance = "impurity") #or "permutations
+
+BEC_cv_workflow <- workflow() %>% 
+  add_model(BEC_fmodel) %>% 
+  add_recipe(BEC_recipe)
+
+set.seed(345)
+rf_res <- 
+  BEC_cv_workflow %>% 
+  tune_grid(BEC_val_set,
+            grid = 25,
+            control = control_grid(save_pred = TRUE),
+            metrics = metric_set(kap))
+
+autoplot(rf_res)
+rf_res %>% 
+  show_best(metric = "kap")
+rf_best <- rf_res %>% select_best(metric = "kap")
+rf_best
+mtry1 = as.integer(rf_best$mtry)
+min_n1 = as.integer(rf_best$min_n)
+```
+
+
+```{r build  cv model of suborders, include = FALSE}
+BEC_fmodel <- rand_forest(mtry = 8, min_n = 3, trees = 1001) %>%
+  set_mode("classification") %>%
+  set_engine("ranger", importance = "impurity")
+
+BEC_recipe <-
+    recipe(Suborder ~ ., data = BEC_train) %>%
+     update_role(SiteUnit, new_role = "id variable") %>% 
+  step_novel(SiteUnit) %>% 
+    prep() 
+    summary(BEC_recipe)
+    
+BEC_cv_workflow <- workflow() %>% 
+  add_model(BEC_fmodel) %>% 
+  add_recipe(BEC_recipe)
+v = 10
+reps = 5
+  
+set.seed(345)
+BEC_cvfold <- vfold_cv(BEC_train, 
+                         v = v, 
+                         repeats = reps,  strata = Suborder)
+cv_metrics <- metric_set(accuracy, kap) #roc_auc,, j_index, sens, spec
+
+set.seed(130)
+#doParallel::registerDoParallel()
+tic()
+BEC_cv_fitted <- 
+  BEC_cv_workflow %>% 
+  fit_resamples(resamples = BEC_cvfold, metrics = cv_metrics, control = control_resamples(save_pred = TRUE))
+toc()
+gc()
+
+cv_results <- BEC_cv_fitted  %>% collect_metrics(summarize = FALSE)
+cv_results_sum <- BEC_cv_fitted  %>% collect_metrics()
+
+```
+
+```{r final cv model and metrics}
+# the last model
+last_BECmodel <- 
+  rand_forest(mtry = 8, min_n = 3, trees = 1001) %>% 
+  set_engine("ranger",  importance = "impurity") %>% 
+  set_mode("classification")
+# last_BEC_recipe <-
+#     recipe(Suborder ~ ., data = BEC_split) %>%
+#      update_role(SiteUnit, new_role = "id variable") %>% 
+#   step_novel(SiteUnit) %>% 
+#     prep() 
+#     summary(last_BEC_recipe)
+
+last_BEC_workflow <-  BEC_cv_workflow %>% 
+  update_model(last_BECmodel) 
+
+last_BEC_fit <-   last_BEC_workflow %>% 
+  last_fit(BEC_split, metrics = cv_metrics)
+
+last_BEC_fit  %>% collect_metrics()
+
+final.acc <- last_BEC_fit  %>% 
+  collect_metrics()
+
+last_BEC_fit %>% 
+  pluck(".workflow", 1) %>%   
+  extract_fit_parsnip() %>% 
+  vip(num_features = 20)
+
+
+test.pred <-  collect_predictions(last_BEC_fit) %>%
+  mutate(correct = case_when(
+    Suborder == .pred_class ~ "Correct",
+    TRUE ~ "Incorrect"
+  )) %>%
+  bind_cols(BEC_test)
+test.misID <- test.pred %>% filter(correct == "Incorrect") %>% dplyr::select(SiteUnit, .pred_class, Suborder...4)
+test.misID.list <- test.misID$SiteUnit %>% as.character
+SS_misID_SU <- SUTab[SUTab$SiteUnit %in% test.misID.list,]
+fwrite(SS_misID_SU, "./outputs/WrongSubOrderPredicted_SU.csv")
+
+Hier.orders <- Hier.clean %>% dplyr::select(Order, Suborder) %>% distinct() 
+test.order <- test.pred %>% dplyr::select(SiteUnit, .pred_class, Suborder...4) %>% rename(Suborder = Suborder...4) %>% mutate_if(is.factor, as.character)
+test.order <- left_join(test.order, Hier.orders, by = "Suborder") %>% rename (Order.hier = Order)
+ test.order2 <- left_join(test.order, Hier.orders, by= c(".pred_class" = "Suborder")) %>% rename (Order.pred = Order) %>% mutate(Order.compare = ifelse(Order.hier ==  Order.pred, "Same", "Diff"))%>%
+  mutate(Compare = ifelse(.pred_class == Suborder, "Same", "Diff")) %>% filter(Compare == "Diff")
+
+```
+
+
+```{r final ranger model}
+BEC_recipe <-
+    recipe(Suborder ~ ., data = BEC_good) %>%
+     update_role(SiteUnit, new_role = "id variable") %>% 
+  step_novel(SiteUnit) %>% 
+    prep() 
+    summary(BEC_recipe)
+
+BEC_fmodel <- rand_forest(mtry = 8, min_n = 3, trees = 501) %>%
+  set_mode("classification") %>%
+  set_engine("ranger", importance = "impurity")
+
+BEC_workflow <- workflow() %>%
+  add_model(BEC_fmodel) %>% 
+    add_recipe(BEC_recipe,blueprint = hardhat::default_recipe_blueprint(allow_novel_levels = TRUE))
+# the last fit
+set.seed(345)
+BEC_ranger_model <- fit(BEC_workflow, BEC_good)
+
+BEC_ranger_model
+
+save(BEC_ranger_model, file = "./rFmodels/BECv13_Suborders_rFmodel.Rdata")
+
+
+
+BEC.pred <- predict(BEC_ranger_model, BEC_good) %>% bind_cols(BEC_good%>% dplyr::select(SiteUnit, Suborder)) 
+BEC.acc <- BEC.pred %>%  metrics(truth = Suborder, estimate = .pred_class)
+BEC.acc
+BEC.pred.list <- BEC.pred$SiteUnit %>% as.character
+BEC.missed <- BEC.pred  %>%   mutate(Compare = ifelse(.pred_class == Suborder, "Same", "Diff")) %>% filter(Compare == "Diff")
+fwrite(BEC.missed, "./outputs/MisplacedSuborders.csv")
+BEC.mis.list <- BEC.missed$SiteUnit %>% as.character
+SS_misID_SU <- SUTab[SUTab$SiteUnit %in% BEC.mis.list,]
+fwrite(SS_misID_SU, "./outputs/WrongOrderPredicted_SU.csv")
+
+
+Hier.orders <- Hier.clean %>% dplyr::select(Order, Suborder) %>% distinct()
+BEC.order <- BEC.pred %>% dplyr::select(SiteUnit, .pred_class, Suborder)
+BEC.order <- left_join(BEC.order, Hier.orders) %>% rename (Order.hier = Order)
+BEC.order <- left_join(BEC.order, Hier.orders, by.x = .pred_class, by.y = Suborder) %>% rename (Order.pred = Order) %>% 
+  mutate(Order.compare = ifelse(Order.hier == Order.pred, "Same", "Diff")) %>%
+  mutate(Compare = ifelse(.pred_class == Suborder, "Same", "Diff")) %>% filter(Compare == "Diff")
+
+```
+## Collect accuracy metrics and predictions and improperly predicted site units
+```{r collect metrics and predictions, echo = TRUE }
+# collect accuracy metrics  
+
+BEC.pred <- BEC_cv_fitted %>% collect_predictions()# collect predictions
+#BEC.predx <- left_join( BEC.pred, SU_names)
+### accuracy by suborder
+BEC.pred_acc <- BEC.pred %>% 
+  group_by(Suborder) %>% 
+  accuracy(Suborder, .pred_class)
+#Summarize prediction
+BEC.pred2 <- BEC_cv_fitted %>% collect_predictions(summarize = TRUE)# collect predictions
+BEC.pred3 <- left_join(BEC.pred2, SU_names)
+
+## Identify misplaced site units
+MisID <- BEC.pred3 %>% dplyr::select(SiteUnit, Suborder, .pred_class) %>% mutate(compare = if_else(Suborder == .pred_class, "Same", "Diff")) %>% filter(compare == "Diff")# %>% rename("SiteUnit" = SiteUnit)
+fwrite(MisID, "./outputs/Misplaced Site Series in SubOrders.csv")
+
+```
+
+```{r build  model of suborders, include = FALSE}
+
+# 2: set up cross validation for parameter tuning data sets # note vc is default to 10 fold
+BEC_workflow <- workflow() %>%
+  add_model(BEC_fmodel) %>% 
+    add_recipe(BEC_recipe,blueprint = hardhat::default_recipe_blueprint(allow_novel_levels = TRUE))
+
+BEC_ranger_model <- fit(BEC_workflow, BEC_train)
+BEC_ranger_model$fit
+
+save(BEC_ranger_model, file = "./rFmodels/BECv13_Suborders_rFmodel.Rdata")
+
+BEC.pred <- predict(BEC_ranger_model, BEC_test) %>% bind_cols(BEC_test %>% dplyr::select(SiteUnit, Suborder)) 
+BEC.acc <- BEC.pred %>%  metrics(truth = Suborder, estimate = .pred_class)
+BEC.acc
+BEC.pred.list <- BEC.pred$SiteUnit %>% as.character
+BEC.missed <- BEC.pred  %>%   mutate(Compare = ifelse(.pred_class == Suborder, "Same", "Diff")) %>% filter(Compare == "Diff")
+fwrite(BEC.missed, "./outputs/MidplacedSuborders.csv")
+BEC.mis.list <- BEC.missed$SiteUnit %>% as.character
+SS_misID_SU <- SUTab[SUTab$SiteUnit %in% BEC.mis.list,]
+fwrite(SS_misID_SU, "./outputs/WrongOrderPredicted_SU.csv")
+```
