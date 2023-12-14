@@ -1,6 +1,5 @@
-
 treeToTable <- function(SUhier){
-  hierLookup <- SUhier[,.(ID,Name)]
+  hierLookup <- setDT(SUhier)[,.(ID,Name)]
   HierClean <- SUhier[,.(ID,Parent,Name,Level)]
   roots <- HierClean$Parent[!HierClean$Parent %in% HierClean$ID]
   roots <- unique(roots[!is.na(roots)])
