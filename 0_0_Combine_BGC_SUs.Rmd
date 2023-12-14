@@ -30,19 +30,41 @@ dbDisconnect(becdb)
 ```
 
 
-#### Import all raw vpro tables in /raw_data folder
+#### Import all BECMaster tables in /raw_data folder
 ```{r set folders, include=FALSE}
 require(DBI) #loads odbc as well
- becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster64/BECMaster64.accdb;")
+ becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/GitHub/BECMaster_Cleaning/updated_vpro/BECMaster_fixing.accdb;")
 
-ENV <- dbReadTable(becmaster, "BECMaster64_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
-ADMIN<- dbReadTable(becmaster, "BECMaster64_Admin")
-VEG <- dbReadTable(becmaster, "BECMaster64_Veg")
+ENV <- dbReadTable(becmaster, "BECMaster_fixing_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
+# ADMIN<- dbReadTable(becmaster, "BECMaster_fixing_Admin")
+# VEG <- dbReadTable(becmaster, "BECMaster_fixing_Veg")
 env.fields <- colnames(ENV)
-odbc::odbcListColumns(becmaster, table = "BECMaster64_ENV")
+odbc::odbcListColumns(becmaster, table = "BECMaster_fixing_ENV")
 dbDisconnect(becmaster)
 
 ```
+
+### New Columbia Guide
+```{r}
+correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+DBQ=D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb;")
+all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
+dbDisconnect(correlation)
+SU <- do.call(rbind.data.frame, all_su)
+SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
+  arrange(desc(PlotNumber))
+ss.unique <- SU %>% select(SiteUnit) %>% distinct
+SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
+
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+DBQ=D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb;")
+dbWriteTable(master_su, "All_Columbia_FG_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+dbDisconnect(master_su)
+
+```
+
+
+
 
 ## Import SU table and BECdb for current BGC units and site series. Look for missing units. Create complete SU 
 
@@ -57,11 +79,12 @@ dbDisconnect(correlation)
 SU <- do.call(rbind.data.frame, all_su)
 SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
   arrange(desc(PlotNumber))
+ss.unique <- SU %>% select(SiteUnit) %>% distinct
 SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
 
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
 DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-dbWriteTable(master_su, "All_Coast_Forest_SU",  SU2, overwrite = TRUE, batch_rows = 1)
+dbWriteTable(master_su, "All_Coast_Forest_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
 dbDisconnect(master_su)
 
 #%>% mutate(PlotNumber = paste0("'",PlotNumber))
@@ -79,25 +102,32 @@ missingplots <- anti_join(SU_coast, ENV)
 plots <- right_join(SU_coast, ENV)
 ### Check for duplicate plot usage
 usemorethanone <- SU_coast %>% dplyr::group_by(PlotNumber) %>% dplyr::mutate(dups = n()) %>% filter(dups >1) %>% ungroup() %>% arrange(PlotNumber)
-fwrite(usemorethanone, "./outputs/Coast_Plots_Used_Morethan_Once.csv")
+fwrite(usemorethanone, "./review_outputs/Coast_Plots_Used_Morethan_Once.csv")
 ###Summaries by BGC and by SS
 plots_bgc <- SU_coast %>% group_by(bgc) %>% dplyr::summarise(plots = n())
 plots_SS <- SU_coast %>% group_by(SiteUnit) %>% dplyr::summarise(plots = n())
 SS_count <- length(unique(SU_coast$SiteUnit))
 siteunits_toofew <- plots_SS %>% filter(plots <5) #%>% dplyr::select(- PlotNumber) %>% distinct
 
-fwrite(siteunits_toofew, "./outputs/Coast_SiteUnits_w_lessthan5plots.csv")
+fwrite(siteunits_toofew, "./review_outputs/Coast_SiteUnits_w_lessthan5plots.csv")
+
+all_zonals <- SU2 %>% filter(str_detect(SiteUnit, "101|/01"))
+zonal_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+dbWriteTable(zonal_su, "Coast_Zonals_SU", all_zonals, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+dbDisconnect(zonal_su)
+
 ```
 ###SOUTHERN INTERIOR Forested
 
 ```{r import SU tables and look for errors}
 require(DBI) #loads odbc as well
-correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/SIFR_LMH_SU.accdb;")
 all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
 dbDisconnect(correlation)
 SU <- do.call(rbind.data.frame, all_su)
-SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
+SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>%
   arrange(desc(PlotNumber))
 SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
 
@@ -113,11 +143,11 @@ SU_draft2 <- SU_draft %>% dplyr::select(PlotNumber, SiteUnit)
 
 
 SU <- rbind(SU,SU_draft)
- 
+
 #%>% mutate(PlotNumber = paste0("'",PlotNumber))
 #fwrite(SU, "./clean_tabs/CoastGuide_All_BGC_Forest_SU.csv")
 ###remove phases and seral units
-SU_siteseries <- SU %>% 
+SU_siteseries <- SU %>%
   filter(!str_detect(SiteUnit, '[$]'))%>% filter(!str_detect(SiteUnit, "/W|/R|/G|/F|/A|/V")) %>% filter(!str_detect(SiteUnit, fixed("(G")))
 phases = c("a", "b", "c")
 SU_siteseries$SiteUnit <- str_replace(SU_siteseries$SiteUnit, "a$|b$", "")
@@ -125,7 +155,7 @@ SU_siteseries2 <- SU_siteseries %>% dplyr::select(-bgc)
 fwrite(SU_siteseries, "./clean_tabs/SIFR_Guide_All_BGC_Forest_SS.csv")
 SU_zonals <- SU_siteseries2 %>% filter(str_detect(SiteUnit, "101|/01"))
 ###write combined SU to database
-master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/SIFR_Hierarchy.accdb;")
 dbWriteTable(master_su, "All_SIFR_Forest_SU",  SU_siteseries2, overwrite = TRUE, batch_rows = 1)
 dbWriteTable(master_su, "All_SIFR_Zonals_SU",  SU_zonals, overwrite = TRUE, batch_rows = 1)
@@ -150,32 +180,32 @@ fwrite(siteunits_toofew, "./outputs/SIFR_SiteUnits_w_lessthan5plots.csv")
 
 ```{r import SU tables and look for errors}
 require(DBI) #loads odbc as well
-correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/NIFR_SU_Tables.accdb;")
 all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
 dbDisconnect(correlation)
 SU <- do.call(rbind.data.frame, all_su)
-SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
+SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>%
   arrange(desc(PlotNumber))
 SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
 
 ####Draft units
-require(DBI) #loads odbc as well
-correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
-DBQ=D:/BC_Correlation2_Vpro_2023/Zonal_Cassiar_2022.accdb;")
-all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
-dbDisconnect(correlation)
-SU_draft <- do.call(rbind.data.frame, all_su)
-SU_draft <- SU_draft %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
-  arrange(desc(PlotNumber))
-SU_draft2 <- SU_draft %>% dplyr::select(PlotNumber, SiteUnit)
-
-
-SU <- rbind(SU,SU_draft)
+# require(DBI) #loads odbc as well
+# correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+# DBQ=D:/BC_Correlation2_Vpro_2023/Zonal_Cassiar_2022.accdb;")
+# all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
+# dbDisconnect(correlation)
+# SU_draft <- do.call(rbind.data.frame, all_su)
+# SU_draft <- SU_draft %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>%
+#   arrange(desc(PlotNumber))
+# SU_draft2 <- SU_draft %>% dplyr::select(PlotNumber, SiteUnit)
+# 
+# 
+# SU <- rbind(SU,SU_draft)
 #%>% mutate(PlotNumber = paste0("'",PlotNumber))
 #fwrite(SU, "./clean_tabs/CoastGuide_All_BGC_Forest_SU.csv")
 ###remove phases and seral units
-SU_siteseries <- SU %>% 
+SU_siteseries <- SU %>%
   filter(!str_detect(SiteUnit, '[$]'))%>% filter(!str_detect(SiteUnit, "/W|/R|/G|/F|/A|/V")) %>% filter(!str_detect(SiteUnit, fixed("(G")))
 phases = c("a", "b", "c")
 SU_siteseries$SiteUnit <- str_replace(SU_siteseries$SiteUnit, "a$|b$", "")
@@ -183,7 +213,7 @@ SU_siteseries2 <- SU_siteseries %>% dplyr::select(-bgc)
 fwrite(SU_siteseries, "./clean_tabs/NIFR_Guide_All_BGC_Forest_SS.csv")
 SU_zonals <- SU_siteseries2 %>% filter(str_detect(SiteUnit, "101|/01"))
 ###write combined SU to database
-master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/NIFR_Hierarchy.accdb;")
 dbWriteTable(master_su, "All_NIFR_Forest_SU",  SU_siteseries2, overwrite = TRUE, batch_rows = 1)
 dbWriteTable(master_su, "All_NIFR_Zonals_SU",  SU_zonals, overwrite = TRUE, batch_rows = 1)
@@ -204,10 +234,10 @@ siteunits_toofew <- plots_SS %>% filter(plots <5) #%>% dplyr::select(- PlotNumbe
 
 fwrite(siteunits_toofew, "./outputs/NIFR_SiteUnits_w_lessthan5plots.csv")
 ```
-```{r}
+```{r write combined SU for province}
 all_SS <- rbind(SU_coast, SU_SIFR, SU_NIFR) 
 all_SS$bgc <-  str_replace_all(all_SS$bgc, " ", "")
-all_SS <- left_join(all_SS, BGCs, by = c("bgc" = "BGC_NoSpace"))
+all_SS <- left_join(all_SS, BGCs, by = c("bgc" = "BGC_NoSpace")) %>% dplyr::select(PlotNumber, SiteUnit, bgc)
 SS_notBECdb <- anti_join(all_SS, BGCs, by = c("bgc" = "BGC_NoSpace"))
 BECdb_noSS <- anti_join(BGCs, all_SS, by = c("BGC_NoSpace" = "bgc"))
 
@@ -217,56 +247,57 @@ Plots_dups <- all_SS2 %>% filter(PlotNumber %in% all_SS_dups$PlotNumber)
 fwrite(Plots_dups, "./outputs/PlotsUsedTwice.csv")
 
 all_zonals <- all_SS2 %>% filter(str_detect(SiteUnit, "101|/01"))
-zonal_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
-DBQ=D:/BC_Correlation2_Vpro_2023/Zonal_SiteUnits.accdb;")
-dbWriteTable(zonal_su, "All_zonals_SU", all_zonals, overwrite = TRUE, batch_rows = 1)
-dbDisconnect(zonal_su)
+all_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
+dbWriteTable(all_su, "All_BC_BGCs_SU", all_SS, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+dbWriteTable(all_su, "All_BC_zonals_SU", all_zonals, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+dbDisconnect(all_su)
 
 ```
 
 ###Drafts
 
 ```{r import SU tables and look for errors}
-require(DBI) #loads odbc as well
-correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
-DBQ=D:/BC_Correlation2_Vpro_2023/InteriorGuides_Forested.accdb;")
-all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
-dbDisconnect(correlation)
-SU <- do.call(rbind.data.frame, all_su)
-SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
-  arrange(desc(PlotNumber))
-SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
-
-
-#%>% mutate(PlotNumber = paste0("'",PlotNumber))
-#fwrite(SU, "./clean_tabs/CoastGuide_All_BGC_Forest_SU.csv")
-###remove phases and seral units
-SU_siteseries <- SU %>% 
-  filter(!str_detect(SiteUnit, '[$]'))%>% filter(!str_detect(SiteUnit, "/W|/R|/G|/F|/A|/V")) %>% filter(!str_detect(SiteUnit, fixed("(G")))
-phases = c("a", "b", "c")
-SU_siteseries$SiteUnit <- str_replace(SU_siteseries$SiteUnit, "a$|b$", "")
-SU_siteseries2 <- SU_siteseries %>% dplyr::select(-bgc)
-fwrite(SU_siteseries, "./clean_tabs/SIFR_Guide_All_BGC_Forest_SS.csv")
-###write combined SU to database
-master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
-DBQ=D:/BC_Correlation2_Vpro_2023/SIFR_Hierarchy.accdb;")
-dbWriteTable(master_su, "All_SIFR_Forest_SU",  SU_siteseries2, overwrite = TRUE, batch_rows = 1)
-dbDisconnect(master_su)
-
-SU <- SU_siteseries
-###Check that there is plot data for all
-missingplots <- anti_join(SU, ENV)
-plots <- right_join(SU, ENV)
-### Check for duplicate plot usage
-usemorethanone <- SU %>% dplyr::group_by(PlotNumber) %>% dplyr::mutate(dups = n()) %>% filter(dups >1) %>% ungroup() %>% arrange(PlotNumber)
-fwrite(usemorethanone, "./outputs/SIFR_Plots_Used_Morethan_Once.csv")
-###Summaries by BGC and by SS
-plots_bgc <- SU %>% group_by(bgc) %>% dplyr::summarise(plots = n())
-plots_SS <- SU %>% group_by(SiteUnit) %>% dplyr::summarise(plots = n())
-SS_count <- length(unique(SU$SiteUnit))
-siteunits_toofew <- plots_SS %>% filter(plots <5) #%>% dplyr::select(- PlotNumber) %>% distinct
-
-fwrite(siteunits_toofew, "./outputs/SIFR_SiteUnits_w_lessthan5plots.csv")
+# require(DBI) #loads odbc as well
+# correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+# DBQ=D:/BC_Correlation2_Vpro_2023/InteriorGuides_Forested.accdb;")
+# all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
+# dbDisconnect(correlation)
+# SU <- do.call(rbind.data.frame, all_su)
+# SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
+#   arrange(desc(PlotNumber))
+# SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
+# 
+# 
+# #%>% mutate(PlotNumber = paste0("'",PlotNumber))
+# #fwrite(SU, "./clean_tabs/CoastGuide_All_BGC_Forest_SU.csv")
+# ###remove phases and seral units
+# SU_siteseries <- SU %>% 
+#   filter(!str_detect(SiteUnit, '[$]'))%>% filter(!str_detect(SiteUnit, "/W|/R|/G|/F|/A|/V")) %>% filter(!str_detect(SiteUnit, fixed("(G")))
+# phases = c("a", "b", "c")
+# SU_siteseries$SiteUnit <- str_replace(SU_siteseries$SiteUnit, "a$|b$", "")
+# SU_siteseries2 <- SU_siteseries %>% dplyr::select(-bgc)
+# fwrite(SU_siteseries, "./clean_tabs/SIFR_Guide_All_BGC_Forest_SS.csv")
+# ###write combined SU to database
+# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+# DBQ=D:/BC_Correlation2_Vpro_2023/SIFR_Hierarchy.accdb;")
+# dbWriteTable(master_su, "All_SIFR_Forest_SU",  SU_siteseries2, overwrite = TRUE, batch_rows = 1)
+# dbDisconnect(master_su)
+# 
+# SU <- SU_siteseries
+# ###Check that there is plot data for all
+# missingplots <- anti_join(SU, ENV)
+# plots <- right_join(SU, ENV)
+# ### Check for duplicate plot usage
+# usemorethanone <- SU %>% dplyr::group_by(PlotNumber) %>% dplyr::mutate(dups = n()) %>% filter(dups >1) %>% ungroup() %>% arrange(PlotNumber)
+# fwrite(usemorethanone, "./outputs/SIFR_Plots_Used_Morethan_Once.csv")
+# ###Summaries by BGC and by SS
+# plots_bgc <- SU %>% group_by(bgc) %>% dplyr::summarise(plots = n())
+# plots_SS <- SU %>% group_by(SiteUnit) %>% dplyr::summarise(plots = n())
+# SS_count <- length(unique(SU$SiteUnit))
+# siteunits_toofew <- plots_SS %>% filter(plots <5) #%>% dplyr::select(- PlotNumber) %>% distinct
+# 
+# fwrite(siteunits_toofew, "./outputs/SIFR_SiteUnits_w_lessthan5plots.csv")
 ```
 
 
