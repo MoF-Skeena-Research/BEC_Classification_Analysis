@@ -1,0 +1,151 @@
+---
+title: "Create summary materials for generating formated site unit report"
+author: "Will MacKenzie"
+date: "13/12/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require(data.table)
+require(tidyverse)
+require(dplyr)
+require(data.tree)
+require(DBI) #loads odbc as well
+require(labdsv)
+require(factoextra)
+require(CooccurrenceAffinity)
+require(dendextend)
+require(climr)
+require(terra)
+source("./_functions/_lump_species.R")
+source("./_functions/_create_su_vegdata.R")
+source("./_functions/_create_analysis_vegsum.R")
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+source("./_functions/_add_vars.R")
+```
+
+#### Import all analysis data and other vpro tables for building summary
+```{r set folders, include=FALSE}
+load("./clean_data/Analysis_BECMaster_Veg.RData") ###named veg.dat
+
+ becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/GitHub/BECMaster_Cleaning/updated_vpro/BECMaster_fixing.accdb;")
+plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
+plot.admin <- dbReadTable(becmaster, "BECMaster_fixing_Admin")
+dbDisconnect(becmaster)
+plot.env.use <- plot.env %>% select(PlotNumber, Latitude, Longitude, MoistureRegime, NutrientRegime,  Elevation, SlopeGradient, Aspect, MesoSlopePosition, SurficialMaterialSurf, SeepageDepth, RootRestrictingDepth, RootRestrictingType, RootZoneParticleSize, SoilClassGroup, HumusForm, StrataCoverTree, StrataCoverShrub, StrataCoverHerb, StrataCoverMoss) %>% mutate(Longitude = 0-Longitude)
+plot.admin.use <- plot.admin %>% select(Plot, HumusThickness, GIS_BGC, Elevation_overlay) %>% rename(PlotNumber = Plot)
+
+# ###created in 0_0_Plot_su_Hierarchy checks script
+# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+# DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+# su <- dbReadTable(master_su, "All_Coast_Forest_su")
+# dbDisconnect(master_su)
+
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+DBQ=D:/BC_Correlation2_Vpro_2023/working/All_Skunkcabbage.accdb;")
+su <- dbReadTable(master_su, "AllBGC_Skunkcabbage_SU")
+hier <- dbReadTable(master_su, "AllBGC_Skunkcabbage_Hierarchy")
+dbDisconnect(master_su)
+hier2 <- treeToTable(hier)
+hier2 <- hier2[[1]]
+sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Personal/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
+taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
+dbDisconnect(sppmaster)
+taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X") %>% dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>% distinct
+
+veglump <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Spp_lump.accdb;")
+lump <- dbReadTable(veglump, "CoastGuide2023_lump")
+dbDisconnect(veglump) 
+
+veg.dat2 <- lump_species(veg.dat, lump)
+```
+
+choose unit level and summarize
+
+turn this into a loop to generate info for each unit
+
+```{r build veg summary}
+hier.choice = c("Assoc", "Subass") ##chooselevel
+hier.work <- hier2 %>% select(SiteUnit, all_of(hier.choice)) %>% left_join(su)##1 combine SU and hierarchy
+veg.sum.assoc <- create_su_vegdata(veg.dat2, hier.work, unit = "Assoc", .55) 
+select.unit <- "Ws54 CwHw-Gaulsha-Lysiame_typic"
+vegunit.select <- veg.sum.assoc %>% dplyr::filter(unit %in% select.unit) 
+vegunit.sum<- create_analysis_vegsum(vegunit.select, importance = 0.5, constancy = 55, minplots = 5, covadj = .5)
+vegunit.info <- vegunit.sum%>% select(unit, nplots) %>% distinct
+vegunit.table <- left_join(vegunit.sum, taxon.lifeform, by = c("Species" = "Code")) %>% arrange(Lifeform, desc(spp_importance)) %>% 
+  select(Lifeform, ScientificName, Constancy, MeanCov, EnglishName )
+example.vegtab <- list(vegunit.info,vegunit.table)
+saveRDS(example.vegtab, "./report_material/examplevegsum.rds" )
+```
+
+```{r build environment data}
+hier.env <- left_join(hier.work, plot.admin.use) %>% left_join(plot.env.use) %>% filter(!is.na(Longitude))
+##add elevation by overaly where missing
+hier.env <- hier.env %>% mutate(Elevation = ifelse(is.na(Elevation), Elevation_overlay, Elevation))
+### add Climr climate data
+coords <- hier.env %>%  dplyr::rename(long = Longitude, lat = Latitude, elev = Elevation) %>% select(long,lat,elev,PlotNumber) %>% filter(!is.na(lat))
+setcolorder(coords, c("long","lat","elev", "PlotNumber"))
+#thebb <- climr::get_bb(coords)
+coords <- as.data.frame(coords) %>% tidyr::drop_na()# 
+ ##get bounding box based on input points
+dbCon <- data_connect() 
+#normal <- climr::normal_input_postgis(dbCon = dbCon, normal = "normal_na", bbox = thebb, cache = TRUE) ##connect to database
+vars_needed <- c("DD5","SHM", "AHM", "CMD" ,"NFFD", "PAS", 
+                 "EMT", "MWMT", "DD18", "bFFP", 'MCMT', 'MSP', 'MAT', 'MAP', "PPT_at", "PPT_wt", "DD_0_at", "DD_0_wt", "CMI")
+require(tictoc)
+tic()
+climate <- climr_downscale(
+  coords,
+  which_normal = "BC",
+  return_normal = TRUE,
+  vars = vars_needed)
+toc()
+climate <- addVars(climate) %>% rename(PlotNumber = ID)
+
+climate <- left_join(hier.env,climate)
+
+climate.dat <- climate %>% dplyr::select(PlotNumber, MWMT, MCMT, MSP, AHM, SHM, DD5, PAS,MAT, MAP, DD_delayed, CMD.total) 
+hier.env <- left_join(hier.env, climate.dat)
+
+fwrite(coords, "testofclimr.csv")
+```
+
+
+```{r Add downscaled climate variables to each point}
+rules <- read.csv("./inputs/aSMR_Rules_HalfStep_v12_15Nov2021.csv") ### import rules on range of CMD which equates to aSMR
+aSMRClass <- function(x){
+  for(i in 1:length(ruleSelect$CMD)){
+    if(x < ruleSelect$CMD[i+1]){
+      x <- ruleSelect$aSMR[i]
+      break
+    }
+  }
+  return(x)
+}
+
+###Calculate aSMR classes based on rules###
+test <- foreach(SMR = colnames(CMD)[-1], .combine = cbind) %do% {
+  temp <- CMD[,SMR]
+ temp [is.na(temp)] <- 0
+  if(SMR == "rSMR7"){
+    ruleSelect <- rules[rules$SMRLevel == 7,-1]
+  }else if(SMR == "rSMR6"){
+    ruleSelect <- rules[rules$SMRLevel == 6,-1]
+  }else if(SMR == "rSMR5"){
+    ruleSelect <- rules[rules$SMRLevel == 5,-1]
+  }else{
+    ruleSelect <- rules[rules$SMRLevel == 0,-1]
+  }
+  out <- sapply(temp,FUN = aSMRClass)
+  out
+}
+
+test <- as.data.frame(test)
+```
+
+##Internal Metrics of Homogeneity of site series - Vegetation
+Number of plots
+Similarity between plots
+Outliers
+
