@@ -15,8 +15,6 @@ require(labdsv)
 require(factoextra)
 require(CooccurrenceAffinity)
 require(dendextend)
-source("./_functions/_TreetoTable.R")
-source("./_functions/_TabletoTree.R")
 ```
 
 #### Import raw data and convert into analysis set
@@ -38,17 +36,24 @@ source("./_functions/_TabletoTree.R")
 
 #### Import all analysis data and other vpro tables for building summary
 ```{r set folders, include=FALSE}
-load("./clean_data/Analysis_BECMaster_Veg.RData")
+load("./clean_data/Analysis_BECMaster_Veg.RData") ###named veg.dat
 
  becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/GitHub/BECMaster_Cleaning/updated_vpro/BECMaster_fixing.accdb;")
 plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
 dbDisconnect(becmaster)
 
-###created in 0_0_Plot_su_Hierarchy checks script
-master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
-DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-su <- dbReadTable(master_su, "All_Coast_Forest_su")
+# ###created in 0_0_Plot_su_Hierarchy checks script
+# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+# DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+# su <- dbReadTable(master_su, "All_Coast_Forest_su")
+# dbDisconnect(master_su)
+
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+DBQ=D:/BC_Correlation2_Vpro_2023/working/All_Skunkcabbage.accdb;")
+su <- dbReadTable(master_su, "AllBGC_Skunkcabbage_SU")
+hier <- dbReadTable(master_su, "AllBGC_Skunkcabbage_Hierarchy")
 dbDisconnect(master_su)
+
 
 sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Personal/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
 taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
@@ -78,17 +83,29 @@ missingplots <- anti_join(su, plot.env)
 plots <- right_join(su, plot.env)
 ### Check for duplicate plot usage
 usemorethanone <- su %>% dplyr::group_by(PlotNumber) %>% dplyr::mutate(dups = n()) %>% filter(dups >1) %>% ungroup() %>% arrange(PlotNumber)
-fwrite(usemorethanone, "./outputs/Coast_Plots_Used_Morethan_Once.csv")
+fwrite(usemorethanone, "./review_outputs/Coast_Plots_Used_Morethan_Once.csv")
 ###Summaries by BGC and by SS
 #plots_bgc <- su %>% group_by(bgc) %>% dplyr::summarise(plots = n())
 plots_SS <- su %>% group_by(SiteUnit) %>% dplyr::summarise(plots = n())
 SS_count <- length(unique(su$SiteUnit))
 siteunits_toofew <- plots_SS %>% filter(plots <5) #%>% dplyr::select(- PlotNumber) %>% distinct
 
-fwrite(siteunits_toofew, "./outputs/Coast_SiteUnits_w_lessthan5plots.csv")
+fwrite(siteunits_toofew, "./review_outputs/Coast_SiteUnits_w_lessthan5plots.csv")
 ```
 ##Internal Metrics of Homogeneity of site series - Vegetation
-```{r}
+Number of plots
+Similarity between plots
+Outliers
+
+```{r internal variability}
+require(tabula)
+require(labdsv)
+require(proxyC)
+veg.dat <- veg.dat[PlotNumber %in% su$PlotNumber] %>% left_join(su)## recuce to plots in SU only
+veg.unit <- veg.dat %>% filter(SiteUnit == "CWH vh 2 /101") %>% select(-Lifeform, -SiteUnit) %>% filter(Cover > .99) %>% matrify() %>% as.matrix 
+veg.unit[veg.unit==0]<-NA
+xx <- simil(veg.unit, method = "ejaccard", min_simil = .1) %>% as.matrix
+xx
 
 ```
 
