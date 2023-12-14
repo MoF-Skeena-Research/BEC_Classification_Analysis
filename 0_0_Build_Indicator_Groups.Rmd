@@ -1,0 +1,172 @@
+---
+title: "Build_Climate_Indicator_List"
+author: "Will MacKenzie"
+date: "2023-12-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+require(data.table)
+require(tidyverse)
+require(dplyr)
+require(data.tree)
+require(DBI) #loads odbc as well
+require(labdsv)
+require(factoextra)
+require(CooccurrenceAffinity)
+require(dendextend)
+ require(indicspecies)
+library(stringr)
+```
+
+
+### Summarize forested species list by BGC and compare
+Remove uncommon species (<10 count?)
+Species associated with various climate groups 
+Coast/Interior
+Zone
+Subzone variant
+Climate group (Temperate, Boreal, Mesothermal (Rainforest), Mediterranean)
+
+#### Import all analysis data and other vpro tables for building summary
+```{r set folders, include=FALSE}
+load("./clean_data/Analysis_BECMaster_Veg.RData") ###named veg.dat
+
+becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/GitHub/BECMaster_Cleaning/updated_vpro/BECMaster_fixing.accdb;")
+plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
+dbDisconnect(becmaster)
+
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
+su <- dbReadTable(master_su, "All_BC_BGCs_SU")
+zonals <- dbReadTable(master_su, "All_BC_zonals_SU")
+dbDisconnect(master_su)
+
+
+sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Personal/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
+taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
+dbDisconnect(sppmaster)
+taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X") %>% dplyr::select(Code, Lifeform) %>% distinct
+
+veglump <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Spp_lump.accdb;")
+lump <- dbReadTable(veglump, "CoastGuide2023_lump")
+dbDisconnect(veglump) 
+```
+##Look for indicator groups by BGC Zone
+Save these to identify climate indicator value
+This function takes some time to run for the full data set
+```{r create matrix with groups}
+veg.dat2 <- veg.dat %>% filter(PlotNumber %in% su$PlotNumber, Species %in% taxon.lifeform$Code)
+
+veg_by_bgc <- setDT(veg.dat2)[setDT(su), "bgc" := bgc, on= c("PlotNumber")] %>% drop_na(bgc)
+
+veg_by_bgc2 <- veg_by_bgc %>% mutate(zone = sapply(str_extract_all(bgc, "[A-Z]"), paste, collapse= ''))
+ common_species <- veg_by_bgc2[,.N, by=c("zone", "Species")] %>% filter(N >10) %>% select(Species) %>% distinct
+ 
+ xx <- veg_by_bgc2 %>% filter(Species == "TSUGHET")
+ selected.bgcs <- c("IDF", "ICH")
+ veg_by_bgc3 <- veg_by_bgc2 %>% filter(Species %in% common_species$Species) %>% 
+                            arrange(PlotNumber) #%>% dplyr::filter(zone %in% selected.bgcs)
+ ## count of plots by zone to check what n of subsample can be
+ zone.count <- veg_by_bgc3 %>% count(zone)
+ ##  randomly subsample by zone for efficiency in following routines
+plot.select <-  veg_by_bgc3 %>% select (zone, PlotNumber) %>% group_by(zone) %>% slice_sample(n=1000) %>% ungroup()
+ veg_by_bgc3 <- veg_by_bgc2 %>% filter(Species %in% common_species$Species) %>% 
+                            arrange(PlotNumber) %>% dplyr::filter(PlotNumber %in% plot.select$PlotNumber)
+ bgc <- veg_by_bgc3 %>% select(PlotNumber, zone, bgc) %>% distinct()
+
+ group <- bgc$zone
+ veg_by_bgc3 <-  veg_by_bgc3 %>% dplyr::select(PlotNumber, Species, Cover) %>% data.frame
+ veg.matrix <- veg_by_bgc3 %>% matrify() ### matrify always orders by plot number
+```
+
+
+```{r run indval}
+####This chunk takes time. Save for future use as rds file
+
+# indval <- multipatt(veg.matrix, group,
+#                     control = how(nperm=999), duleg = TRUE)### the grouping function in indicspecies does not calculate correctly
+#  summary(indval)
+#  Zone.indval <- indval$sign
+# fwrite(Zone.indval, "./analysis/Zone_indvals_multipatt2.csv", row.names = TRUE )
+# saveRDS(indval, "./analysis/Zone_indvals_object2.rds")
+indval <- readRDS("./analysis/Zone_indvals_object2.rds")
+summary(indval)#, indvalcomp = TRUE)
+Zone.indval <- indval$sign
+
+### need to identify max indval across all combinations
+indic.list <- indval$str %>% data.frame %>% rownames_to_column("spp") %>% pivot_longer(-spp, names_to = "zones", values_to = "indval") %>% 
+   filter(indval >.2)%>%  group_by(spp) %>% add_count(spp)# slice(which.max(indval)) %>% ungroup()
+
+coast = c("CDF", "CWH", "MH")
+coast_interior.indic <- indic.list %>% mutate(zones = ifelse(zones %in% coast, "coast", "interior")) %>% select(-indval, -n) %>% distinct %>% add_count(spp) %>% filter(n == 1) %>% mutate(n = "-1")
+fwrite(coast_interior.indic, "./analysis/coast-interior-lump.csv")
+# Zone.indval <- rownames_to_column(Zone.indval, "spp")
+# coast.indic <- Zone.indval %>% dplyr::select(spp, s.CWH, s.MH, s.CDF) %>% filter(if_any(where(is.numeric), ~.x > 0))
+# not.coast <- Zone.indval %>% dplyr::select(-s.CWH, -s.MH, -s.CDF, -index, -stat, -p.value) %>% filter(if_any(where(is.numeric), ~.x > 0))
+# coast.indic2 <- anti_join(coast.indic, not.coast, by = "spp") %>% select(spp)
+# int.indic <-  anti_join(not.coast, coast.indic,  by = "spp") %>% select(spp)
+
+#### same but with phi-coefficient using pres/abs 
+# veg.matrix.pa <- ifelse(veg.matrix >0,1,0)
+# phi <- multipatt(veg.matrix.pa, group, func = "r.g", 
+#                  control = how(nperm=100)) #999
+# summary(phi)
+#  Zone.phi <- phi$sign
+# fwrite(Zone.phi, "./analysis/Zone_phi_multipatt.csv", row.names = TRUE )
+# saveRDS(indval, "./analysis/Zone_phi_object.rds")
+
+###Can see negative associations
+#round(phi$str,3)
+#coast = c("CWH", "MH", "CDF")
+
+
+
+```
+
+```{r}
+##looks for species combinations that act as indicators
+sc <- indicators(X=veg.matrix, cluster=group, group="ESSF", 
+                 max.order = 3, verbose=TRUE, 
+                 At=0.2, Bt=0.2)
+
+```
+
+Cluster of BGC
+
+```{r pressure, echo=FALSE}
+veg_by_bgc <- setDT(veg.dat)[setDT(su), "bgc" := bgc, on= c("PlotNumber")] %>% drop_na(bgc)
+library(stringr)
+ veg_by_bgc2 <- veg_by_bgc %>% mutate(zone = sapply(str_extract_all(bgc, "[A-Z]"), paste, collapse= ''))
+ veg_by_bgc2 <- veg_by_bgc2[,.N, by=c("zone", "Species")] %>% filter(N >20) %>% distinct
+ veg.matrix <- veg_by_bgc %>% matrify()
+ 
+ test_jac <- proxy::dist(veg.matrix, method="eJaccard", diag=FALSE, upper = FALSE, pairwise = FALSE) ## ejaccard and philentropy jaccard are real-data versions extended jaccard opr taimoto
+
+ library(cluster)
+require(ape)
+ss_clst = agnes(test_jac, diss = TRUE, stand = FALSE,
+      method = "ward")
+# ht_dendro <- max(ss_clst$height)*.25
+# dendro_test <- ss_clst %>% as.dendrogram %>%
+#      set("branches_k_color", k=8) %>% set("branches_lwd", c(1)) %>%
+#    set("branches_lty", c(1)) %>%
+#    set("labels_colors") %>% set("labels_cex", c(.5)) %>% 
+#    set("nodes_pch", 19) %>% set("nodes_col", c("black"))
+# plot(dendro_test)
+
+dendro_hc <- as.hclust(ss_clst)
+fviz_dend(dendro_hc, cex = 0.5, lwd = 0.5, k = 7, 
+          rect = TRUE, 
+          k_colors = "jco", 
+          rect_border = "jco", 
+          rect_fill = TRUE,
+          horiz = TRUE,
+          ggtheme = theme_gray(),labels=F)
+
+ 
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
