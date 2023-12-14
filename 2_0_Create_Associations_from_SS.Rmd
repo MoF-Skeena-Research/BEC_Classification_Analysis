@@ -38,18 +38,28 @@ source("./_functions/_TabletoTree.R")
 
 #### Import all analysis data and other vpro tables for building summary
 ```{r set folders, include=FALSE}
-load("./clean_data/Analysis_BECMaster_Veg.RData")
+load("./clean_data/Analysis_BECMaster_Veg.RData") ## generated from BECMasterCleaning project scripts
 
- becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/GitHub/BECMaster_Cleaning/updated_vpro/BECMaster_fixing.accdb;")
-plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
+vprodb = "BECMaster_fixing"
+
+ becmaster <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/GitHub/BECMaster_Cleaning/updated_vpro/", vprodb, ".accdb;"))
+plot.env <- dbReadTable(becmaster, paste0(vprodb, "_Env"))
 dbDisconnect(becmaster)
 
-###created in 0_0_Plot_su_Hierarchy checks script
-master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
-DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-su <- dbReadTable(master_su, "All_Coast_Forest_su")
-dbDisconnect(master_su)
+# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+# DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+# su <- dbReadTable(master_su, "All_Coast_Forest_SU")
+# #hier <- dbReadTable(master_su, "Coast_Skunkcabbage_Hierarchy")
+# dbDisconnect(master_su)
 
+working_SU = "Coast_Skunkcabbage"
+working_su <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+DBQ=D:/BC_Correlation2_Vpro_2023/working/", working_SU,".accdb;"))
+su <- dbReadTable(working_su, paste0(working_SU, "_SU"))
+hier <- dbReadTable(working_su, paste0(working_SU, "_Hierarchy"))
+dbDisconnect(working_su)
+hier2 <- treeToTable(hier)
+hier.wide <- hier2[[1]]
 sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Personal/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
 taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
 dbDisconnect(sppmaster)
@@ -66,7 +76,7 @@ Working on Coast guide first
 
 ```{r import su tables and look for errors}
 ###remove phases and seral units
-su_siteseries <- su %>% 
+su_siteseries <- su %>%
   filter(!str_detect(SiteUnit, '[$]'))
 phases = c("a", "b", "c")
 su_siteseries$SiteUnit <- str_replace(su_siteseries$SiteUnit, "[abc]", "")
@@ -103,13 +113,47 @@ vegdata.moss <- veg.dat %>% filter(Lifeform %in% moss) %>% lump_species(lump)%>%
 source("./_functions/_create_su_vegdata.R")
 source("./_functions/_create_analysis_vegsum.R")
 
-veg_anal.tree <- create_su_vegdata(vegdata.tree, su) %>% create_analysis_vegsum (importance = 0.5, constancy = 60, minplots = 5, covadj = 1)
-veg_anal.under <- create_su_vegdata(vegdata.understorey, su) %>% create_analysis_vegsum (importance = 0.5, constancy = 60, minplots = 5, covadj = .5)
-veg_anal.moss <- create_su_vegdata(vegdata.moss, su) %>% create_analysis_vegsum (importance = 0.5, constancy = 60, minplots = 5, covadj = .1)
+veg_anal.tree <- create_su_vegdata(vegdata.tree, su) %>% 
+          create_analysis_vegsum (importance = 1, constancy = 60, noiseconstancy = 40, minplots = 5, covadj = 1)
+veg_anal.under <- create_su_vegdata(vegdata.understorey, su) %>%
+          create_analysis_vegsum (importance = 1, constancy = 60, noiseconstancy = 40, minplots = 5, covadj = 0.1)
+veg_anal.moss <- create_su_vegdata(vegdata.moss, su) %>%
+          create_analysis_vegsum (importance = 1, constancy = 60, noiseconstancy = 40,minplots = 5, covadj = .1)
 veg_anal <- rbind(veg_anal.tree, veg_anal.under, veg_anal.moss)
-save(veg_anal, file = "./clean_data/SS_sum_analysis_all.RData")
+veg.anal.mtrx <-
+  veg_anal %>% dplyr::select(SiteUnit, Species, spp_importance) %>% matrify()
+test_jac <- proxy::dist(veg.anal.mtrx, method="eJaccard", diag=FALSE, upper = FALSE, pairwise = FALSE) 
+# test_affin <- CooccurrenceAffinity::affinity(veg.anal.mtrx, row.or.col = "row", datatype = "abundance", threshold = .1, class0.rule = "less.or.equal", squarematrix = "jaccard")
+# plotgg(test_affin, "jaccard", legendlimit = "datarange")
+# 
+# test_affin.mtx <- (test_affin$jaccard) 
+# test_affin.mtx <- replace(test_affin.mtx, is.na(test_affin.mtx),0) 
+# 
+# ss_clst = agnes(test_affin.mtx, diss = TRUE, stand = FALSE,
+#       method = "complete")
+# %>% select( entity_1, entity_2, "sorensen")
+library(cluster)
+require(ape)
+ss_clst = agnes(test_jac, diss = TRUE, stand = FALSE,
+      method = "complete")
 
-save(veg_anal, file = "./clean_data/SS_sum_analysis_reduced.RData")
+dendro_hc <- as.hclust(ss_clst)
+fviz_dend(dendro_hc, cex = .8, lwd = 0, h = .25, 
+          rect = TRUE, 
+          k_colors = "jco", 
+          rect_border = "jco", 
+          rect_fill = TRUE,
+          ggtheme = theme_gray(),labels=F)
+
+fviz_dend(dendro_hc, cex = .8, lwd = 0, h = .99, 
+          rect = TRUE, 
+          k_colors = "jco", 
+          rect_border = "jco", 
+          rect_fill = TRUE,
+          ggtheme = theme_gray(),labels=T)
+# save(veg_anal, file = "./clean_data/SS_sum_analysis_all.RData")
+# 
+# save(veg_anal, file = "./clean_data/SS_sum_analysis_reduced.RData")
 # SS_reduced_list <- unique(veg_anal$SiteUnit) %>% as.data.frame %>% dplyr::rename(SiteUnit = 1)
 # su_reduced <- su %>% filter(SiteUnit %in% SS_reduced_list$SS)
 ```
@@ -121,11 +165,11 @@ Need to test against the pairwise routine.
 ```{r create distance matrix}
 #require(harrietr)
 #load("./clean_data/SS_sum_analysis_reduced.RData")
-veg.dat <-
+veg.anal.mtrx <-
   veg_anal %>% dplyr::select(SiteUnit, Species, spp_importance) %>% matrify()
 # test_jac.vegan <- vegan::vegdist(test.data, method = "sorensen", binary = F) %>% as.matrix
 #test_jac <- philentropy::distance(test.data, method = "jaccard")
-test_jac <- proxy::dist(veg.dat, method="eJaccard", diag=FALSE, upper = FALSE, pairwise = FALSE) ## ejaccard and philentropy jaccard are real-data versions extended jaccard opr taimoto
+test_jac <- proxy::dist(veg.anal.mtrx, method="eJaccard", diag=FALSE, upper = FALSE, pairwise = FALSE) ## ejaccard and philentropy jaccard are real-data versions extended jaccard opr taimoto
 # xx <- as.matrix(test_jac)
 # units <- as.data.frame(rownames(xx))
 
@@ -141,11 +185,11 @@ SS_w_neighbours <- rbind(minimum.iso1,  minimum.iso2)  %>% ungroup %>% unique %>
 Root_su <- left_join(SS_w_neighbours, su) %>% select(PlotNumber, SiteUnit)
 fwrite(Root_su , "./outputs/SS_to_merge.csv")
 #SS_w_neighbours2 <- left_join(SS_w_neighbours, test_jac.list, by = c("SS" = "col")) %>% unique 
-SS_no_neighbours <- anti_join(SS_reduced_list, SS_w_neighbours)
+#SS_no_neighbours <- anti_join(SS_reduced_list, SS_w_neighbours)
 
 fwrite(test_jac.tab, "./outputs/dissim_matrix2.csv", row.names = TRUE)
 fwrite(test_jac.list, "./outputs/dissim_pairwise2.csv")
-fwrite(SS_no_neighbours, "./outputs/SS_with_no_similar.csv")
+#fwrite(SS_no_neighbours, "./outputs/SS_with_no_similar.csv")
 fwrite(SS_w_neighbours , "./outputs/SS_with_no_similar.csv")
 ```
 
@@ -166,7 +210,7 @@ ss_clst = agnes(test_jac, diss = TRUE, stand = FALSE,
 # plot(dendro_test)
 
 dendro_hc <- as.hclust(ss_clst)
-fviz_dend(dendro_hc, cex = 0.5, lwd = 0.5, h = .25, 
+fviz_dend(dendro_hc, cex = 1, lwd = 0.5, h = .5, 
           rect = TRUE, 
           k_colors = "jco", 
           rect_border = "jco", 
@@ -223,7 +267,7 @@ order_su <- as.data.frame(orders) %>% rownames_to_column("SiteUnit") %>% mutate(
 Hier_su <- left_join(su, assocs_su, by = "SiteUnit") %>% 
 left_join(alliance_su, by = "SiteUnit") %>% 
   left_join(suborder_su, by = "SiteUnit") %>% 
-  left_join(order_su, by = "SiteUnit") %>% distinct() %>% drop_na() %>% select(-row_names)
+  left_join(order_su, by = "SiteUnit") %>% distinct() %>% drop_na()# %>% select(-row_names)
 
 #AllUnits_su <- left_join(su, Hier_su , by = "SiteUnit") %>% distinct
 #fwrite(AllUnits_su, "./outputs/Coast_AllForestUnits_su.csv")
