@@ -38,7 +38,7 @@ source("./_functions/_TabletoTree.R")
 
 #### Import all analysis data and other vpro tables for building summary
 ```{r set folders, include=FALSE}
-load("./clean_data/Analysis_BECMaster_Veg.RData") ## generated from BECMasterCleaning project scripts
+veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds")## generated from 0_0 Create Veg Analsysi Set.rmd
 
 vprodb = "BECMaster_fixing"
 
@@ -46,20 +46,21 @@ vprodb = "BECMaster_fixing"
 plot.env <- dbReadTable(becmaster, paste0(vprodb, "_Env"))
 dbDisconnect(becmaster)
 
-# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
-# DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-# su <- dbReadTable(master_su, "All_Coast_Forest_SU")
-# #hier <- dbReadTable(master_su, "Coast_Skunkcabbage_Hierarchy")
-# dbDisconnect(master_su)
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+su <- dbReadTable(master_su, "All_Coast_Forest_SU")
+#hier <- dbReadTable(master_su, "Coast_Skunkcabbage_Hierarchy")
+dbDisconnect(master_su)
+### for working on a select set of site series
+# working_SU = "Coast_Skunkcabbage"
+# working_su <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)};  DBQ=D:/BC_Correlation2_Vpro_2023/working/", working_SU,".accdb;"))
+# su <- dbReadTable(working_su, paste0(working_SU, "_SU"))
+# hier <- dbReadTable(working_su, paste0(working_SU, "_Hierarchy"))
+# dbDisconnect(working_su)
+# hier2 <- treeToTable(hier)
+# #hier.wide <- hier2[[1]]
 
-working_SU = "Coast_Skunkcabbage"
-working_su <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
-DBQ=D:/BC_Correlation2_Vpro_2023/working/", working_SU,".accdb;"))
-su <- dbReadTable(working_su, paste0(working_SU, "_SU"))
-hier <- dbReadTable(working_su, paste0(working_SU, "_Hierarchy"))
-dbDisconnect(working_su)
-hier2 <- treeToTable(hier)
-hier.wide <- hier2[[1]]
+
 sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Personal/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
 taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
 dbDisconnect(sppmaster)
@@ -112,26 +113,25 @@ vegdata.moss <- veg.dat %>% filter(Lifeform %in% moss) %>% lump_species(lump)%>%
 #vegdata <- vegdata %>% filter(lifeform <3)
 source("./_functions/_create_su_vegdata.R")
 source("./_functions/_create_analysis_vegsum.R")
-
+#covadj exponent set based on Tichy range. max values for 100%const-100%cover is 15% for .6 and 4% for .3
 veg_anal.tree <- create_su_vegdata(vegdata.tree, su) %>% 
-          create_analysis_vegsum (importance = 1, constancy = 60, noiseconstancy = 40, minplots = 5, covadj = 1)
+          create_analysis_vegsum (minimportance = 1, minconstancy = 60, noiseconstancy = 20, minplots = 5, covadj = .6)
 veg_anal.under <- create_su_vegdata(vegdata.understorey, su) %>%
-          create_analysis_vegsum (importance = 1, constancy = 60, noiseconstancy = 40, minplots = 5, covadj = 0.1)
+          create_analysis_vegsum (minimportance = 1, minconstancy = 60, noiseconstancy = 20, minplots = 5, covadj = 0.6)
 veg_anal.moss <- create_su_vegdata(vegdata.moss, su) %>%
-          create_analysis_vegsum (importance = 1, constancy = 60, noiseconstancy = 40,minplots = 5, covadj = .1)
+          create_analysis_vegsum (minimportance = 1, minconstancy = 60, noiseconstancy = 20, minplots = 5, covadj = .3)
 veg_anal <- rbind(veg_anal.tree, veg_anal.under, veg_anal.moss)
 veg.anal.mtrx <-
-  veg_anal %>% dplyr::select(SiteUnit, Species, spp_importance) %>% matrify()
-test_jac <- proxy::dist(veg.anal.mtrx, method="eJaccard", diag=FALSE, upper = FALSE, pairwise = FALSE) 
-# test_affin <- CooccurrenceAffinity::affinity(veg.anal.mtrx, row.or.col = "row", datatype = "abundance", threshold = .1, class0.rule = "less.or.equal", squarematrix = "jaccard")
-# plotgg(test_affin, "jaccard", legendlimit = "datarange")
-# 
-# test_affin.mtx <- (test_affin$jaccard) 
-# test_affin.mtx <- replace(test_affin.mtx, is.na(test_affin.mtx),0) 
-# 
-# ss_clst = agnes(test_affin.mtx, diss = TRUE, stand = FALSE,
-#       method = "complete")
-# %>% select( entity_1, entity_2, "sorensen")
+  veg_anal.tree %>% dplyr::select(SiteUnit, Species, spp_importance) %>% matrify()
+test_jac <- vegan::vegdist(as.data.frame(veg.anal.mtrx))
+test_jac <- proxy::dist(veg.anal.mtrx, method="eJaccard", diag=FALSE, upper = FALSE, pairwise = FALSE)
+# test_jac <- proxy::as.simil(test_jac) %>% as.matrix %>% as.data.frame
+require(Matrix)
+require(wordspace)
+# veg.anal.mtrx <- Matrix(veg.anal.mtrx)
+# test_jac <- dist.matrix(veg.anal.mtrx, method = "cosine", p = 2, 
+#             normalized = FALSE, byrow = TRUE, convert = TRUE, as.dist = FALSE, 
+#             terms = NULL, terms2 = terms, skip.missing = FALSE)
 library(cluster)
 require(ape)
 ss_clst = agnes(test_jac, diss = TRUE, stand = FALSE,
@@ -169,7 +169,7 @@ veg.anal.mtrx <-
   veg_anal %>% dplyr::select(SiteUnit, Species, spp_importance) %>% matrify()
 # test_jac.vegan <- vegan::vegdist(test.data, method = "sorensen", binary = F) %>% as.matrix
 #test_jac <- philentropy::distance(test.data, method = "jaccard")
-test_jac <- proxy::dist(veg.anal.mtrx, method="eJaccard", diag=FALSE, upper = FALSE, pairwise = FALSE) ## ejaccard and philentropy jaccard are real-data versions extended jaccard opr taimoto
+test_jac <- proxy::dist(veg.anal.mtrx, method="eJaccard", diag=FALSE, upper = FALSE, pairwise = TRUE) ## ejaccard and philentropy jaccard are real-data versions extended jaccard opr taimoto
 # xx <- as.matrix(test_jac)
 # units <- as.data.frame(rownames(xx))
 
