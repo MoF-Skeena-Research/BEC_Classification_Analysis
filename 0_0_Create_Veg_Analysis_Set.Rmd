@@ -1,0 +1,33 @@
+---
+title: "Build_Climate_Indicator_List"
+author: "Will MacKenzie"
+date: "2023-12-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+require(data.table)
+require(tidyverse)
+require(dplyr)
+require(DBI) #loads odbc as well
+source("./_functions/_convert_vpro_veg.R")
+```
+
+Reads in a Vpro database and converts it to a 4-column long table PlotNumber,Species, Cover, LifeForm
+
+```{r set folders, include=FALSE}
+becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/GitHub/BECMaster_Cleaning/updated_vpro/BECMaster_fixing.accdb;")
+plot.veg <- dbReadTable(becmaster, "BECMaster_fixing_Veg")
+dbDisconnect(becmaster)
+
+
+sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Personal/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
+taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
+dbDisconnect(sppmaster)
+taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X") %>% dplyr::select(Code, Lifeform) %>% distinct
+
+veg.dat <- convert_vpro_veg(plot.veg, taxon.lifeform)
+saveRDS(veg.dat, "./clean_data/Analysis_BECMaster_Veg.rds")
+```
