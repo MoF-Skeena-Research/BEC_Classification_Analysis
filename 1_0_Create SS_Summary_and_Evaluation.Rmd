@@ -124,9 +124,9 @@ vegdata.moss <- veg.dat %>% filter(Lifeform %in% moss) %>% lump_species(lump)%>%
 source("./_functions/_create_su_vegdata.R")
 source("./_functions/_create_analysis_vegsum.R")
 
-veg_anal.tree <- create_su_vegdata(vegdata.tree, su) %>% create_analysis_vegsum (importance = 0.5, constancy = 60, minplots = 5, covadj = 1)
-veg_anal.under <- create_su_vegdata(vegdata.understorey, su) %>% create_analysis_vegsum (importance = 0.5, constancy = 60, minplots = 5, covadj = .5)
-veg_anal.moss <- create_su_vegdata(vegdata.moss, su) %>% create_analysis_vegsum (importance = 0.5, constancy = 60, minplots = 5, covadj = .1)
+veg_anal.tree <- create_su_vegdata(vegdata.tree, su) %>% create_analysis_vegsum (minimportance = 0.5, minconstancy = 60, minplots = 5, covadj = 1)
+veg_anal.under <- create_su_vegdata(vegdata.understorey, su) %>% create_analysis_vegsum (minimportance = 0.5, minconstancy = 60, minplots = 5, covadj = .5)
+veg_anal.moss <- create_su_vegdata(vegdata.moss, su) %>% create_analysis_vegsum (minimportance = 0.5, minconstancy = 60, minplots = 5, covadj = .1)
 veg_anal <- rbind(veg_anal.tree, veg_anal.under, veg_anal.moss)
 save(veg_anal, file = "./clean_data/SS_sum_analysis_all.RData")
 
@@ -142,12 +142,14 @@ Need to test against the pairwise routine.
 ```{r create distance matrix}
 #require(harrietr)
 #load("./clean_data/SS_sum_analysis_reduced.RData")
+test.su = c("CWH vm 1 /116.1", "CWH vm 3 /116.1")
+test.dat <- fread("./inputs/test.csv") %>% matrify
 veg.dat <-
-  veg_anal %>% dplyr::select(SiteUnit, Species, spp_importance) %>% matrify()
-# test_jac.vegan <- vegan::vegdist(test.data, method = "sorensen", binary = F) %>% as.matrix
-#test_jac <- philentropy::distance(test.data, method = "jaccard")
-test_jac <- proxy::dist(veg.dat, method="eJaccard", diag=FALSE, upper = FALSE, pairwise = FALSE) ## ejaccard and philentropy jaccard are real-data versions extended jaccard opr taimoto
-# xx <- as.matrix(test_jac)
+  veg_anal %>% dplyr::select(SiteUnit, Species, spp_importance) %>% filter(SiteUnit %in% test.su) %>% mutate(spp_importance = log10(spp_importance +1)) %>% matrify
+ test_jac.vegan <- vegan::vegdist(test.dat, method = "bray", binary = F) %>% as.matrix(labels = TRUE)
+test_jac.phil <- philentropy::distance(test.dat, method = "czekanowski", use.row.names = TRUE) %>% as.matrix(labels = TRUE)
+test_jac <- proxy::dist(veg.dat, method="ejaccard", diag=FALSE, upper = FALSE, pairwise = FALSE) %>% as.matrix(labels = TRUE)## ejaccard and philentropy jaccard are real-data versions extended jaccard opr taimoto
+xx <- as.matrix(test_jac)
 # units <- as.data.frame(rownames(xx))
 
 # , use.row.names = TRUE, as.dist.obj = TRUE)
