@@ -17,6 +17,8 @@ require(CooccurrenceAffinity)
 require(dendextend)
 require(climr)
 require(terra)
+require(foreach)
+require(summarytools)
 source("./_functions/_lump_species.R")
 source("./_functions/_create_su_vegdata.R")
 source("./_functions/_create_analysis_vegsum.R")
@@ -27,7 +29,7 @@ source("./_functions/_add_vars.R")
 
 #### Import all analysis data and other vpro tables for building summary
 ```{r set folders, include=FALSE}
-load("./clean_data/Analysis_BECMaster_Veg.RData") ###named veg.dat
+veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds")
 
  becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/GitHub/BECMaster_Cleaning/updated_vpro/BECMaster_fixing.accdb;")
 plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
@@ -108,40 +110,46 @@ climate <- left_join(hier.env,climate)
 climate.dat <- climate %>% dplyr::select(PlotNumber, MWMT, MCMT, MSP, AHM, SHM, DD5, PAS,MAT, MAP, DD_delayed, CMD.total) 
 hier.env <- left_join(hier.env, climate.dat)
 
-fwrite(coords, "testofclimr.csv")
 ```
 
 
-```{r Add downscaled climate variables to each point}
-rules <- read.csv("./inputs/aSMR_Rules_HalfStep_v12_15Nov2021.csv") ### import rules on range of CMD which equates to aSMR
-aSMRClass <- function(x){
-  for(i in 1:length(ruleSelect$CMD)){
-    if(x < ruleSelect$CMD[i+1]){
-      x <- ruleSelect$aSMR[i]
-      break
-    }
-  }
-  return(x)
-}
+```{r Edatopic position}
+### adjust CMD by rSMR correction factor
+hier.env2 <- hier.env %>% mutate(CMD.site = ifelse(MoistureRegime == "0", CMD.total+400,
+                      ifelse(MoistureRegime == "1", CMD.total+300,        
+                          ifelse(MoistureRegime == "2", CMD.total+200,        
+                              ifelse(MoistureRegime == "3", CMD.total+100, 
+                                  ifelse(MoistureRegime == "5", CMD.total/2,
+                                        ifelse(MoistureRegime == "6", CMD.total/4,
+                                            ifelse(MoistureRegime == "7", CMD.total/8,
+                                                  ifelse(MoistureRegime == "8", CMD.total/16, CMD.total)))))))))
+SMR4 = c("0", "1", "2", "3", "4")
+SMR5 = c("5")
+SMR6 = c("6", "5-6", "6-7")
+SMR7 = c("7", "7-", "8")
+breaks4 = c(-Inf,1,200,300,400,500,600,700,800,900,1000,1100, Inf)
+labels4 = c(6,  5, 4.5,4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0)
+breaks5 = c(0,50,125,200,275,350,425,500,575,650,725,800, Inf)
+labels5 = c(7, 6.5 , 6, 5.5, 5, 4.5,4, 3.5, 3, 2.5, 2, 1.5)
+breaks6 = c(0,5,25,50,100,150,200,250,300,350,400,450, Inf)
+labels6 = c(8, 7.5,7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5)
+breaks7 = c(0, 75, 100, 125,150,175,200,225,250, Inf)
+#breaks7 = c(-Inf,250,225,200,175,150,125,100,75,-1)
+#labels7 = c('4', '4.5', '5', '5.5', '6', '6.5', '7', '7.5', '8')
+labels7 = c(8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4)
 
-###Calculate aSMR classes based on rules###
-test <- foreach(SMR = colnames(CMD)[-1], .combine = cbind) %do% {
-  temp <- CMD[,SMR]
- temp [is.na(temp)] <- 0
-  if(SMR == "rSMR7"){
-    ruleSelect <- rules[rules$SMRLevel == 7,-1]
-  }else if(SMR == "rSMR6"){
-    ruleSelect <- rules[rules$SMRLevel == 6,-1]
-  }else if(SMR == "rSMR5"){
-    ruleSelect <- rules[rules$SMRLevel == 5,-1]
-  }else{
-    ruleSelect <- rules[rules$SMRLevel == 0,-1]
-  }
-  out <- sapply(temp,FUN = aSMRClass)
-  out
-}
+hier.env3 <- hier.env2 %>% mutate(aSMR = ifelse(MoistureRegime %in% SMR4, as.character(cut(CMD.site, breaks = breaks4, labels = labels4)),
+                      ifelse (MoistureRegime %in% SMR5,as.character(cut(CMD.site, breaks = breaks5, labels = labels5)),
+ifelse (MoistureRegime %in% SMR6, as.character(cut(CMD.site, breaks = breaks6, labels = labels6)),
+ifelse (MoistureRegime %in% SMR7, as.character(cut(CMD.site, breaks = breaks7, labels = labels7)), 999)))))
 
-test <- as.data.frame(test)
+
+edatopic.sum <- hier.env3 %>% group_by(Assoc) %>% count(aSMR,NutrientRegime)
+
+require(summarytools)
+xx <- hier.env3 %>% group_by(Assoc) %>% descr()
+
+
 ```
 
 ##Internal Metrics of Homogeneity of site series - Vegetation
