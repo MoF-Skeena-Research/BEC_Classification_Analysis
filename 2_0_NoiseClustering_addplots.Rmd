@@ -36,7 +36,7 @@ read in veg_anal and SU at the Assoc level convert to vegclust object
 #testunit <- c("CDF mm   /101", "CWH vm 2 /103", "MH  mm 1 /112", "CWH xm 1 /101")
 coast.ss <- fread ("./clean_tabs/CoastGuide_All_BGC_Forest_SS.csv") %>% distinct(SiteUnit)
 
-load("./clean_data/veg_plot_data.RData")
+veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds")
 
 load("./clean_data/SS_sum_analysis.RData")
 
