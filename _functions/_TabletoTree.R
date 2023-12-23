@@ -1,4 +1,4 @@
-#hierWide = Hier.new
+#hierWide = clst.units
 tableToTree <- function(hierWide, levelNames){
   levelID <- data.table(Name = levelNames, Level = 1:length(levelNames))
   hierWide[,ID := 1:nrow(hierWide)]
@@ -26,5 +26,8 @@ tableToTree <- function(hierWide, levelNames){
   setnames(dat, old = c("from","to","Lab"), new = c("Parent","ID","Name"))
   dat[levs, Level := i.Level, on = c(Name = "value")]
   setcolorder(dat,c("ID","Name","Parent","Level"))
-  return(dat)
+  dat2 <- dat %>% select(ID, Name)
+  dat <- left_join(dat, dat2, by= c("Parent" = "ID")) %>% rename(Name = Name.x, Tag = Name.y)
+  setcolorder(dat,c("ID","Name","Parent","Level", "Tag"))
+    return(dat)
 }
