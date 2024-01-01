@@ -21,12 +21,14 @@ require(doBy)
 require(doParallel)
 require(DBI)
 require(data.table)
+require(data.tree)
 require(labdsv)
 require(tidyverse)
 library(cluster)
 require(ape)
 require(factoextra)
 require(tictoc)
+require(ggthemes)
 source("./_functions/_lump_species.R")
 source("./_functions/_create_su_vegdata.R")
 source("./_functions/_create_analysis_vegsum.R")
@@ -49,14 +51,14 @@ DBQ=D:/GitHub/BEC_Classification_Analysis/Vpro/Coast_Skunkcabbage.accdb;")
 su <- dbReadTable(master_su, "AllBGC_Skunkcabbage_SU")
 dbDisconnect(master_su)
 
-master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
-DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
-su <- dbReadTable(master_su, "All_BC_BGCs_SU")
-dbDisconnect(master_su)
-
+# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+# DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
+# su <- dbReadTable(master_su, "All_BC_BGCs_SU")
+# dbDisconnect(master_su)
+# 
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-su <- dbReadTable(master_su, "All_CoastForest_v2024_SU")
+su <- dbReadTable(master_su, "All_Coast_Forest_2023_SU")
 dbDisconnect(master_su)
 
 
@@ -72,43 +74,22 @@ sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Acc
 taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
 dbDisconnect(sppmaster)
 taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X") %>% dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>% distinct
+veg.dat2 <- veg.dat
 
  trees = c(1, 2)
-# veg.dat2 <- veg.dat %>% filter(Lifeform %in% trees)
+ #veg.dat2 <- veg.dat2 %>% filter(Lifeform %in% trees)
 
+#  veglump <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_Lump.accdb;")
+# lump <- dbReadTable(veglump, "CorrelationII_Lump")
+# dbDisconnect(veglump)
 
 veglump <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Spp_lump.accdb;")
 lump <- dbReadTable(veglump, "CoastGuide2023_Lump")
 dbDisconnect(veglump)
 
-veg.dat2 <- lump_species(veg.dat, lump)
+#veg.dat2 <- lump_species(veg.dat2, lump)
 
-veg.dat2 <- veg.dat
-```
 
-## Settings diagnostic categories, thresholds and points
-```{r}
-## for categorization in pair-wise comparison
-high_cons_cut = 57 ## cut-off for inclusion as constant species for unit
-dom = 10## minimum % cover for constant dominant
-minor = 1 ## maximum %cover threshold for constant minor 
-##pair.wise. constancy difference cut points for differential significance
-const_cut = c( 37, 57, 77, 100)
-const_cut2 = c(-100,-77, -57, -37)
-const_labels = c("d3", "d2", "d1")
-const_labels2 = c("d1", "d2", "d3")
-
- ## base pair.wise.scores for differential species categores
-  d1 = 4; d2 = 3; d3 = 1;   no_d = 0
-##pair.wise. constancy difference cut points for dominant differential significance
-cov_cut = c(.1, .3, 2.2, 5, 10, 20, 33, 50, 75, 100)
-cov_labels = c(1,2,3,4,5,6,7,8,9)
-
-dd1 = 4; dd2 = 3;   dd3 = 2;   dd4 = 1
-
-d_dd = 1.25 ## multiplier if species is both d and dd
- ## number of decimal places to show
-#exclude = 1 ##
 ```
 
 ## Look for units with low diagnostic potential
@@ -122,71 +103,81 @@ d_dd = 1.25 ## multiplier if species is both d and dd
 # units.low.diagnostics <- vegsum %>% select(SiteUnit, unit.diag.sum) %>% distinct %>%  filter(unit.diag.sum < 40) #%>% distinct(PlotNumber)
 ```
 
-## Pairwise comparison
-use combn function to create pairs
-create loop that creates comparison for each pair in the comb list
-full_join of unit 1 and unit2 from summary
-then apply rules to generate compared diagnostic values by species for each pair
-compare covers and convert difference into cover class
-compare constancy and convert distance into constancy class
-assign points based on constancy and cover rules
-ratio of potential differential vs actual
-flag units with high ratios for possible amalgamation
-```{r the data.table version}
+```{r pari.wise}
 
-##"LYSIAME", "OPLOHOR", "ATHYFIL", "SPHAGNUM", "CLADONIA"
+#ksi <- c("TSUGMER", "LYSIAME", "OPLOHOR", "ATHYFIL", "SPHAGNUM", "CLADONIA")
 
-key.site.indicators <- c("TSUGMER") ## priorities for zonal comparison, "THUJPLI", "TSUGHET", "RHODALB", "CALARUB"
-ksi.value = 2
+ksi <- c("TSUGMER", "PICEENE", "TSUGHET")#,, "THUJPLI")
 
-reduced.lifeform = c(3,4,5,6,7,8, 9, 10, 11, 12)## reduce diagnostic value of lifeforms for zonal comparison
-reduced.lifeform = c(8, 9, 10, 11)## reduce diagnostic value of lifeforms for association development
-reduce.multiplier = .1
-round = 1
 tic()
 ###select units to run
-su2 <- su %>% filter(!grepl('CWHvh3|CWHwh1|CWHwh2|ICHvc', SiteUnit))###BGC specific
-su2 <- su2 %>% filter(grepl('01', SiteUnit)) %>%  filter(!grepl('101.2|101a.2|101b.2|101b', SiteUnit))
-###zonal specific
-vegsum.pairs <- do_pairwise(veg.dat2, su2, minimportance = 0.5, minconstancy = .6, noiseconstancy = .2, minplots = 5, covadj = 1, 
-                            use.ksi = TRUE, ksi = key.site.indicators, ksi.value = ksi.value, reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeform, reduction = reduced.multiplier)
+su2 <- su
+su2 <- su2 %>% filter(!grepl('CWHvh3|CWHwh1|CWHwh2|ICHvc', SiteUnit))###BGC specific|CWHms
+#su2 <- su2 %>%filter(!grepl('101.2|101a.2|101b.2|101b|low|-S|add', SiteUnit)) %>%  filter(grepl('01', SiteUnit)) ###zonal specific
+ #su2 <- su2 %>%filter(!grepl('EBM|TEM|T38', PlotNumber)) ##remove low quality projects by plotnumber series
+
+vegsum.pairs <- do_pairwise(veg.dat2, su2, minimportance = 0.5, minconstancy = 60, noiseconstancy = 10, minplots = 5, covadj = .33, domcov = 10,
+                            use.ksi = TRUE, ksi = ksi, ksi.value = 2, 
+                            reduce.lifeform = TRUE, reduced.lifeforms = c(8, 9, 10, 11), reduction = 0.1 )
 toc()
+
+vegsum.pairs <- vegsum.pairs %>%  filter(!is.na(Unit1), !is.na(Unit2)) 
 ## Sometimes units get placed in odd places in the cluster analsysis because very similar similarity
 ## Check here. Probably indicates site unit membership to be fixed.
-su.similar <- return_similar_pairs(vegsum.pairs, similarity = .90, neighbours = 3) 
+su.similar <- return_similar_pairs(vegsum.pairs, similarity = .8, neighbours = 3) 
 
-#su.similar <- vegsum.pairs %>% select(Unit1, Unit2, diag.ratio) %>% dplyr::filter(diag.ratio > .9) %>% filter(!Unit1 == Unit2)  %>%  distinct
+su.similar <- vegsum.pairs %>% select(Unit1, Unit2, diag.ratio) %>% dplyr::filter(diag.ratio > .7) %>% filter(!Unit1 == Unit2)  %>%  distinct
 ```
 
 
 ```{r cluster analysis}
 
-dis.matrix <- as.data.frame(vegsum.pairs) %>% mutate(diss = 1-diag.ratio) %>% mutate(Unit1 = as.character(Unit1)) %>%  select(Unit1,Unit2, diss) %>% distinct %>% arrange(Unit1) %>% pivot_wider(id_cols = Unit1, names_from = Unit2, values_from = diss) %>% arrange(Unit1) %>%  column_to_rownames("Unit1") %>% mutate_all(~replace(., is.na(.), 1))%>% as.matrix
+set.seed(1279)
+dis.matrix <- as.data.frame(vegsum.pairs) %>% mutate(diss = 1-diag.ratio) %>% mutate(Unit1 = as.character(Unit1)) %>%  select(Unit1,Unit2, diss) %>% distinct %>%
+  filter(!is.na(Unit1), !is.na(Unit2)) %>% arrange(Unit1)
+dis.matrix2 <- dis.matrix %>% rename(Unit1 = Unit2, Unit2 = Unit1) %>% select(Unit1, Unit2, diss)%>% arrange(Unit1)
+dis.matrix <- rbind(dis.matrix, dis.matrix2) %>% arrange(Unit1, Unit2) %>% pivot_wider(id_cols = Unit1, names_from = Unit2, values_from = diss, names_sort = TRUE) %>%  column_to_rownames("Unit1") %>% mutate_all(~replace(., is.na(.), 1))%>% as.matrix
 
-ss_clst = agnes(dis.matrix , diss = TRUE, stand = FALSE,
-      method = "complete")
+ss_clst = agnes(dis.matrix , diss = TRUE, stand = TRUE,
+      method = "average")
 
 dendro_hc <- as.hclust(ss_clst)
-fviz_dend(dendro_hc, cex = .6, lwd = 0.25, h = .4, 
-          rect = TRUE, 
-          k_colors = "jco", 
-          rect_border = "black", 
-          rect_fill = TRUE,
-          #lower_rect = -.2,
-          #horiz = TRUE,
-          ggtheme = theme_gray(),labels=F)
+### returns to cophonetic value - considered good if over 0.75
+dend.dis <- as.dist(dis.matrix) 
+dend.co <- cophenetic(dendro_hc)
+cophonentic <- cor(dend.dis, dend.co)
+cophonentic ## 0.891
 
+dendro <- fviz_dend(dendro_hc, cex = .6, lwd = 1, h = .8,
+        rect = TRUE,
+         type = "rectangle",
+          k_colors = "jco",
+      rect_border = "black",
+          rect_fill = TRUE,
+          lower_rect = -.3,
+          #horiz = TRUE,
+          ggtheme = theme_calc(),labels=F)
+dendro
+  ggsave("./graphics/coastal_trees_cluster.pdf", dendro, width=12, height=6)
+review = 
+xx <- vegsum.pairs %>% filter(Unit1 == "CWHds1_101a", Unit2 == "CWHds2_101a") %>% select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, diag.potential.tot, shared.diag, diag.points.x, diag.points.y,  sum.shared.diag, diag.points.x, diag.points.y, diag.tot, diag.ratio)
+xx <- vegsum.pairs %>% filter(Unit1 == "IDFww1_101.1" , Unit2 == "CWHds2_101a") %>% select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, diag.potential.tot, shared.diag, diag.points.x, diag.points.y,  sum.shared.diag, diag.points.x, diag.points.y, diag.tot, diag.ratio)
+```
+
+
+```{r cluster analysis}
 working <- cutree(h = .1, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Working = ".") %>% mutate(Working = paste0("working-", Working))
-assoc <- cutree(h = .25, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Assoc = ".") %>% mutate(Assoc = paste0("assoc-", Assoc))
-alliance <- cutree(h = .7, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Alliance = ".")%>% mutate(Alliance = paste0("all-", Alliance))
-order <- cutree(h = .99, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Order = ".")%>% mutate(Order = paste0("ord-", Order))
-suborder <- cutree(h = .94, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Suborder = ".")%>% mutate(Suborder = paste0("subord-", Suborder))
+assoc <- cutree(h = .12, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Assoc = ".") %>% mutate(Assoc = paste0("assoc-", Assoc))
+alliance <- cutree(h = .20, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Alliance = ".")%>% mutate(Alliance = paste0("all-", Alliance))
+order <- cutree(h = .8, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Order = ".")%>% mutate(Order = paste0("ord-", Order))
+suborder <- cutree(h = .6, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Suborder = ".")%>% mutate(Suborder = paste0("subord-", Suborder))
 clst.units <- left_join(order,suborder, by = "SiteUnit") %>%
                     left_join(alliance, by = "SiteUnit") %>%
                     left_join(assoc, by = "SiteUnit") %>%
                     left_join(working, by = "SiteUnit") %>%
                     arrange(SiteUnit) %>% rowid_to_column("ID") %>%
                     mutate(Formation = "", Class = "forest", Suball = "", Subass = "", Faces = "")%>%
+                    mutate(Suborder = "", Alliance = "forest", Assoc = "", Working = "") %>% 
                     left_join(su.lookup) %>% select(-SiteUnit) %>%  rename(SiteUnit = SiteUnit.orig)  %>%
                     select(ID, Formation, Class, Order, Suborder, Alliance, Suball, Assoc, Faces, Working, SiteUnit) %>% as.data.table
 
@@ -194,6 +185,9 @@ clst.units <- left_join(order,suborder, by = "SiteUnit") %>%
 assoc.count <- assoc %>% count(Assoc)
 alliance.count <- alliance %>% count(Alliance)
 order.count <- order %>% count(Order)
+new_su <- left_join(su2, su.lookup)%>% select(PlotNumber, SiteUnit.orig) %>% rename(SiteUnit = SiteUnit.orig)
+clst.units2 <- clst.units %>% distinct %>% left_join(new_su) 
+fwrite(clst.units2, "./outputs/coastal_orders_cutoffs_to_test_v1.csv")
 
 ```
 
@@ -207,6 +201,75 @@ fwrite(new.hier, "./hierarchy_to_vpro/newhierarchyfromcluster_v1.csv")
 ```
 
 
+Correlation with environmental variables
+```{r add BGC and climate data}
+# require(sf)
+# require(climr)
+# coords <- fread("./climate_data/CoastBGCv13_1kmgrid.csv") %>% rename(elev = elev1, long = xcoord, lat=ycoord) %>% dplyr::select(-fid)# long, lat, elev, id, -BGC)
+# coords <- coords[!is.na(elev),]
+# coords_sf <- st_as_sf(coords, coords = c("lat","long"), crs = 4326)
+# coords_sf <- st_transform(coords_sf, 3005)
+# coords <- as.data.frame(coords)# %>% dplyr::rename(long = 1, lat = 2)
+# setcolorder(coords, c("long","lat","elev","id", "BGC"))
+# tic()
+# clim_vars <- climr_downscale(coords, which_normal = "auto", vars = list_variables(), return_normal = TRUE, cache = TRUE)
+# toc()
+# saveRDS(clim_vars, "./climate_data/coastzonal.rds")
+```
+
+
+```{r climate dendro}
+clim_vars <- readRDS("./climate_data/coastzonal.rds")
+su.bgc <- su2 %>% mutate(bgc = sub("\\_.*", "", su2$SiteUnit)) %>% select(bgc) %>%  distinct %>% mutate(bgc = ifelse(bgc =="IDFww1", "IDFww", 
+                                                                                                                     ifelse(bgc == "CWHxm3", "CWHdm", bgc)))
+clim_vars2 <- clim_vars %>% filter(BGC %in% su.bgc$bgc)
+
+bgc.climate <- clim_vars2 %>% group_by(BGC) %>%  summarise(across(where(is.numeric), mean, na.rm = TRUE), n = n()) 
+bgc.climate2 <- bgc.climate %>% mutate(across(where(is.numeric), scale, center = FALSE))  %>% select_if(~ ! any(is.na(.)))#%>% select(where(is.numeric))
+```
+
+
+```{r climate dendro}
+bgc.clim.choose <- bgc.climate2 %>% select(BGC, CMD_sm, PAS, TD, DD18)%>% column_to_rownames("BGC") %>% as.matrix
+
+
+require(ecodist)
+clim.dist <- ecodist::bcdist(bgc.clim.choose) %>%  as.matrix %>% as.data.frame
+
+ss_clst = agnes(clim.dist , diss = TRUE, method = "average")
+
+dendro_clim <- as.hclust(ss_clst)
+### returns to cophonetic value - considered good if over 0.75
+dend.dis <- as.dist(clim.dist) 
+dend.co <- cophenetic(dendro_clim)
+cophonentic <- cor(dend.dis, dend.co)
+cophonentic ##
+```
+
+
+```{r climate dendro}
+dendro.clim <- 
+  fviz_dend(dendro_clim, cex = .6, lwd = 1, h=.25,
+        rect = TRUE,
+         type = "rectangle",
+          k_colors = "jco",
+      rect_border = "black",
+          rect_fill = TRUE,
+          lower_rect = -.1,
+          horiz = TRUE,
+          ggtheme = theme_calc(),labels=F)
+dendro.clim
+#ggsave("./graphics/coastal_zonals_cluster.pdf", dendro, width=12, height=6)
+```
+
+
+```{r double dendrogram}
+require(dendextend)
+dend.veg <- as.dendrogram(dendro_hc)
+dend.clim <- as.dendrogram(dendro_clim)
+dl <- dendlist(dend.veg, dend.clim)
+tanglegram(dl, sort = TRUE)#, common_subtrees_color_lines = FALSE, highlight_distinct_edges  = FALSE, highlight_branches_lwd = FALSE)
+```
 
 
 
