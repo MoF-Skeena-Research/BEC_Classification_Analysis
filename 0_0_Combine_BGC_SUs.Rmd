@@ -84,7 +84,7 @@ SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
 
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
 DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-dbWriteTable(master_su, "All_Coast_Forest_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+dbWriteTable(master_su, "All_Coast_Forest_2023_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
 dbDisconnect(master_su)
 
 #%>% mutate(PlotNumber = paste0("'",PlotNumber))
