@@ -46,10 +46,10 @@ source("./_functions/_return_similar_pairs.R")
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ###named veg.dat
 
 
-master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
-DBQ=D:/GitHub/BEC_Classification_Analysis/Vpro/Coast_Skunkcabbage.accdb;")
-su <- dbReadTable(master_su, "AllBGC_Skunkcabbage_SU")
-dbDisconnect(master_su)
+# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+# DBQ=D:/GitHub/BEC_Classification_Analysis/Vpro/Coast_Skunkcabbage.accdb;")
+# su <- dbReadTable(master_su, "AllBGC_Skunkcabbage_SU")
+# dbDisconnect(master_su)
 
 # master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 # DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
@@ -58,7 +58,7 @@ dbDisconnect(master_su)
 # 
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-su <- dbReadTable(master_su, "All_Coast_Forest_2023_SU")
+su <- dbReadTable(master_su, "All_Coast_Forest_2024v3_SU")
 dbDisconnect(master_su)
 
 
@@ -69,8 +69,9 @@ su.lookup <- su
 su <- su %>% select(-SiteUnit.orig)
 su <- su %>% 
   filter(!str_detect(SiteUnit, '[$]')) %>% filter(!str_detect(SiteUnit, "^x"))
-
-sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Personal/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
+# 
+# sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=C:/OneDrive - Personal/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
+sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
 taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
 dbDisconnect(sppmaster)
 taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X") %>% dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>% distinct
@@ -114,9 +115,10 @@ tic()
 su2 <- su
 su2 <- su2 %>% filter(!grepl('CWHvh3|CWHwh1|CWHwh2|ICHvc', SiteUnit))###BGC specific|CWHms
 #su2 <- su2 %>%filter(!grepl('101.2|101a.2|101b.2|101b|low|-S|add', SiteUnit)) %>%  filter(grepl('01', SiteUnit)) ###zonal specific
- #su2 <- su2 %>%filter(!grepl('EBM|TEM|T38', PlotNumber)) ##remove low quality projects by plotnumber series
+su2 <- su2 %>%filter(!grepl('EBM|TEM|T38', PlotNumber)) ##remove low quality projects by plotnumber series
 
-vegsum.pairs <- do_pairwise(veg.dat2, su2, minimportance = 0.5, minconstancy = 60, noiseconstancy = 10, minplots = 5, covadj = .33, domcov = 10,
+vegsum.pairs <- do_pairwise(veg.dat2, su2, minimportance = 0.5, minconstancy = 60, noiseconstancy = 10, minplots = 5, 
+                            covadj = .33, domcov = 10,
                             use.ksi = TRUE, ksi = ksi, ksi.value = 2, 
                             reduce.lifeform = TRUE, reduced.lifeforms = c(8, 9, 10, 11), reduction = 0.1 )
 toc()
@@ -148,7 +150,7 @@ dend.co <- cophenetic(dendro_hc)
 cophonentic <- cor(dend.dis, dend.co)
 cophonentic ## 0.891
 
-dendro <- fviz_dend(dendro_hc, cex = .6, lwd = 1, h = .8,
+dendro <- fviz_dend(dendro_hc, cex = .6, lwd = 1, h = .2,
         rect = TRUE,
          type = "rectangle",
           k_colors = "jco",
@@ -159,7 +161,7 @@ dendro <- fviz_dend(dendro_hc, cex = .6, lwd = 1, h = .8,
           ggtheme = theme_calc(),labels=F)
 dendro
   ggsave("./graphics/coastal_trees_cluster.pdf", dendro, width=12, height=6)
-review = 
+#review = 
 xx <- vegsum.pairs %>% filter(Unit1 == "CWHds1_101a", Unit2 == "CWHds2_101a") %>% select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, diag.potential.tot, shared.diag, diag.points.x, diag.points.y,  sum.shared.diag, diag.points.x, diag.points.y, diag.tot, diag.ratio)
 xx <- vegsum.pairs %>% filter(Unit1 == "IDFww1_101.1" , Unit2 == "CWHds2_101a") %>% select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, diag.potential.tot, shared.diag, diag.points.x, diag.points.y,  sum.shared.diag, diag.points.x, diag.points.y, diag.tot, diag.ratio)
 ```
