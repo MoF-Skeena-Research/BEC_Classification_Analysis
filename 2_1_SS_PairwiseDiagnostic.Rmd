@@ -58,9 +58,13 @@ dbDisconnect(master_su)
 # 
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-su <- dbReadTable(master_su, "All_Coast_Forest_2023_SU")
+su <- dbReadTable(master_su, "All_Coast_Forest_2024v3_SU")
 dbDisconnect(master_su)
 
+# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+# DBQ=D:/BC_Correlation2_Vpro_2023/CoastalGuide_NonForested.accdb;")
+# su <- dbReadTable(master_su, "Coast_Skunkcabbage_final_SU")
+# dbDisconnect(master_su)
 
 su$SiteUnit.orig <- su$SiteUnit
 su <- su %>% mutate(SiteUnit = gsub("/", "_", su$SiteUnit)) 
@@ -87,7 +91,7 @@ veglump <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Acces
 lump <- dbReadTable(veglump, "CoastGuide2023_Lump")
 dbDisconnect(veglump)
 
-#veg.dat2 <- lump_species(veg.dat2, lump)
+veg.dat2 <- lump_species(veg.dat2, lump, use.subtaxa = TRUE)
 
 
 ```
@@ -95,36 +99,40 @@ dbDisconnect(veglump)
 ## Look for units with low diagnostic potential
 
 ```{r settings, echo=FALSE}
-
+# 
 # key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL", "TSUGMER", "THUJPLI", "SPHAGNUM", "CLADONIA")
 # ksi.value = 2
-# 
-# vegsum <- create_diagnostic_veg(veg.dat2, su, minimportance = 0.5, minconstancy = .6, noiseconstancy = .2, minplots = 5, covadj = 1, use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 2, reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeform, reduction = reduced.diag)
+# reduced.lifeform = c(9, 10, 11, 12)
+# vegsum <- create_diagnostic_veg(veg.dat2, su, minimportance = 0.5, minconstancy = .6, noiseconstancy = .1, minplots = 5,  use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 2, reduce.lifeform = TRUE, reduced.lifeform = reduced.lifeform, reduction = 0.1)
 # units.low.diagnostics <- vegsum %>% select(SiteUnit, unit.diag.sum) %>% distinct %>%  filter(unit.diag.sum < 40) #%>% distinct(PlotNumber)
 ```
 
-```{r pari.wise}
+```{r pair.wise}
 
-#ksi <- c("TSUGMER", "LYSIAME", "OPLOHOR", "ATHYFIL", "SPHAGNUM", "CLADONIA")
+ksi <- c("TSUGMER", "LYSIAME", "OPLOHOR", "ATHYFIL")
 
-ksi <- c("TSUGMER", "PICEENE", "TSUGHET")#,, "THUJPLI")
-
+#ksi <- c("TSUGMER", "PICEENE", "TSUGHET", "THUJPLI",  "SPHAGNUM", "CLADONIA")
+#reduced.lifeforms = c(1,2)
+reduced.lifeforms = c(9,10,11)
 tic()
 ###select units to run
 su2 <- su
-su2 <- su2 %>% filter(!grepl('CWHvh3|CWHwh1|CWHwh2|ICHvc', SiteUnit))###BGC specific|CWHms
-#su2 <- su2 %>%filter(!grepl('101.2|101a.2|101b.2|101b|low|-S|add', SiteUnit)) %>%  filter(grepl('01', SiteUnit)) ###zonal specific
- #su2 <- su2 %>%filter(!grepl('EBM|TEM|T38', PlotNumber)) ##remove low quality projects by plotnumber series
+su2 <- su2 %>% filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|ICHvc|MHwh', SiteUnit))###BGC specific|CWHms
+su2 <- su2 %>%filter(!grepl('101.2|101a.2|101b.2|101b|low|-S|add', SiteUnit)) %>%  filter(grepl('01', SiteUnit)) ###zonal specific
+su2 <- su2 %>%filter(!grepl('EBM|TEM|T38', PlotNumber)) ##remove low quality projects by plotnumber series
 
 vegsum.pairs <- do_pairwise(veg.dat2, su2, minimportance = 0.5, minconstancy = 60, noiseconstancy = 10, minplots = 5, covadj = .33, domcov = 10,
                             use.ksi = TRUE, ksi = ksi, ksi.value = 2, 
-                            reduce.lifeform = TRUE, reduced.lifeforms = c(8, 9, 10, 11), reduction = 0.1 )
+                            reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1)
 toc()
+vegsum <- create_su_vegdata(veg.dat2, su2) %>% left_join(taxon.lifeform, by = c("Species" = "Code"))
 
+fwrite(vegsum, "./outputs/example_vegsum2.csv")
+fwrite(su2, "./outputs/example_siteunits.csv")
 vegsum.pairs <- vegsum.pairs %>%  filter(!is.na(Unit1), !is.na(Unit2)) 
 ## Sometimes units get placed in odd places in the cluster analsysis because very similar similarity
 ## Check here. Probably indicates site unit membership to be fixed.
-su.similar <- return_similar_pairs(vegsum.pairs, similarity = .8, neighbours = 3) 
+#su.similar <- return_similar_pairs(vegsum.pairs, similarity = .8, neighbours = 3) 
 
 su.similar <- vegsum.pairs %>% select(Unit1, Unit2, diag.ratio) %>% dplyr::filter(diag.ratio > .7) %>% filter(!Unit1 == Unit2)  %>%  distinct
 ```
@@ -135,6 +143,7 @@ su.similar <- vegsum.pairs %>% select(Unit1, Unit2, diag.ratio) %>% dplyr::filte
 set.seed(1279)
 dis.matrix <- as.data.frame(vegsum.pairs) %>% mutate(diss = 1-diag.ratio) %>% mutate(Unit1 = as.character(Unit1)) %>%  select(Unit1,Unit2, diss) %>% distinct %>%
   filter(!is.na(Unit1), !is.na(Unit2)) %>% arrange(Unit1)
+## go from one way to two way matrix for clustering
 dis.matrix2 <- dis.matrix %>% rename(Unit1 = Unit2, Unit2 = Unit1) %>% select(Unit1, Unit2, diss)%>% arrange(Unit1)
 dis.matrix <- rbind(dis.matrix, dis.matrix2) %>% arrange(Unit1, Unit2) %>% pivot_wider(id_cols = Unit1, names_from = Unit2, values_from = diss, names_sort = TRUE) %>%  column_to_rownames("Unit1") %>% mutate_all(~replace(., is.na(.), 1))%>% as.matrix
 
@@ -148,38 +157,46 @@ dend.co <- cophenetic(dendro_hc)
 cophonentic <- cor(dend.dis, dend.co)
 cophonentic ## 0.891
 
-dendro <- fviz_dend(dendro_hc, cex = .6, lwd = 1, h = .8,
+dendro <- fviz_dend(dendro_hc, cex = .6, lwd = 1, h = .2,
         rect = TRUE,
          type = "rectangle",
           k_colors = "jco",
       rect_border = "black",
           rect_fill = TRUE,
-          lower_rect = -.3,
+          lower_rect = -.1,
           #horiz = TRUE,
           ggtheme = theme_calc(),labels=F)
 dendro
   ggsave("./graphics/coastal_trees_cluster.pdf", dendro, width=12, height=6)
-review = 
-xx <- vegsum.pairs %>% filter(Unit1 == "CWHds1_101a", Unit2 == "CWHds2_101a") %>% select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, diag.potential.tot, shared.diag, diag.points.x, diag.points.y,  sum.shared.diag, diag.points.x, diag.points.y, diag.tot, diag.ratio)
+
+xx <- vegsum.pairs  %>% select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, diag.potential.tot, shared.diag, diag.points.x, diag.points.y,  sum.shared.diag, diag.points.x, diag.points.y, diag.tot, diag.ratio) %>% filter(diag.ratio>.7)# %>% filter(Unit1 %in% c("MHmm2_101"), Unit2 %in% c("MHmm2_110"))
 xx <- vegsum.pairs %>% filter(Unit1 == "IDFww1_101.1" , Unit2 == "CWHds2_101a") %>% select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, diag.potential.tot, shared.diag, diag.points.x, diag.points.y,  sum.shared.diag, diag.points.x, diag.points.y, diag.tot, diag.ratio)
 ```
 
 
 ```{r cluster analysis}
-working <- cutree(h = .1, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Working = ".") %>% mutate(Working = paste0("working-", Working))
-assoc <- cutree(h = .12, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Assoc = ".") %>% mutate(Assoc = paste0("assoc-", Assoc))
-alliance <- cutree(h = .20, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Alliance = ".")%>% mutate(Alliance = paste0("all-", Alliance))
-order <- cutree(h = .8, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Order = ".")%>% mutate(Order = paste0("ord-", Order))
-suborder <- cutree(h = .6, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Suborder = ".")%>% mutate(Suborder = paste0("subord-", Suborder))
-clst.units <- left_join(order,suborder, by = "SiteUnit") %>%
+working <- cutree(h = .05, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Working = ".") %>% mutate(Working = paste0("working-", Working))
+facies <- cutree(h = .1, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Facies = ".") %>% mutate(Facies = paste0("facies-", Facies))
+subass <- cutree(h = .12, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Subass = ".") %>% mutate(Subass = paste0("subass-", Subass))
+assoc <- cutree(h = .2, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Assoc = ".") %>% mutate(Assoc = paste0("assoc-", Assoc))
+suball <- cutree(h = .3, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Suball = ".") %>% mutate(Suball = paste0("suball-", Suball))
+alliance <- cutree(h = .40, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Alliance = ".")%>% mutate(Alliance = paste0("all-", Alliance))
+suborder <- cutree(h = .66, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Suborder = ".")%>% mutate(Suborder = paste0("subord-", Suborder))
+order <- cutree(h = .9, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Order = ".")%>% mutate(Order = paste0("ord-", Order))
+class <- cutree(h = .95, dendro_hc) %>% data.frame %>% rownames_to_column("SiteUnit") %>% rename(Class = ".")%>% mutate(Class = paste0("class-", Class))
+clst.units <- left_join(class, order, by = "SiteUnit") %>%
+                    left_join(suborder, by = "SiteUnit") %>%
                     left_join(alliance, by = "SiteUnit") %>%
+                    left_join(suball, by = "SiteUnit") %>%                  
                     left_join(assoc, by = "SiteUnit") %>%
+                    left_join(subass, by = "SiteUnit") %>%
+                    left_join(facies, by = "SiteUnit") %>%  
                     left_join(working, by = "SiteUnit") %>%
                     arrange(SiteUnit) %>% rowid_to_column("ID") %>%
-                    mutate(Formation = "", Class = "forest", Suball = "", Subass = "", Faces = "")%>%
-                    mutate(Suborder = "", Alliance = "forest", Assoc = "", Working = "") %>% 
+                    mutate(Formation = "") %>% #, Class = "forest", Suball = "", Subass = "", Faces = "")%>%
+                    #mutate(Suborder = "", Alliance = "forest", Assoc = "", Working = "") %>% 
                     left_join(su.lookup) %>% select(-SiteUnit) %>%  rename(SiteUnit = SiteUnit.orig)  %>%
-                    select(ID, Formation, Class, Order, Suborder, Alliance, Suball, Assoc, Faces, Working, SiteUnit) %>% as.data.table
+                    select(ID, Formation, Class, Order, Suborder, Alliance, Suball, Assoc, Subass,Facies, Working, SiteUnit) %>% as.data.table
 
 
 assoc.count <- assoc %>% count(Assoc)
