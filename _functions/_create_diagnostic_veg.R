@@ -9,20 +9,22 @@ create_diagnostic_veg <- function(veg.dat, su, minimportance = 0, minconstancy =
   vegsum <- create_su_vegdata(veg.dat, su) %>% 
     create_analysis_vegsum(minimportance = minimportance, minconstancy = minconstancy, noiseconstancy = noiseconstancy, minplots = minplots)
   
-  vegsum <- vegsum %>% rowwise() %>% mutate(constant_type = ifelse((Constancy >=minconstancy & MeanCov >=dom), "cd",
+  vegsum <- vegsum %>% rowwise() %>% mutate(constant_type = ifelse((Constancy >=minconstancy & MeanCov >= 10), "cd",
                                                                    ifelse((Constancy >=minconstancy & MeanCov <= minor), "cm",
                                                                           ifelse(Constancy >= minconstancy, "c", NA))))
   
   #d1 =4 
   ###Calculate diagnostic potential
-  vegsum <- vegsum %>% mutate(d.potential = ifelse(constant_type %in% c("c", "cd"), 4,
-                                                   ifelse(constant_type %in% c("cm"), 2,0)))     
-  vegsum <- vegsum %>% mutate(dd.potential = ifelse(constant_type == "cd", ((MeanCov^0.5)-1), 0)) 
+  vegsum <- vegsum %>% mutate(d.potential = ifelse(constant_type %in% c("c","cd"), (Constancy^(1/2)/10)*4,
+                                                   ifelse(constant_type %in% c("cm"), (Constancy^(1/2)/10)*2,0)))   
+  vegsum <- vegsum %>% mutate(d.potential = ifelse(d.potential <0.67, 0, d.potential))
+  
+  vegsum <- vegsum %>% mutate(dd.potential = ifelse(constant_type == "cd", ((MeanCov^(1/3))), 0)) 
   vegsum <- vegsum %>% mutate(dd.potential = ifelse(dd.potential >4 , 4,
                                                     ifelse(dd.potential <0, 0, dd.potential)))
   
-  vegsum <- vegsum %>% mutate(diagnostic.potential = ifelse((Constancy >= minconstancy & MeanCov >=dom), ((d.potential+dd.potential)*1.25)*(Constancy/100), 
-                                                            ifelse(Constancy >= minconstancy, d.potential *(Constancy/100), 0)))
+  vegsum <- vegsum %>% mutate(diagnostic.potential = ifelse((Constancy >= minconstancy & MeanCov >= 10), ((d.potential+dd.potential)*1.25), 
+                                                            ifelse(Constancy >= minconstancy, d.potential, 0)))
   
   if (isTRUE(reduce.lifeform)){
   vegsum <- left_join(vegsum, taxon.lifeform, by = c("Species" = "Code")) %>% 
