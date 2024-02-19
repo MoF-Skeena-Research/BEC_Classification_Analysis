@@ -36,23 +36,24 @@ require(dendextend)
 
 #### Import all analysis data and other vpro tables for building summary
 ```{r set folders, include=FALSE}
-load("./clean_data/Analysis_BECMaster_Veg.RData") ###named veg.dat
+veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ###named veg.dat
 
  becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/GitHub/BECMaster_Cleaning/updated_vpro/BECMaster_fixing.accdb;")
 plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
 dbDisconnect(becmaster)
 
 # ###created in 0_0_Plot_su_Hierarchy checks script
-# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
-# DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-# su <- dbReadTable(master_su, "All_Coast_Forest_su")
-# dbDisconnect(master_su)
-
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
-DBQ=D:/BC_Correlation2_Vpro_2023/working/All_Skunkcabbage.accdb;")
-su <- dbReadTable(master_su, "AllBGC_Skunkcabbage_SU")
-hier <- dbReadTable(master_su, "AllBGC_Skunkcabbage_Hierarchy")
+DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+su <- dbReadTable(master_su, "Coast_Forest_2024v4_SU")
+hier <- dbReadTable(master_su, "CoastForest_v2024_2_Hierarchy")
 dbDisconnect(master_su)
+
+# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+# DBQ=D:/BC_Correlation2_Vpro_2023/working/All_Skunkcabbage.accdb;")
+# su <- dbReadTable(master_su, "AllBGC_Skunkcabbage_SU")
+# hier <- dbReadTable(master_su, "AllBGC_Skunkcabbage_Hierarchy")
+# dbDisconnect(master_su)
 
 
 sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Personal/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
@@ -92,6 +93,17 @@ siteunits_toofew <- plots_SS %>% filter(plots <5) #%>% dplyr::select(- PlotNumbe
 
 fwrite(siteunits_toofew, "./review_outputs/Coast_SiteUnits_w_lessthan5plots.csv")
 ```
+#Roll up into hierarchy units and fopr running
+```{r}
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+hier2 <- treeToTable(hier)
+hier2 <- hier2[[1]]
+hier3 <- hier2 %>% filter(Order == "Order Hw") %>% left_join(su)
+su2 <- hier3 %>% select(PlotNumber, Assoc) %>% rename(SiteUnit = 2)
+```
+
+
 ##Internal Metrics of Homogeneity of site series - Vegetation
 Number of plots
 Similarity between plots
@@ -124,13 +136,13 @@ vegdata.moss <- veg.dat %>% filter(Lifeform %in% moss) %>% lump_species(lump)%>%
 source("./_functions/_create_su_vegdata.R")
 source("./_functions/_create_analysis_vegsum.R")
 
-veg_anal.tree <- create_su_vegdata(vegdata.tree, su) %>% create_analysis_vegsum (minimportance = 0.5, minconstancy = 60, minplots = 5, covadj = 1)
-veg_anal.under <- create_su_vegdata(vegdata.understorey, su) %>% create_analysis_vegsum (minimportance = 0.5, minconstancy = 60, minplots = 5, covadj = .5)
-veg_anal.moss <- create_su_vegdata(vegdata.moss, su) %>% create_analysis_vegsum (minimportance = 0.5, minconstancy = 60, minplots = 5, covadj = .1)
+veg_anal.tree <- create_su_vegdata(vegdata.tree, su2) %>% create_analysis_vegsum (minimportance = 0.5, minconstancy = 60, minplots = 5)#, covadj = 1)
+veg_anal.under <- create_su_vegdata(vegdata.understorey, su2) %>% create_analysis_vegsum (minimportance = 0.5, minconstancy = 60, minplots = 5)#, covadj = .5)
+veg_anal.moss <- create_su_vegdata(vegdata.moss, su2) %>% create_analysis_vegsum (minimportance = 0.5, minconstancy = 60, minplots = 5)#, covadj = .1)
 veg_anal <- rbind(veg_anal.tree, veg_anal.under, veg_anal.moss)
-save(veg_anal, file = "./clean_data/SS_sum_analysis_all.RData")
-
-save(veg_anal, file = "./clean_data/SS_sum_analysis_reduced.RData")
+# save(veg_anal, file = "./clean_data/SS_sum_analysis_all.RData")
+# 
+# save(veg_anal, file = "./clean_data/SS_sum_analysis_reduced.RData")
 # SS_reduced_list <- unique(veg_anal$SiteUnit) %>% as.data.frame %>% dplyr::rename(SiteUnit = 1)
 # su_reduced <- su %>% filter(SiteUnit %in% SS_reduced_list$SS)
 ```
@@ -142,8 +154,8 @@ Need to test against the pairwise routine.
 ```{r create distance matrix}
 #require(harrietr)
 #load("./clean_data/SS_sum_analysis_reduced.RData")
-test.su = c("CWH vm 1 /116.1", "CWH vm 3 /116.1")
-test.dat <- fread("./inputs/test.csv") %>% matrify
+# test.su = c("CWH vm 1 /116.1", "CWH vm 3 /116.1")
+# test.dat <- fread("./inputs/test.csv") %>% matrify
 veg.dat <-
   veg_anal %>% dplyr::select(SiteUnit, Species, spp_importance) %>% filter(SiteUnit %in% test.su) %>% mutate(spp_importance = log10(spp_importance +1)) %>% matrify
  test_jac.vegan <- vegan::vegdist(test.dat, method = "bray", binary = F) %>% as.matrix(labels = TRUE)
