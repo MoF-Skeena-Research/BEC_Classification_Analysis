@@ -15,7 +15,7 @@ library(stringr)
 library(ggraph)
 library(igraph)
 library(tidyverse)
-library(rgdal)
+#library(rgdal)
 library(broom)
 library(ggplot2)
 library("rjson")
@@ -46,34 +46,36 @@ SU <- do.call(rbind.data.frame, all_su)
 SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct()# %>% mutate(SS_label = str_replace_all(SiteUnit, " ", ""))
 #fwrite(SU, "./clean_tabs/CoastGuide_All_BGC_Forest_SU.csv")
 ###remove phases and seral units
+good_snr <- c("A", "B", "C", "D", "E")
+good_smr <- c(0,1,2,3,4,5,6,7,8)
+
 smr_snr <- ENV %>% select(PlotNumber, MoistureRegime, NutrientRegime) %>% dplyr::rename(rSMR = MoistureRegime, SNR = NutrientRegime) 
 SU_edatopic <- left_join(SU, smr_snr)%>% distinct() %>% mutate(bgc = str_replace_all(bgc, pattern=" ", repl="")) %>% mutate(SiteUnit = str_replace_all(SiteUnit, pattern=" ", repl="")) %>% mutate(SNR = str_sub(SNR,1,1), rSMR = str_sub(rSMR,1,1)) %>% 
   filter(SNR %in% good_snr, rSMR %in% good_smr) %>%   as.data.frame %>% arrange(SNR) %>%  mutate(rSMR_num = as.integer(rSMR), SNR_num =(as.factor(SNR) %>% as.integer(SNR))) %>%  mutate(rSMR_rev = abs(9 - rSMR_num))
 
 ###Summaries by BGC and by SS
-good_snr <- c("A", "B", "C", "D", "E")
-good_smr <- c(0,1,2,3,4,5,6,7,8)
+
 edatopic_count <- SU_edatopic %>% distinct() %>% group_by(bgc, SiteUnit, SNR, rSMR) %>% mutate(bgc = str_replace_all(bgc, pattern=" ", repl="")) %>% mutate(SiteUnit = str_replace_all(SiteUnit, pattern=" ", repl="")) %>% dplyr::summarise(plots = n()) %>% filter(SNR %in% good_snr, rSMR %in% good_smr) %>%   as.data.frame %>% arrange(SNR) %>%  mutate(rSMR_num = as.integer(rSMR), SNR_num =(as.factor(SNR) %>% as.integer(SNR))) 
 
 ```
 
 ```{r base grid}
-# require(gridExtra)
-# require(grid)
-# test.grid <- edatopic_count %>% filter(SiteUnit == "CWHwm/110" ) %>% select(SNR, rSMR, plots) %>% arrange(rSMR) %>% pivot_wider(id_cols = rSMR, names_from = SNR, values_from = plots)
-# windows()
-# grid.table(test.grid)
-# x <- tableGrob(test.grid)
-# grid.draw(x)
-# my_rect <- rectGrob(x = 0.5, y = 0.5, width = 0.8, height = 0.3)
-# pdf()
-# grid.newpage()
-# x <- tableGrob(test.grid)
-# grid.draw(x)
-# dev.off()
-# grid.newpage(grid.draw(x))
-# grid.draw(my_rect)
-# dev.off()
+require(gridExtra)
+require(grid)
+test.grid <- edatopic_count %>% filter(SiteUnit == "CDFmm/101" ) %>% select(SNR, rSMR, plots) %>% arrange(rSMR) %>% pivot_wider(id_cols = rSMR, names_from = SNR, values_from = plots)
+windows()
+grid.table(test.grid)
+x <- tableGrob(test.grid)
+grid.draw(x)
+my_rect <- rectGrob(x = 0.5, y = 0.5, width = 0.8, height = 0.3)
+pdf()
+grid.newpage()
+x <- tableGrob(test.grid)
+grid.draw(x)
+dev.off()
+#grid.newpage(grid.draw(x))
+grid.draw(my_rect)
+dev.off()
 ```
 
 
@@ -83,13 +85,13 @@ library(gridExtra)
 x_lab = x_lab = c("v.           \npoor            ", "poor            ", "med            ", "rich            ", "v.            \nrich            ")
 #y_lab = c( "0", "1", "2", "3", "4", "5", "6", "7","8")
 y_lab = c( "8", "7", "6", "5", "4", "3", "2", "1","0")
-edatopic_all <- SU_edatopic   %>% filter(bgc == c("CDFmm", "CWHwm"))%>% mutate(bgc = as.factor(bgc)) %>% droplevels
+edatopic_all <- SU_edatopic   %>% filter(bgc == c("CDFmm"))%>% mutate(bgc = as.factor(bgc)) %>% droplevels
 
 data = edatopic_all
 units = data$bgc
 category = "bgc"
 
-gsub('["]', "", category1)
+gsub('["]', "", category)
 #pdf("plots.pdf", onefile = TRUE)
 # bgcs <- unique(edatopic_all$bgc)
 # n_bgcs <- length(bgcs)
@@ -135,7 +137,7 @@ theme(
 }
 }
 
-xx <- edatopic_plotcount(edatopic_all, "bgc")
+#xx <- edatopic_plotcount(edatopic_all, "bgc")
 
 # p <- #i = 1
 #  for(i in unique(bgcs)){
