@@ -72,8 +72,8 @@ do_pairwise <- function(veg.dat, su, minimportance = 0.5, minconstancy = 60, noi
   const_labels = c("d3", "d2", "d1")
   const_labels2 = c("d1", "d2", "d3")
   
-  
-    pairs <- unique(vegsum$SiteUnit) %>% combn(m=2) %>% t %>% data.frame %>% dplyr::rename(Unit1 = 1, Unit2 = 2) %>% arrange(Unit1)
+##build pairs  
+pairs <- unique(vegsum$SiteUnit) %>% combn(m=2) %>% t %>% data.frame %>% dplyr::rename(Unit1 = 1, Unit2 = 2) %>% arrange(Unit1)
 ##for two-way pairs
 #pairs <- expand.grid(x = unique(vegsum$SiteUnit), y= unique(vegsum$SiteUnit) ) %>%  dplyr::rename(Unit1 = 1, Unit2 = 2)
 pair = pairs#[1,]
@@ -124,8 +124,8 @@ vegsum.pairs[, `:=`(const2.x = Constancy.x^(1/2),
 vegsum.pairs[, c("d.points.x", "d.points.y") := .(
   ifelse(constant_type.x %in% c("c", "cd"), (const2.diff/10)*4,
          ifelse(constant_type.x %in% c("cm"), (const2.diff/10)*2, NA_real_)),
-  ifelse(constant_type.y %in% c("c", "cd"), (const2.diff/10)*4,
-          ifelse(constant_type.y %in% c("cm"), (const2.diff/10)*2, NA_real_))
+  ifelse(constant_type.y %in% c("c", "cd"), (0-(const2.diff/10))*4,
+          ifelse(constant_type.y %in% c("cm"), (0-(const2.diff/10))*2, NA_real_))
 )] 
 
 
