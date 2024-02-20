@@ -1,0 +1,202 @@
+---
+title: "testing dd values"
+author: "Will MacKenzie"
+date: "2023-12-26"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(reshape2)
+require(plyr)
+require(dplyr)
+require(tidyr)
+require(ggplot2)
+require(magrittr)
+require(foreach)
+require(tcltk)
+require(openxlsx)
+require(doParallel)
+require(doBy)
+require(doParallel)
+require(DBI)
+require(data.table)
+require(labdsv)
+require(tidyverse)
+library(cluster)
+require(ape)
+require(factoextra)
+require(tictoc)
+require(ggthemes)
+source("./_functions/_lump_species.R")
+source("./_functions/_create_su_vegdata.R")
+source("./_functions/_create_analysis_vegsum.R")
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+source("./_functions/_add_vars.R")
+source("./_functions/_do_pairwise.R")
+source("./_functions/_create_diagnostic_veg.R")
+source("./_functions/_return_similar_pairs.R")
+```
+
+
+```{r cars}
+vegsum1 <- fread("test_vegsum.csv")
+minimportance = 0.5; minconstancy = .6; noiseconstancy = 0; minplots = 1; covadj = 1
+use.ksi = FALSE; ksi = NULL; ksi.value = 1; reduce.lifeform = FALSE; reduced.lifeforms = NULL; reduction = NULL
+reduce.lifeform = FALSE; reduction = 1; 
+dom = 10; 
+high_cons_cut = .6
+minor = 1
+d1 = 4; dd1 = 4
+
+dom.hi = 10
+dom.lo = 5
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+vegsum <- vegsum1 %>% rowwise() %>% mutate(constant_type = ifelse((Constancy >=high_cons_cut & MeanCov >=dom), "cd",
+                                                                   ifelse((Constancy >=high_cons_cut & MeanCov <= minor), "cm",
+                                                                          ifelse(Constancy >=high_cons_cut, "c", NA))))
+  
+  
+  ###Calculate diagnostic potential
+  
+  vegsum <- vegsum %>% mutate(diagnostic.potential = ifelse((Constancy >= high_cons_cut & MeanCov >=dom), ((d1+dd1)*1.25)*(Constancy/100), 
+                                                            ifelse(Constancy >= high_cons_cut, d1 *(Constancy/100), 0)))
+
+  vegsum <- vegsum %>% dplyr::group_by(SiteUnit) %>% mutate(unit.diag.sum = sum(diagnostic.potential)) 
+
+
+    pairs <- unique(vegsum$SiteUnit) %>% combn(m=2) %>% t %>% data.frame %>% dplyr::rename(Unit1 = 1, Unit2 = 2) %>% arrange(Unit1)
+##for two-way pairs
+#pairs <- expand.grid(x = unique(vegsum$SiteUnit), y= unique(vegsum$SiteUnit) ) %>%  dplyr::rename(Unit1 = 1, Unit2 = 2)
+pair = pairs#[1,]
+
+setDT(pair)
+setDT(vegsum)
+
+
+# vegsum.pairs1
+vegsum.pairs1 <- pair[vegsum, on = c("Unit1" = "SiteUnit"), allow.cartesian = TRUE]
+
+# vegsum.pairs2
+vegsum.pairs2 <- pair[vegsum, on = c("Unit2" = "SiteUnit"), allow.cartesian = TRUE]
+
+# vegsum.pairs
+vegsum.pairs <- merge(vegsum.pairs1, vegsum.pairs2, by = c("Unit1", "Unit2", "Species"), all = TRUE) 
+vegsum.pairs <- vegsum.pairs %>% mutate_if(is.numeric, replace_na, replace = 0)
+vegsum.pairs <- vegsum.pairs %>% filter(!Unit1 == Unit2)
+
+# vegsum.pairs with taxon.lifeform
+covadj = .5
+vegsum.pairs <-  vegsum.pairs %>% mutate(cover2.x = MeanCov.x^covadj, cover2.y = MeanCov.y^covadj)
+vegsum.pairs <-  vegsum.pairs %>% mutate(cover2.diff = cover2.x-cover2.y)%>%   
+  mutate(cover2.diff = ifelse(cover2.diff >1, (cover2.diff - 1),
+                              ifelse(cover2.diff < -1, (cover2.diff + 1), cover2.diff))) %>% 
+   mutate(cover2.diff = ifelse(cover2.diff < .3 & cover2.diff>=0, 0,
+                                    ifelse(cover2.diff > -.3 & cover2.diff <=0, 0, 
+                                           ifelse(cover2.diff >4, 4,
+                                            ifelse(cover2.diff < -4, -4, cover2.diff)))))
+  
+
+setkey(vegsum.pairs, "Unit1", "Unit2", "Species")
+vegsum.pairs <- vegsum.pairs %>% mutate(dd.type.x = ifelse((cover2.diff >=3) & (constant_type.x == "cd"), "dd1",
+                                    ifelse((cover2.diff >=2 & cover2.diff <3) & (constant_type.x == "cd"), "dd2",
+                                            ifelse((cover2.diff >=1& cover2.diff <2) & (constant_type.x == "cd"), "dd3",
+                                                    ifelse((cover2.diff >=.3 & cover2.diff <1) & (constant_type.x == "cd"), "dd4", NA)))))
+
+vegsum.pairs <- vegsum.pairs %>% mutate(dd.type.y = ifelse((cover2.diff <=-3) & (constant_type.y == "cd"), "dd1",
+                                    ifelse((cover2.diff <= -2 & cover2.diff > -3) & (constant_type.y == "cd"), "dd2",
+                                            ifelse((cover2.diff <= -1 & cover2.diff > -2) & (constant_type.y == "cd"), "dd3",
+                                                    ifelse((cover2.diff <= -.3 & cover2.diff > -1) & (constant_type.y == "cd"), "dd4", NA)))))
+```
+
+
+```{r pressure, echo=FALSE}
+cov_cut = c(.1, .3, 2.2, 5, 10, 20, 33, 50, 75, 100)
+sig_labels = c(1,2,3,4,5,6,7,8,9)
+dd1 = 4; dd2 = 3;   dd3 = 2;   dd4 = 1
+
+vegsum.temp = vegsum.pairs
+vegsum.pairs[, sig.class.x := cut(MeanCov.x, breaks = cov_cut, labels = sig_labels)]
+vegsum.pairs[, sig.class.y := cut(MeanCov.y, breaks = cov_cut, labels = sig_labels)]
+vegsum.pairs$sig.class.x <- as.numeric(vegsum.pairs$sig.class.x)
+vegsum.pairs$sig.class.y <- as.numeric(vegsum.pairs$sig.class.y)
+setDT(vegsum.pairs)[, c("cov.diff", "const.diff", "sig.diff") := .(MeanCov.x - MeanCov.y, Constancy.x - Constancy.y, sig.class.x - sig.class.y)]
+setkey(vegsum.pairs, "Unit1", "Unit2", "Species")
+vegsum.pairs <- vegsum.pairs %>% mutate(dd.type.x = ifelse((sig.diff >=5) & (constant_type.x == "cd"), "dd1",
+                                    ifelse((sig.diff== 4) & (constant_type.x == "cd"), "dd2",
+                                            ifelse((sig.diff == 3) & (constant_type.x == "cd"), "dd3",
+                                                    ifelse((sig.diff == 2) & (constant_type.x == "cd"), "dd4", NA)))))
+
+vegsum.pairs <- vegsum.pairs %>% mutate(dd.type.y = ifelse((sig.diff <=-5) & (constant_type.y == "cd"), "dd1",
+                                    ifelse((sig.diff == -4) & (constant_type.y == "cd"), "dd2",
+                                            ifelse((sig.diff == -3) & (constant_type.y == "cd"), "dd3",
+                                                    ifelse((sig.diff == -2) & (constant_type.y == "cd"), "dd4", NA)))))
+# vegsum.pairs[, `:=`(
+#   shared.diag = pmin(diagnostic.potential.x, diagnostic.potential.y, na.rm = TRUE)
+# ), by = .(Unit1, Unit2, Species)]
+# 
+
+# Dominant Differential
+## assigns differential type based on cut-off ranges
+
+
+## if minimum constancy is not met sets to NA
+# vegsum.pairs[, d.type.x := ifelse(Constancy.x < high_cons_cut, NA, paste0("",d.type.x))]
+# vegsum.pairs[, d.type.y := ifelse(Constancy.y < high_cons_cut, NA, paste0("",d.type.y))]
+# 
+# ####Unit1 dd points
+# vegsum.pairs[, `:=`(
+#   cover.pts.x = ifelse(MeanCov.x >= dom.hi, (MeanCov.x / MeanCov.y) / 10,
+#                        ifelse(MeanCov.x < dom.hi & MeanCov.x >= dom.lo, (MeanCov.x / (MeanCov.y * 1.5)) / 10, 0)))]
+# vegsum.pairs[, `:=`( 
+#   cover.pts.x = ifelse(cover.pts.x > 1, 1,
+#                        ifelse(cover.pts.x < 0.3, 0, cover.pts.x)))]#,
+# vegsum.pairs[, `:=`(  
+#   dd.pts.x = ifelse(MeanCov.x >= dom.hi, (cover.pts.x * 4),
+#                     ifelse(MeanCov.x < dom.hi & MeanCov.x > dom.lo, ((cover.pts.x * 4) / (MeanCov.x / 10)), 0))
+# )]
+
+
+
+
+###Unit2 dd points
+vegsum.pairs[, `:=`(
+  cover.pts.y = ifelse(MeanCov.y >= dom.hi, (MeanCov.y / MeanCov.x) / 10,
+                       ifelse(MeanCov.y < dom.hi & MeanCov.y >= dom.lo, MeanCov.y / (MeanCov.x * 1.5) / 10, 0)))]
+vegsum.pairs[, `:=`( 
+  cover.pts.y = ifelse(cover.pts.y > 1, 1,
+                       ifelse(cover.pts.y < 0.3, 0, cover.pts.y)))]
+vegsum.pairs[, `:=`(  
+  dd.pts.y = ifelse(MeanCov.y >= dom.hi, (cover.pts.y * 4),
+                    ifelse(MeanCov.y < dom.hi & MeanCov.y > dom.lo, (cover.pts.y * 4) / (MeanCov.y / 10), 0))
+)]
+
+
+vegsum.pairs[, dd.type.y := fifelse((dd.pts.y >=4) & (constant_type.y == "cd"), "dd1",
+                                    fifelse((dd.pts.y <4 & dd.pts.y >=2) &(constant_type.y == "cd"), "dd2",
+                                            fifelse((dd.pts.y >=1.2 & dd.pts.y <2) &(constant_type.y == "cd"), "dd3",
+                                                    fifelse((dd.pts.y >0.3 & dd.pts.y <1.2) &(constant_type.y == "cd"), "dd4", NA_character_))))]
+
+
+vegsum.pairs[, `:=`(
+  dd.points.x = ifelse(dd.type.x %in% "dd1", 4,
+                       ifelse(dd.type.x %in% "dd2", 3,
+                              ifelse(dd.type.x %in% "dd3", 2,
+                                     ifelse(dd.type.x %in% "dd4", 1, NA_real_)))),
+  dd.points.y = ifelse(dd.type.y %in% "dd1", 4,
+                       ifelse(dd.type.y %in% "dd2", 3,
+                              ifelse(dd.type.y %in% "dd3", 2,
+                                     ifelse(dd.type.y %in% "dd4", 1, NA_real_))))
+)]
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
