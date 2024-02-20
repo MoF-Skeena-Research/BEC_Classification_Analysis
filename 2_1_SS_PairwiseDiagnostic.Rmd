@@ -46,10 +46,10 @@ source("./_functions/_return_similar_pairs.R")
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ###named veg.dat
 
 
-master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
-DBQ=D:/GitHub/BEC_Classification_Analysis/Vpro/Coast_Skunkcabbage.accdb;")
-su <- dbReadTable(master_su, "AllBGC_Skunkcabbage_SU")
-dbDisconnect(master_su)
+# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+# DBQ=D:/GitHub/BEC_Classification_Analysis/Vpro/Coast_Skunkcabbage.accdb;")
+# su <- dbReadTable(master_su, "AllBGC_Skunkcabbage_SU")
+# dbDisconnect(master_su)
 
 # master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 # DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
@@ -58,7 +58,8 @@ dbDisconnect(master_su)
 # 
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-su <- dbReadTable(master_su, "All_Coast_Forest_2024v3_SU")
+su <- dbReadTable(master_su, "Coast_Forest_2024v4_SU")
+hier <- dbReadTable(master_su, "CoastForest_v2024_2_Hierarchy")
 dbDisconnect(master_su)
 
 # master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
@@ -73,8 +74,9 @@ su.lookup <- su
 su <- su %>% select(-SiteUnit.orig)
 su <- su %>% 
   filter(!str_detect(SiteUnit, '[$]')) %>% filter(!str_detect(SiteUnit, "^x"))
-
+# 
 sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Personal/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
+# sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
 taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
 dbDisconnect(sppmaster)
 taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X") %>% dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>% distinct
@@ -94,6 +96,8 @@ dbDisconnect(veglump)
 veg.dat2 <- lump_species(veg.dat2, lump, use.subtaxa = TRUE)
 
 
+
+
 ```
 
 ## Look for units with low diagnostic potential
@@ -107,21 +111,37 @@ veg.dat2 <- lump_species(veg.dat2, lump, use.subtaxa = TRUE)
 # units.low.diagnostics <- vegsum %>% select(SiteUnit, unit.diag.sum) %>% distinct %>%  filter(unit.diag.sum < 40) #%>% distinct(PlotNumber)
 ```
 
+#Roll up into hierarchy units and fopr running
+```{r}
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+hier2 <- treeToTable(hier)
+hier2 <- hier2[[1]]
+unit.filter = "Class conifer"
+hier3 <- hier2 %>% filter(Class %in% unit.filter) 
+hier3 <- hier3 %>% mutate(SiteUnit = gsub("/", "_", hier3$SiteUnit)) 
+hier3 <- hier3 %>% mutate(SiteUnit = gsub(" ", "", hier3$SiteUnit, fixed = TRUE)) 
+su <- su %>% mutate(SiteUnit = gsub(" ", "", su$SiteUnit, fixed = TRUE)) 
+su2 <- left_join(hier3, su, by = "SiteUnit") %>% select(PlotNumber, Assoc) %>% dplyr::rename("SiteUnit" = 2)
+```
+
 ```{r pair.wise}
 
 ksi <- c("TSUGMER", "LYSIAME", "OPLOHOR", "ATHYFIL")
 
-#ksi <- c("TSUGMER", "PICEENE", "TSUGHET", "THUJPLI",  "SPHAGNUM", "CLADONIA")
+ksi <- c("TSUGMER", "PICEENE", "TSUGHET", "THUJPLI",  "SPHAGNUM", "CLADONIA", "CLADINA")
 #reduced.lifeforms = c(1,2)
 reduced.lifeforms = c(9,10,11)
 tic()
 ###select units to run
-su2 <- su
-su2 <- su2 %>% filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|ICHvc|MHwh', SiteUnit))###BGC specific|CWHms
-su2 <- su2 %>%filter(!grepl('101.2|101a.2|101b.2|101b|low|-S|add', SiteUnit)) %>%  filter(grepl('01', SiteUnit)) ###zonal specific
-su2 <- su2 %>%filter(!grepl('EBM|TEM|T38', PlotNumber)) ##remove low quality projects by plotnumber series
+# su2 <- su
+# su2 <- su2 %>% filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|ICHvc|MHwh', SiteUnit))###BGC specific|CWHms
+# su2 <- su2 %>%filter(!grepl('101.2|101a.2|101b.2|101b|low|-S|add', SiteUnit)) %>%  filter(grepl('01', SiteUnit)) ###zonal specific
+# 
+# su2 <- su2 %>%filter(!grepl('EBM|TEM|T38', PlotNumber)) ##remove low quality projects by plotnumber series
 
-vegsum.pairs <- do_pairwise(veg.dat2, su2, minimportance = 0.5, minconstancy = 60, noiseconstancy = 10, minplots = 5, covadj = .33, domcov = 10,
+vegsum.pairs <- do_pairwise(veg.dat2, su2, minimportance = 0.5, minconstancy = 60, noiseconstancy = 10, minplots = 5, 
+                            covadj = .33, domcov = 10,
                             use.ksi = TRUE, ksi = ksi, ksi.value = 2, 
                             reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1)
 toc()
@@ -139,37 +159,55 @@ su.similar <- vegsum.pairs %>% select(Unit1, Unit2, diag.ratio) %>% dplyr::filte
 
 
 ```{r cluster analysis}
-
 set.seed(1279)
 dis.matrix <- as.data.frame(vegsum.pairs) %>% mutate(diss = 1-diag.ratio) %>% mutate(Unit1 = as.character(Unit1)) %>%  select(Unit1,Unit2, diss) %>% distinct %>%
   filter(!is.na(Unit1), !is.na(Unit2)) %>% arrange(Unit1)
 ## go from one way to two way matrix for clustering
-dis.matrix2 <- dis.matrix %>% rename(Unit1 = Unit2, Unit2 = Unit1) %>% select(Unit1, Unit2, diss)%>% arrange(Unit1)
+dis.matrix2 <- dis.matrix %>% dplyr::rename(Unit1 = Unit2, Unit2 = Unit1) %>% select(Unit1, Unit2, diss)%>% arrange(Unit1)
 dis.matrix <- rbind(dis.matrix, dis.matrix2) %>% arrange(Unit1, Unit2) %>% pivot_wider(id_cols = Unit1, names_from = Unit2, values_from = diss, names_sort = TRUE) %>%  column_to_rownames("Unit1") %>% mutate_all(~replace(., is.na(.), 1))%>% as.matrix
 
 ss_clst = agnes(dis.matrix , diss = TRUE, stand = TRUE,
       method = "average")
 
 dendro_hc <- as.hclust(ss_clst)
+dend.dend <- as.dendrogram(dendro_hc)
 ### returns to cophonetic value - considered good if over 0.75
 dend.dis <- as.dist(dis.matrix) 
 dend.co <- cophenetic(dendro_hc)
 cophonentic <- cor(dend.dis, dend.co)
 cophonentic ## 0.891
 
-dendro <- fviz_dend(dendro_hc, cex = .6, lwd = 1, h = .2,
+dendro <- fviz_dend(dendro_hc, cex = .5, lwd = .5, h = .4,
         rect = TRUE,
          type = "rectangle",
           k_colors = "jco",
       rect_border = "black",
           rect_fill = TRUE,
-          lower_rect = -.1,
-          #horiz = TRUE,
-          ggtheme = theme_calc(),labels=F)
+          lower_rect = 0,
+          horiz = TRUE,
+          ggtheme = theme_calc(),labels=T)
 dendro
   ggsave("./graphics/coastal_trees_cluster.pdf", dendro, width=12, height=6)
+```
 
+
+```{r dend with colour bars upper units}
+group.level <- "Order"
+
+dend.dend <- as.dendrogram(dendro_hc) %>% set("labels_cex",.4)
+unit.lab <- as.data.frame(dendro_hc$labels) %>% dplyr::rename(Assoc = 1) %>% left_join(hier2, by = "Assoc") %>% distinct(Assoc, .keep_all = TRUE) %>% dplyr::select(group.level) 
+unit.cats <- factor(unit.lab[,1])
+n_units <- length(unique(unit.cats))
+#cols_4 <- colorspace::rainbow_hcl(n_units, c = 70, l  = 50)
+cols_4 <- colorspace::divergingx_hcl("RdYlBu", n=n_units)
+unit.col <- cols_4[unit.cats]
+par(mar = c(1,1,1,14)); plot(dend.dend, horiz = TRUE); colored_bars(unit.col, dend.dend, rowLabels = group.level, horiz = TRUE, y_shift = .1);legend("topleft", legend = levels(unit.cats), fill = cols_4, cex = .4)
+```
+
+
+```{r examine pairs}
 xx <- vegsum.pairs  %>% select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, diag.potential.tot, shared.diag, diag.points.x, diag.points.y,  sum.shared.diag, diag.points.x, diag.points.y, diag.tot, diag.ratio) %>% filter(diag.ratio>.7)# %>% filter(Unit1 %in% c("MHmm2_101"), Unit2 %in% c("MHmm2_110"))
+
 xx <- vegsum.pairs %>% filter(Unit1 == "IDFww1_101.1" , Unit2 == "CWHds2_101a") %>% select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, diag.potential.tot, shared.diag, diag.points.x, diag.points.y,  sum.shared.diag, diag.points.x, diag.points.y, diag.tot, diag.ratio)
 ```
 
