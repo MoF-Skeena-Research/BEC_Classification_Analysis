@@ -16,6 +16,7 @@ require(DataExplorer)
 require(C50)
 require(indicspecies)
 require(doParallel)
+require(DBI)
 source("./_functions/_TabletoTree.R")
 source("./_functions/_TreetoTable.R")
 cloud_dir <- "F:/OneDrive - Personal/OneDrive/BEC_Classification_Paper/"
@@ -60,19 +61,33 @@ May wish to assign a temporary notree pseudo species to all units that have no t
 ### Vegetation From BECMaster cleaning script Long form Plot|Species|Cover (across all layers)
 ### or From Vpro export
 #BGCZone <- fread(paste0(cloud_dir,"All_BGCs_Info_v12_2.csv"), data.table=FALSE)
-vegDat2 <- fread("../BECMaster_Cleaning/clean_data/BECMaster_VegR_clean.csv", data.table = FALSE)
-taxon.all <- fread("D:/CommonTables/SpeciesMaster/SpeciesMaster01Dec2020.csv", header = T, stringsAsFactors = F, strip.white = T) %>% filter(Codetype == "U")
+#vegDat2 <- fread("../BECMaster_Cleaning/clean_data/BECMaster_VegR_clean.csv", data.table = FALSE)
+
+veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds")
+
+sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Personal/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
+# sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
+taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
+dbDisconnect(sppmaster)
+taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X") %>% dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>% distinct
+veg.dat2 <- veg.dat
+
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+su <- dbReadTable(master_su, "Coast_Forest_2024v4_SU")
+hier <- dbReadTable(master_su, "CoastForest_v2024_2_Hierarchy")
+dbDisconnect(master_su)
 
 #####################importing Vpro veg data########################################
 ############### Uses 3 column R export FORMAT FROM Vpro with Lifeform option selected
 #load("./inputs/VegDat_Raw.RData")##includes type field for lifeform
 #vegDat2 <- vegData %>% filter(!is.na(Type))
 ###SU table
-SUTab <- fread("./clean_tabs/BECv13Analysis_Forest_17Sept2021_SU.csv")
-Vpro.hier <- fread("./clean_tabs/BECv13_ForestHierarchy_v2_26Sept2021_Hierarchy.csv")
-SUTab$SiteUnit <-  trimws(SUTab$SiteUnit)
-SS.names <- unique(SUTab$SiteUnit)
-Hier.matrix <- treeToTable(Vpro.hier)
+# SUTab <- fread("./clean_tabs/BECv13Analysis_Forest_17Sept2021_SU.csv")
+# Vpro.hier <- fread("./clean_tabs/BECv13_ForestHierarchy_v2_26Sept2021_Hierarchy.csv")
+su$SiteUnit <-  trimws(su$SiteUnit)
+SS.names <- unique(su$SiteUnit)
+Hier.matrix <- treeToTable(hier)
 Hier.matrix <- Hier.matrix$table
 # #####list of official current and future correlated units from BECdb
 # current <- c('Current', 'Future')
@@ -92,15 +107,15 @@ Hier.matrix <- Hier.matrix$table
 ### Summarize by SU including mean cover and constancy percent
 ##roll up into site series summary data
 ### Filter out all species but tree species
-vegDat <- as.data.table(vegDat2)
+vegDat <- as.data.table(veg.dat2)
 
-vegDat[SUTab, SiteUnit := i.SiteUnit, on = "PlotNumber"]
+vegDat[su, SiteUnit := i.SiteUnit, on = "PlotNumber"]
 vegDat <- vegDat[!is.na(SiteUnit) & SiteUnit != "",]
 
 vegDat <- unique(vegDat[!is.na(SiteUnit) & SiteUnit != "",])
 vegDat3 <- vegDat[,if(.N > 1) .SD, by = .(SiteUnit,Species)]
 vegDat3[,nPlots := length(unique(PlotNumber)), by = .(SiteUnit)]
-vegSum <- vegDat3[,.(MeanCov = sum(Cover, na.rm = TRUE)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)]
+veg.sum <- vegDat3[,.(MeanCov = sum(Cover, na.rm = TRUE)/nPlots[1], Constancy = (.N/nPlots[1])*100, nPlots = nPlots[1]), by = .(SiteUnit,Species)]
 fwrite(vegSum, './clean_tabs/BECv13SiteUnitSummaryVegData.csv')
 ```
 
@@ -110,9 +125,9 @@ fwrite(vegSum, './clean_tabs/BECv13SiteUnitSummaryVegData.csv')
 trees <- c(1,2)
 constCut <- 33 ##remove species less than cutoff
 covercut <- 1
-treespp <- taxon.all[Lifeform %in% trees, ] %>% dplyr::select(Code)
+treespp <- setDT(taxon.all)[Lifeform %in% trees, ] %>% dplyr::select(Code)
 treespp <- as.vector(treespp$Code)
-vegDat_test <- vegSum[Species %in% treespp,]### include only trees for hierarchy build
+vegDat_test <- veg.sum[Species %in% treespp,]### include only trees for hierarchy build
 vegDat_test <- vegDat_test %>% dplyr::filter(MeanCov > covercut) %>% dplyr::filter(Constancy > covercut)
 
 
