@@ -64,61 +64,69 @@ May wish to assign a temporary notree pseudo species to all units that have no t
 #### Import all raw vpro tables in /raw_data folder
 
 ```{r set folders, include=FALSE}
-load("./clean_data/veg_plot_data.RData")
-
-becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster19/BECMaster19.accdb;")
-ENV <- dbReadTable(becmaster, "BECMaster19_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
-ADMIN<- dbReadTable(becmaster, "BECMaster19_Admin")
-env.fields <- colnames(ENV)
-odbc::odbcListColumns(becmaster, table = "BECMaster19_ENV")
-dbDisconnect(becmaster)
+#load("./clean_data/veg_plot_data.RData")
+veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds")
+# becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster19/BECMaster19.accdb;")
+# ENV <- dbReadTable(becmaster, "BECMaster19_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
+# ADMIN<- dbReadTable(becmaster, "BECMaster19_Admin")
+# env.fields <- colnames(ENV)
+# odbc::odbcListColumns(becmaster, table = "BECMaster19_ENV")
+# dbDisconnect(becmaster)
 ###created in 0_0_Plot_SU_Hierarchy checks script
-SU <- fread("./clean_tabs/CoastGuide_All_BGC_Forest_SS.csv")
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+su <- dbReadTable(master_su, "Coast_Forest_2024v4_SU")
+hier <- dbReadTable(master_su, "CoastForest_v2024_2_Hierarchy")
+dbDisconnect(master_su)
+
 ```
 
 ##roll up into site series summary data and reduce to analysis set
 ```{r summarize site series, echo=FALSE}
 ### test run without non-vasculars
-#vegdata <- vegdata %>% filter(lifeform <9 | lifeform == 12)
-vegdata <- vegdata %>% filter(lifeform <3)
-vegsum <- create_su_vegdata(vegdata, SU)
-veg_anal <- create_analysis_vegsum (vegsum, importance = 0.5, constancy = 60, minplots = 0) 
+vegdata <- veg.dat %>% filter(Lifeform <9 | Lifeform == 12)
+#vegdata <- veg.dat %>% filter(Lifeform <3)
+vegsum <- create_su_vegdata(vegdata, su)
+veg_anal <- create_analysis_vegsum (vegsum, minimportance = 0.5, minconstancy = 60, minplots = 0) 
 SS_reduced_list <- unique(veg_anal$SiteUnit)
-SU_reduced <- SU %>% filter(SiteUnit %in% SS_reduced_list)
+SU_reduced <- su %>% filter(SiteUnit %in% SS_reduced_list)
 ```
 
 
 ##Import hierarchy matrix from 0_0_Plot_SU_Hierarchy script with original placements plus all unassigned units added to an unplaced Formation category
 ```{r import  hierarchy data}
-hierarchy <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-Vpro.hier <- dbReadTable(hierarchy, "Coast_Classes_Training_Hierarchy") %>% as.data.table
-dbDisconnect(hierarchy)
+# hierarchy <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+# Vpro.hier <- dbReadTable(hierarchy, "Coast_Classes_Training_Hierarchy") %>% as.data.table
+# dbDisconnect(hierarchy)
 ##Import wide matrix as training data
 #SUhier <- fread("./outputs/BECv12_Hierarchy_Matrix.csv")
-source("./_functions/_TreetoTable.R")
+#source("./_functions/_TreetoTable.R")
+unit = "Alliance"
+
 ###Import Vpro hierarchy and turn to widematrix
-SUhier <- treeToTable(Vpro.hier)
+SUhier <- treeToTable(hier)
 Hier.clean <- SUhier$table
-Hier.units <- Hier.clean %>% dplyr::select(SiteUnit, Class) %>% distinct()
-Hier.data <- left_join(Hier.units, veg_anal)  %>% arrange(Species) %>% distinct() %>% mutate(Class = ifelse(is.na(Class), "unplaced", Class))
+Hier.units <- Hier.clean %>% dplyr::select(SiteUnit, unit) %>% distinct()
+Hier.data <- left_join(Hier.units, veg_anal)  %>% arrange(Species) %>% distinct() %>% mutate(unit = ifelse(is.na(unit), "unplaced", unit))
 ```
 
 
 ```{r some hierarchy stats}
-classes <- unique(Hier.data$Class)
-orders <- unique(Hier.data$Order)
-suborders <- unique(Hier.data$Suborder)
+classes <- unique(Hier.clean$Class)
+orders <- unique(Hier.clean$Order)
+suborders <- unique(Hier.clean$Suborder)
 suborders
 ### Choose hierarchical level for analysis
 
 class.dat <-
-  Hier.data %>% dplyr::select(SiteUnit, Class, Species, spp_importance) %>% mutate(Species = ifelse(is.na(Species), "None", Species)) %>% 
-  pivot_wider(id_cols = c(SiteUnit, Class),
+  Hier.data %>% dplyr::select(SiteUnit, 2, Species, spp_importance) %>% mutate(Species = ifelse(is.na(Species), "None", Species)) %>% filter(!Species %in% "None") %>% 
+  pivot_wider(id_cols = c(SiteUnit, 2),
     names_from = Species,
-    values_from = spp_importance) %>% distinct() %>% dplyr::select(-None) %>% droplevels() #%>% mutate(None = ifelse(is.numeric(complete.cases(.)), 1, 0))
+    values_from = spp_importance) %>% distinct() %>% dplyr::rename("Unit" = 2) %>% mutate(Unit = ifelse(is.na(Unit) | Unit == "", "unplaced", Unit)) %>% filter(!SiteUnit == "") %>%  mutate_if(is.character, as.factor) %>% droplevels() #%>% mutate(None = ifelse(is.numeric(complete.cases(.)), 1, 0))
  # mutate(Suborder = ifelse(is.na(Suborder) | Suborder == "", "unplaced", Suborder)) %>% filter(!SiteUnit == "") %>%  mutate_if(is.character, as.factor) %>% 
  #  replace(is.na(spp_importance),1) %>%  
-
+# class.dat <- class.dat %>% as.matrix %>% as.data.frame
+# class.dat <- class.dat$SiteUnit
 class.dat[is.na(class.dat)] <- 0
 
 #DataExplorer::create_report(class.dat)
@@ -127,15 +135,15 @@ Data pre-processing includes the following steps:
 
 ```{r prep data, include = TRUE, echo = FALSE}
 
-classID <- class.dat %>% dplyr::select(SiteUnit, Class)
+classID <- class.dat %>% dplyr::select(SiteUnit, Unit)
 #class.dat2 <- class.dat %>% select(-SiteUnit)
-BEC_good <- class.dat %>% filter(!Class == "unplaced") %>% arrange(SiteUnit)
+BEC_good <- class.dat %>% filter(!Unit == "unplaced") %>% arrange(SiteUnit)
 BEC_good$SiteUnit <- BEC_good$SiteUnit %>% as.factor
 BEC_good[is.na(BEC_good)] <- 0
 SU_names <- as.data.frame(BEC_good$SiteUnit) %>%  distinct() %>% rowid_to_column('.row') %>% dplyr::rename("SiteUnit" = 2)
 
 
-BEC_new <- class.dat %>% filter(Class == "unplaced") %>% arrange(SiteUnit)
+BEC_new <- class.dat %>% filter(Unit == "unplaced") %>% arrange(SiteUnit)
 nospp <- BEC_new  %>%  mutate(spp_count = ncol(dplyr::select(., -c(1:2))) - rowSums(is.na(dplyr::select(., -c(1:2))))) %>%  filter(spp_count == 0) %>%  dplyr::select(SiteUnit)
 BEC_new  <- BEC_new  %>%  filter(!SiteUnit %in% nospp$SiteUnit)
 BEC_new[is.na(BEC_new)] <- 0
@@ -145,7 +153,7 @@ BEC_new[is.na(BEC_new)] <- 0
 ```{r build initial model of suborders, include = FALSE}
 
 BEC_recipe <-
-    recipe(Class ~ ., data = BEC_good) %>%
+    recipe(Unit ~ ., data = BEC_good) %>%
      update_role(SiteUnit, new_role = "id variable") %>% 
   step_novel(SiteUnit) %>% 
     prep() 
@@ -164,20 +172,20 @@ BEC_workflow <- workflow() %>%
 BEC_ranger_model <- fit(BEC_workflow, BEC_good)
 BEC_ranger_model$fit
 
-save(BEC_ranger_model, file = "./rFmodels/BECv12_Classes_rFmodel.Rdata")
+save(BEC_ranger_model, file = "./rFmodels/BECv12_Orders_rFmodel.Rdata")
 
-BEC.pred <- predict(BEC_ranger_model, BEC_good) %>% bind_cols(BEC_good %>% dplyr::select(SiteUnit, Class)) 
+BEC.pred <- predict(BEC_ranger_model, BEC_good) %>% bind_cols(BEC_good %>% dplyr::select(SiteUnit, Unit)) 
 
 
 # %>%  metrics(truth = Class), estimate = .pred_class)
 BEC.pred.list <- BEC.pred$SiteUnit %>% as.character
-BEC.missed <- BEC.pred  %>%    mutate(Compare = ifelse(.pred_class == Class, "Same", "Diff")) %>% filter(Compare == "Diff")
-fwrite(BEC.missed, "./outputs/MidplacedSuborders.csv")
+BEC.missed <- BEC.pred  %>%    mutate(Compare = ifelse(.pred_class == Unit, "Same", "Diff")) %>% filter(Compare == "Diff")
+fwrite(BEC.missed, "./outputs/MidplacedOrders.csv")
 BEC.mis.list <- BEC.missed$SiteUnit %>% as.character
 SS_misID_SU <- SU_reduced[SU_reduced$SiteUnit %in% BEC.mis.list,]
 fwrite(SS_misID_SU, "./outputs/WrongClassPredicted_SU.csv")
 
-BEC.new.pred <- predict(BEC_ranger_model, BEC_new) %>% bind_cols(BEC_new %>% dplyr::select(SiteUnit, Class)) %>% dplyr::rename(Class_updated = .pred_class)
+BEC.new.pred <- predict(BEC_ranger_model, BEC_new) %>% bind_cols(BEC_new %>% dplyr::select(SiteUnit, Unit)) %>% dplyr::rename(Class_updated = .pred_class)
 setDT(Hier.clean)[setDT(BEC.new.pred), "Class" := Class_updated, on = .(SiteUnit)]
 Hier.clean <- Hier.clean %>% mutate(Formation = ifelse(is.na(Class), "unplaced", Formation))
 
