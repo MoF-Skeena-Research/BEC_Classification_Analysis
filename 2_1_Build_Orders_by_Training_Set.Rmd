@@ -191,6 +191,49 @@ Hier.clean <- Hier.clean %>% mutate(Formation = ifelse(is.na(Class), "unplaced",
 
 ```
 
+```{r create C50 decision tree}
+library(C50)
+
+BEC_recipe <-
+    recipe(Unit ~ ., data = BEC_good) %>%
+     update_role(SiteUnit, new_role = "id variable") %>% 
+  step_novel(SiteUnit) %>% 
+    prep() 
+    summary(BEC_recipe)
+    
+BEC_C5model <- decision_tree(min_n = 2) %>%
+  set_mode("classification") %>%
+  set_engine("C5.0")# %>%   translate()#or "permutations
+
+# note in RF as a tree based model it is not required to scale and normalize covariates and may have negative influence on the model performance  
+# 2: set up cross validation for parameter tuning data sets # note vc is default to 10 fold
+BEC_workflow <- workflow() %>%
+  add_model(BEC_C5model) %>% 
+    add_recipe(BEC_recipe,blueprint = hardhat::default_recipe_blueprint(allow_novel_levels = TRUE))
+
+BEC_C5_model <- fit(BEC_workflow, BEC_good)
+save(BEC_C5_model, file = "./rFmodels/BECv12_Orders_C5model.Rdata")
+
+
+fit.C5 <- extract_fit_engine(BEC_C5_model)
+prepped_predictors <- fit.C5 |> 
+  extract_recipe() |> 
+  prep(BEC_good) |>
+  bake(new_data = NULL, all_predictors())
+
+fit.C5$call <- rlang::call_modify(
+  fit.C5$call,
+  x = fit.C5$predictors,
+  y = fit.C5$levels
+)
+
+fit.C5 |>
+  plot()
+
+
+
+```
+
 
 ```{r update historic hierarchy and then resubmit to create new model}
 ##convert matrix to tree, add in new units
