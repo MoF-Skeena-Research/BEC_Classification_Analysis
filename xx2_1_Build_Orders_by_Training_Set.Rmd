@@ -193,6 +193,7 @@ Hier.clean <- Hier.clean %>% mutate(Formation = ifelse(is.na(Class), "unplaced",
 
 ```{r create C50 decision tree}
 library(C50)
+library(tidymodels)
 
 BEC_recipe <-
     recipe(Unit ~ ., data = BEC_good) %>%
