@@ -79,7 +79,7 @@ sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Acc
 # sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
 taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
 dbDisconnect(sppmaster)
-taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X") %>% dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>% distinct
+taxon.lifeform <- taxon.all %>% filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>% dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>% distinct
 veg.dat2 <- veg.dat
 
  trees = c(1, 2)
