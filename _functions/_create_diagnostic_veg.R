@@ -4,11 +4,13 @@
 # minimportance = 0.5; minconstancy = .6; noiseconstancy = 0; minplots = 5; covadj = 1
 # use.ksi = FALSE; reduce.lifeform = FALSE; reduction = 1; dom = 10; high_cons_cut = .6; minor = 1
 # d1 = 4; dd1 = 4
-create_diagnostic_veg <- function(veg.dat, su, minimportance = 0, minconstancy = 50, noiseconstancy = 0, minplots = 5, 
-                                  use.ksi = FALSE, ksi, ksi.value, reduce.lifeform = TRUE, reduced.lifeforms, reduction = .1, dom = 10,  minor = 1){
+create_diagnostic_veg <- function(veg.dat, su, minimportance = 0.5, minconstancy = 50, noiseconstancy = 25,
+                                  minplots = 5, covadj = .33, use.ksi = FALSE, ksi, ksi.value,
+                                  reduce.lifeform = TRUE, reduced.lifeforms, reduction = .1,
+                                  dom = 10,  minor = 1){
   vegsum <- create_su_vegdata(veg.dat, su) %>% 
-    create_analysis_vegsum(minimportance = minimportance, minconstancy = minconstancy, noiseconstancy = noiseconstancy, minplots = minplots)
-  
+    create_analysis_vegsum(minimportance = minimportance, minconstancy = minconstancy, 
+                           noiseconstancy = noiseconstancy, minplots = minplots, covadj = covadj)
   vegsum <- vegsum %>% rowwise() %>% mutate(constant_type = ifelse((Constancy >=minconstancy & MeanCov >= 10), "cd",
                                                                    ifelse((Constancy >=minconstancy & MeanCov <= minor), "cm",
                                                                           ifelse(Constancy >= minconstancy, "c", NA))))
@@ -26,15 +28,16 @@ create_diagnostic_veg <- function(veg.dat, su, minimportance = 0, minconstancy =
   vegsum <- vegsum %>% mutate(diagnostic.potential = ifelse((Constancy >= minconstancy & MeanCov >= 10), ((d.potential+dd.potential)*1.25), 
                                                             ifelse(Constancy >= minconstancy, d.potential, 0)))
   
-  if (isTRUE(reduce.lifeform)){
-  vegsum <- left_join(vegsum, taxon.lifeform, by = c("Species" = "Code")) %>% 
-    mutate(diagnostic.potential = ifelse(Lifeform %in% reduced.lifeform, (diagnostic.potential  * reduction),diagnostic.potential))%>% select(-Lifeform)
-  }
-  
-  if (isTRUE(use.ksi)){
+   if (isTRUE(use.ksi)){
   vegsum <- vegsum %>% mutate(diagnostic.potential = ifelse(Species %in% ksi, diagnostic.potential * ksi.value,diagnostic.potential))
+   }
+  
+   if (isTRUE(reduce.lifeform)){
+  vegsum <- left_join(vegsum, taxon.lifeform, by = c("Species" = "Code")) %>% 
+    mutate(diagnostic.potential = ifelse(Lifeform %in% reduced.lifeform & !Species %in% key.site.indicators, (diagnostic.potential  * reduction),diagnostic.potential))%>% select(-Lifeform)
   }
   
+
   vegsum <- vegsum %>% dplyr::group_by(SiteUnit) %>% mutate(unit.diag.sum = sum(diagnostic.potential)) 
   return(vegsum)
 }

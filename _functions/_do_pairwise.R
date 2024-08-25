@@ -8,9 +8,9 @@
 #  reduced.lifeforms = c(8, 9, 10, 11)## reduce diagnostic value of lifeforms for association development
 #  reduce.multiplier = .1
 #  round = 1
-
+#veg.dat = vegdata
 # vegsum <- fread("test_vegsum.csv")
-do_pairwise <- function(veg.dat, su, minimportance = 0.5, minconstancy = 60, noiseconstancy = 0, minplots = 1, covadj = .5, 
+do_pairwise <- function(veg.dat, su, minimportance = 0.5, minconstancy = 50, noiseconstancy = 25, minplots = 1, covadj = .33, 
                         use.ksi = FALSE, ksi = NULL, ksi.value = 1, reduce.lifeform = FALSE, reduced.lifeforms = NULL, reduction = NULL, domcov = 10, minor = 1){
     
 ###---Create vegetation summary
@@ -26,7 +26,7 @@ do_pairwise <- function(veg.dat, su, minimportance = 0.5, minconstancy = 60, noi
    ##--------Create the analysis set
   vegsum <- as.data.frame(vegsum)
   vegsum$MeanCov[vegsum$MeanCov >100] <- 100
-  vegsum$spp_importance <- vegsum$MeanCov^0.5
+  vegsum$spp_importance <- vegsum$MeanCov^covadj
   vegsum$spp_importance[vegsum$spp_importance < minimportance] <- NA 
   #vegsum$spp_importance[vegsum$spp_importance < 1.1] <- 0.1 
   #vegsum$spp_importance[is.na(vegsum$spp_importance)] <- 0 
