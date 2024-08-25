@@ -58,10 +58,20 @@ veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ###named veg.dat
 # 
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-su <- dbReadTable(master_su, "Coast_Forest_2024v4_SU")
+#su <- dbReadTable(master_su, "All_Coast_Forest_2024v4_SU")
 hier <- dbReadTable(master_su, "CoastForest_v2024_2_Hierarchy")
 dbDisconnect(master_su)
 
+require(DBI) #loads odbc as well
+correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb;")
+all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
+dbDisconnect(correlation)
+SU <- do.call(rbind.data.frame, all_su)
+SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
+  arrange(desc(PlotNumber))
+ss.unique <- SU %>% select(SiteUnit) %>% distinct
+su <- SU %>% dplyr::select(PlotNumber, SiteUnit)
 # master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 # DBQ=D:/BC_Correlation2_Vpro_2023/CoastalGuide_NonForested.accdb;")
 # su <- dbReadTable(master_su, "Coast_Skunkcabbage_final_SU")
@@ -93,56 +103,65 @@ veglump <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Acces
 lump <- dbReadTable(veglump, "CoastGuide2023_Lump")
 dbDisconnect(veglump)
 
-veg.dat2 <- lump_species(veg.dat2, lump, use.subtaxa = TRUE)
-
-
+veg.dat2 <- lump_species(vegdata = veg.dat2, lump, use.subtaxa = FALSE)
+yy <- c("CDFmm_102.2")
+  xx <- veg.dat2 %>% left_join(su) %>% filter(SiteUnit %in% yy) #%>% select(Species, Lifeform) %>% distinct
 
 
 ```
 
-## Look for units with low diagnostic potential
+## Evaluate units for units for low diagnostic potential
 
 ```{r settings, echo=FALSE}
 # 
-# key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL", "TSUGMER", "THUJPLI", "SPHAGNUM", "CLADONIA")
-# ksi.value = 2
-# reduced.lifeform = c(9, 10, 11, 12)
-# vegsum <- create_diagnostic_veg(veg.dat2, su, minimportance = 0.5, minconstancy = .6, noiseconstancy = .1, minplots = 5,  use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 2, reduce.lifeform = TRUE, reduced.lifeform = reduced.lifeform, reduction = 0.1)
-# units.low.diagnostics <- vegsum %>% select(SiteUnit, unit.diag.sum) %>% distinct %>%  filter(unit.diag.sum < 40) #%>% distinct(PlotNumber)
+key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL", "TSUGMER", "THUJPLI", "SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
+ksi.value = 1
+reduced.lifeform = c(9, 10, 11, 12)
+vegsum <- create_diagnostic_veg(veg.dat2, su, minimportance = 0.5, covadj = .33, 
+                                minconstancy = 55, noiseconstancy = 25,
+                                minplots = 5,  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.2,
+                                reduce.lifeform = TRUE, reduced.lifeform = reduced.lifeform, reduction = 0.1)
+yy <- c("CWHxm2_104")
+zz <- vegsum %>% filter(SiteUnit %in% yy)
+units.low.diagnostics <- vegsum %>% select(SiteUnit, unit.diag.sum) %>% distinct %>%  filter(unit.diag.sum < 40) 
 ```
 
-#Roll up into hierarchy units and fopr running
+# If working with higher units apply this chunk to roll up into hierarchy units 
 ```{r}
-source("./_functions/_TabletoTree.R")
-source("./_functions/_TreetoTable.R")
-hier2 <- treeToTable(hier)
-hier2 <- hier2[[1]]
-unit.filter = "Class conifer"
-hier3 <- hier2 %>% filter(Class %in% unit.filter) 
-hier3 <- hier3 %>% mutate(SiteUnit = gsub("/", "_", hier3$SiteUnit)) 
-hier3 <- hier3 %>% mutate(SiteUnit = gsub(" ", "", hier3$SiteUnit, fixed = TRUE)) 
-su <- su %>% mutate(SiteUnit = gsub(" ", "", su$SiteUnit, fixed = TRUE)) 
-su2 <- left_join(hier3, su, by = "SiteUnit") %>% select(PlotNumber, Assoc) %>% dplyr::rename("SiteUnit" = 2)
+# source("./_functions/_TabletoTree.R")
+# source("./_functions/_TreetoTable.R")
+# hier2 <- treeToTable(hier)
+# hier2 <- hier2[[1]]
+# unit.filter = "Class conifer"
+# hier3 <- hier2 %>% filter(Class %in% unit.filter) 
+# hier3 <- hier3 %>% mutate(SiteUnit = gsub("/", "_", hier3$SiteUnit)) 
+# hier3 <- hier3 %>% mutate(SiteUnit = gsub(" ", "", hier3$SiteUnit, fixed = TRUE)) 
+# su <- su %>% mutate(SiteUnit = gsub(" ", "", su$SiteUnit, fixed = TRUE)) 
+# su2 <- left_join(hier3, su, by = "SiteUnit") %>% select(PlotNumber, Assoc) %>% dplyr::rename("SiteUnit" = 2)
 ```
+Run pairwise diagnostic analysis on SU units or loaded hierarchical units
+Returns a table of units with high similarity
 
 ```{r pair.wise}
 
-ksi <- c("TSUGMER", "LYSIAME", "OPLOHOR", "ATHYFIL")
-
-ksi <- c("TSUGMER", "PICEENE", "TSUGHET", "THUJPLI",  "SPHAGNUM", "CLADONIA", "CLADINA")
+#ksi <- c("TSUGMER", "LYSIAME", "OPLOHOR", "ATHYFIL")
+#"TSUGMER", "PICEENE", "TSUGHET", "THUJPLI", 
+# ksi <- c("SPHAGNUM", "CLADONIA", "CLADINA")
+# key.site.indicators <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
 #reduced.lifeforms = c(1,2)
 reduced.lifeforms = c(9,10,11)
 tic()
 ###select units to run
-# su2 <- su
+ su2 <- su
 # su2 <- su2 %>% filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|ICHvc|MHwh', SiteUnit))###BGC specific|CWHms
 # su2 <- su2 %>%filter(!grepl('101.2|101a.2|101b.2|101b|low|-S|add', SiteUnit)) %>%  filter(grepl('01', SiteUnit)) ###zonal specific
 # 
 # su2 <- su2 %>%filter(!grepl('EBM|TEM|T38', PlotNumber)) ##remove low quality projects by plotnumber series
 
-vegsum.pairs <- do_pairwise(veg.dat2, su2, minimportance = 0.5, minconstancy = 60, noiseconstancy = 10, minplots = 5, 
+vegsum.pairs <- do_pairwise(veg.dat2, su2, minimportance = 0.5, minconstancy = 55, noiseconstancy = 10,
+                            minplots = 5, 
                             covadj = .33, domcov = 10,
-                            use.ksi = TRUE, ksi = ksi, ksi.value = 2, 
+                            use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1, 
                             reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1)
 toc()
 vegsum <- create_su_vegdata(veg.dat2, su2) %>% left_join(taxon.lifeform, by = c("Species" = "Code"))
@@ -150,11 +169,23 @@ vegsum <- create_su_vegdata(veg.dat2, su2) %>% left_join(taxon.lifeform, by = c(
 fwrite(vegsum, "./outputs/example_vegsum2.csv")
 fwrite(su2, "./outputs/example_siteunits.csv")
 vegsum.pairs <- vegsum.pairs %>%  filter(!is.na(Unit1), !is.na(Unit2)) 
+
+yy <- c("CWHds2_101a","CWHds2_101b" )
+zz <- vegsum.pairs %>% filter(Unit1 %in% yy, Unit2 %in% yy)
 ## Sometimes units get placed in odd places in the cluster analsysis because very similar similarity
 ## Check here. Probably indicates site unit membership to be fixed.
 #su.similar <- return_similar_pairs(vegsum.pairs, similarity = .8, neighbours = 3) 
+su.phases <- vegsum.pairs %>% select(Unit1, Unit2, diag.ratio) %>% filter(endsWith(Unit1, c("a","b")), endsWith(Unit2, c( "b"))) %>% distinct()
+su.phases$bgc1 <-   stringr::word(su.phases$Unit1,1,sep = "\\_") 
+su.phases$bgc2 <-   stringr::word(su.phases$Unit2,1,sep = "\\_") 
+su.phases <- su.phases %>%  filter(bgc1 == bgc2)
 
 su.similar <- vegsum.pairs %>% select(Unit1, Unit2, diag.ratio) %>% dplyr::filter(diag.ratio > .7) %>% filter(!Unit1 == Unit2)  %>%  distinct
+ss.similar <- su.similar 
+ss.similar$bgc1 <-   stringr::word(ss.similar$Unit1,1,sep = "\\_") 
+ss.similar$bgc2 <-   stringr::word(ss.similar$Unit2,1,sep = "\\_") 
+hg.units <- c("CWHwh1", "CWHwh2", "CWHvh3")
+ss.similar <- ss.similar %>%  filter(bgc1 == bgc2) %>% filter(!bgc1 %in% hg.units)
 ```
 
 

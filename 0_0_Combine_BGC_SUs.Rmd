@@ -84,7 +84,7 @@ SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
 
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
 DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-dbWriteTable(master_su, "All_Coast_Forest_2024v3_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+dbWriteTable(master_su, "All_Coast_Forest_2024v4_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
 dbDisconnect(master_su)
 
 #%>% mutate(PlotNumber = paste0("'",PlotNumber))
@@ -92,11 +92,13 @@ dbDisconnect(master_su)
 ###remove phases and seral units
 SU_siteseries <- SU %>% 
   filter(!str_detect(SiteUnit, '[$]'))
-phases = c("a", "b", "c")
-SU_siteseries$SiteUnit <- str_replace(SU_siteseries$SiteUnit, "[abc]", "")
+##phases = c("a", "b", "c")
+SU_siteseries$SiteUnit <- str_replace(SU_siteseries$SiteUnit, "[abc]$", "")
 fwrite(SU_siteseries, "./clean_tabs/CoastGuide_All_BGC_Forest_SS.csv")
-
 SU_coast <- SU_siteseries
+Fh <- fread("D:/BC_Correlation2_Vpro_2023/Highbench_siteseries.csv")
+SU_Fh <- SU_coast %>% mutate(SiteUnit = str_replace_all(string=SiteUnit, pattern=" ", repl="")) %>% filter(SiteUnit %in% Fh$highbench_ss)
+fwrite(SU_Fh, "./clean_tabs/CoastGuide_Highbench_SS.csv")
 ###Check that there is plot data for all
 missingplots <- anti_join(SU_coast, ENV)
 plots <- right_join(SU_coast, ENV)
