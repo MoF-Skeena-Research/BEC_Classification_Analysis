@@ -49,11 +49,15 @@ source("./_functions/_read_sppmaster.R")
 source("./_functions/_combined_su.R")
 ```
 
+# BEC correlation
+
+A BEC classification unit is defined by group of constant species with corresponding cover abundance of these species. We consider these as being species with \>60% constancy (extended to \>53% with reduced points). The mean cover abundance of species also reflects that species suitability to the unit. Correlation should group together site units that share many constant species and have few differenting species. And have relatively similar species abundances.
+
+The diagnostic potential is a measure of the constancy and abundance of a species in a unit. The diagnostic potential is calculated as the product of the constancy and the mean cover of a species in a unit. The diagnostic potential is then normalized by the sum of the diagnostic potential of all species in a unit. The diagnostic potential is used to weight the importance of species in the analysis. The diagnostic potential is a measure of the constancy and abundance of a species in a unit. The diagnostic potential is calculated as the product of the constancy and the mean cover of a species in a unit. The diagnostic potential is then normalized by the sum of the diagnostic potential of all species in a unit.
+
 #### Read in data
 
-Vegetation data is read in from saved .RDS file generated from the BECMaster cleaning scripts,
-
-Taxonomy is read-in from the species taxonomy database
+Vegetation data is read in from saved .RDS file generated from the BECMaster cleaning scripts. Taxonomy is read-in from the species taxonomy database
 
 ```{r load data}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
@@ -66,7 +70,7 @@ taxon.lifeform <- taxon.all %>%
 trees <- c(1, 2)
 ```
 
-Project specific species lumping codes and sorts are read - in from a Vpro databases with multiple \_SU tables.
+Project SU tables (e.g. BGC_SU for a LMH) are read-in from a single VPro database and combined into a project specific table. Project specific species lumping codes are read in from a Vpro databases. The species lumping codes are applied to the vegetation data for the subsequent analysis. The species taxonomy is joined to the vegetation data.
 
 ```{r read in project data}
 veglump <- dbConnect(
@@ -86,6 +90,12 @@ dbDisconnect(hierarchy)
 
 db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
 su <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/SIFR_LMH_SU.accdb"
+# su2 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/NIFR_SU_Tables.accdb"
+# su3 <- combined_su(db)
+# su <- rbind(su, su2, su3)
+
 veg.dat2 <- lump_species(vegdata = veg.dat2, lump, use.subtaxa = FALSE)
 ### for reviewing specific units
 # yy <- c("CDFmm_102.2")
@@ -98,22 +108,22 @@ Produce output tables for review where units have low diagnostic potential (usua
 
 ```{r evaluate units, echo=FALSE}
 
-key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL",
-"TSUGMER", "THUJPLI", "SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
-ksi.value = 1
-reduced.lifeform = c(9, 10, 11, 12)
-vegsum <- create_diagnostic_veg(
-      veg.dat2, su, minimportance = 0.5, covadj = .33,
-      minconstancy = 55, noiseconstancy = 20,minplots = 5,
-      use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1,
-      reduce.lifeform = TRUE, reduced.lifeform = reduced.lifeform,
-reduction = 0.1)
-yy <- c("CWHws1_103")
-zz <- vegsum %>% filter(SiteUnit %in% yy)
-units.low.diagnostics <- vegsum %>%
-select(SiteUnit, unit.diag.sum) %>%
-  distinct %>%
-  filter(unit.diag.sum < 40)
+# key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL",
+# "TSUGMER", "THUJPLI", "SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
+# ksi.value = 1
+# reduced.lifeform = c(9, 10, 11, 12)
+# vegsum <- create_diagnostic_veg(
+#       veg.dat2, su, minimportance = 0.5, covadj = .33,
+#       minconstancy = 60, noiseconstancy = 10,minplots = 5,
+#       use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1,
+#       reduce.lifeform = TRUE, reduced.lifeform = reduced.lifeform,
+# reduction = 0.1)
+# yy <- c("CWHws1_103")
+# zz <- vegsum %>% filter(SiteUnit %in% yy)
+# units.low.diagnostics <- vegsum %>%
+# select(SiteUnit, unit.diag.sum) %>%
+#   distinct %>%
+#   filter(unit.diag.sum < 40)
 ```
 
 ### If working with higher units apply this chunk to roll up into hierarchy units
@@ -137,11 +147,13 @@ Performed on base site units or hierarchical units. The function 'do_pairwise' a
 
 ```{r build pair.wise}
 # ksi <- c("TSUGMER", "LYSIAME", "OPLOHOR", "ATHYFIL")
-# "TSUGMER", "PICEENE", "TSUGHET", "THUJPLI",
+# zonal
+key.site.indicators <- c("TSUGMER", "PICESIT", "TSUGHET", "THUJPLI", "PSEUMEN", "CALARUB", "PSEUSPI") 
 # ksi <- c("SPHAGNUM", "CLADONIA", "CLADINA")
-key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL", "RUBUSPE")
+#key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL", "RUBUSPE")
 reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR")
 # reduced.lifeforms = c(1,2)
+#reduced.lifeforms <- c(3,4,5,6,7,8,9, 10, 11,12)
 reduced.lifeforms <- c(9, 10, 11)
 tic()
 ### select units to run
@@ -157,9 +169,9 @@ su2 <- su
 #   filter(SiteUnit %in% Fh$highbench_ss)
 su2 <- su2 %>% 
   filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|ICHvc|MHwh', SiteUnit))###BGC specific|CWHms
-# su2 <- su2 %>%
-#   filter(!grepl('101.2|101a.2|101b.2|101b|low|-S|add', SiteUnit)) %>%
-#   filter(grepl('01', SiteUnit)) ###zonal specific
+su2 <- su2 %>%
+  filter(!grepl('101.2|101a.2|101b.2|101b|low|-S|add|nudum', SiteUnit)) %>%
+  filter(grepl('01', SiteUnit)) ###zonal specific
 ##remove low quality projects by plotnumber series
 # su2 <- su2 %>%filter(!grepl('EBM|TEM|T38', PlotNumber)) 
 
@@ -167,8 +179,8 @@ vegsum.pairs <- do_pairwise(veg.dat2,
   su = su2, minimportance = 0.1, minconstancy = 60,
   noiseconstancy = 10,
   minplots = 5,
-  covadj = .33, domcov = 10, minor = 1,
-  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1,
+  covadj = .33, domcov = 10,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.2,
   reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
   reduced.exceptions = reduced.exceptions
 )
@@ -184,17 +196,17 @@ units.low.diagnostics <- vegsum.pairs %>%
   select(Unit1, unit.diag.sum.x) %>%
   distinct() %>%
   filter(unit.diag.sum.x < 40 & unit.diag.sum.x > 0)
-# yy <- c("CWHvh1_111", "CWHvh2_112")
-# zz <- vegsum.pairs %>%
-#   filter(Unit1 %in% yy, Unit2 %in% yy) %>%
-#   select(Species, Unit1, Unit2, Constancy.x, MeanCov.x, 
-#          Constancy.y, MeanCov.y, diagnostic.potential.x,
-#          diagnostic.potential.y, d.type.x, dd.type.x, diag.points.x,
-#          diag.points.y, d.type.y, dd.type.y, diag.points.x, diag.points.y,
-#          sum.shared.diag, diag.tot, diag.ratio)
+yy <- c("CWHvh1_111", "CWHvh2_112")
+zz <- vegsum.pairs %>%
+  filter(Unit1 %in% yy, Unit2 %in% yy) %>%
+  select(Species, Unit1, Unit2, Constancy.x, MeanCov.x, 
+         Constancy.y, MeanCov.y, diagnostic.potential.x,
+         diagnostic.potential.y, d.type.x, dd.type.x, diag.points.x,
+         diag.points.y, d.type.y, dd.type.y, diag.points.x, diag.points.y,
+         sum.shared.diag, diag.tot, diag.ratio)
 
 su.phases <- vegsum.pairs %>%
-  select(Unit1, Unit2, diff.ratio) %>%
+  select(Unit1, Unit2, diag.ratio) %>%
   filter(endsWith(Unit1, c("a", "b")), endsWith(Unit2, c("b"))) %>%
   distinct()
 su.phases$bgc1 <- stringr::word(su.phases$Unit1, 1, sep = "\\_")
@@ -202,8 +214,8 @@ su.phases$bgc2 <- stringr::word(su.phases$Unit2, 1, sep = "\\_")
 su.phases <- su.phases %>% filter(bgc1 == bgc2)
 
 su.similar <- vegsum.pairs %>%
-  select(Unit1, Unit2, diff.ratio) %>%
-  dplyr::filter(diff.ratio > .1) %>%
+  select(Unit1, Unit2, diag.ratio) %>%
+  dplyr::filter(diag.ratio > .1) %>%
   filter(!Unit1 == Unit2) %>%
   distinct()
 ss.similar <- su.similar
@@ -221,6 +233,8 @@ source("./_functions/_bec_dist.R")
 source("./_functions/_bec_dist_matrix.R")
 tic()
 dis.matrix <- bec_dist_matrix(vegsum.pairs)
+diss.table <- data.frame(SiteUnit = row.names(dis.matrix), dis.matrix)
+fwrite(diss.table, "./outputs/example_dissimilarity_matrix.csv")
 toc()
 tic()
 ss_clst <- agnes(dis.matrix,
@@ -236,22 +250,19 @@ cophonentic ## 0.891 this value shows how well the clusters align with the data
 ### >0.7 is considered good
 ```
 
+## Testing a cutree method
+
 ```{r treecut analysis}
-# let's get the clusters
 library(dynamicTreeCut)
 require(dendextend)
-#data(iris)
-#x  <- iris[,-5] %>% as.matrix
-# hc <- dis.matrix %>% dist %>% hclust
-dend <- dendro_hc %>% as.dendrogram 
 require(dynamicTreeCut)
-# Find special clusters:
-# clusters <- cutreeDynamic(dendro_hc, distM = dis.matrix,  method = "hybrid",
-#                           cutHeight = .2, minClusterSize = 1)
+dend <- dendro_hc %>% as.dendrogram 
+cut.ht <- 0.6
+cluster_grps <- cutreeHybrid(dendro_hc, distM = dis.matrix, cutHeight = cut.ht,
+                           minClusterSize = 2, deepSplit = 2)
+# cluster_grps <- cutreeDynamicTree(dendro_hc, maxTreeHeight = .1, minModuleSize = 2)
 
-cluster_grps <- cutreeHybrid(dendro_hc, distM = dis.matrix, cutHeight = .2,
-                           minClusterSize = 2, deepSplit = 1)
-assocs <- cluster_grps$labels
+assocs <- cluster_grps$labelsassocs <- cluster_grps$labelsassocs <- cluster_grps$labels
 su_grps <- cbind(as.data.frame(assocs), as.data.frame(row.names(dis.matrix)))
 # we need to sort them to the order of the dendrogram:
 clusters <- assocs[order.dendrogram(dend)]
@@ -261,15 +272,47 @@ n_clusters <- length(clusters_numbers)
 library(colorspace)
 cols <- rainbow_hcl(n_clusters)
 true_species_cols <- rainbow_hcl(n_clusters)[as.numeric(assocs[order.dendrogram(dend)])]
-dend2 <- dend %>% 
-         branches_attr_by_clusters(clusters, values = cols) %>% 
-         color_labels(col = true_species_cols)
-plot(dend2)
 # clusters <- factor(clusters)
-# levels(clusters)[-1]  <- cols[-5][c(1,4,2,3)] 
-#    # Get the clusters to have proper colors.
-#    # fix the order of the colors to match the branches.
-# colored_bars(clusters, dend, sort_by_labels_order = TRUE)
+# levels(clusters)
+
+dend %>%
+      dendextend::color_branches(.,
+                               h = cut.ht,
+                               col = pals::alphabet2(),
+                               groupLabels = TRUE) %>%
+  branches_attr_by_clusters(clusters, values = cols) %>%
+  color_labels(h = cut.ht, col = pals::alphabet2()) %>%
+  set("labels_cex", .4) %>%
+  plot(horiz = FALSE)
+# dend %>%
+#   rect.dendrogram(h = .25, lower_rect = 0, upper_rect = 0,
+#                   border = 1, lty = 2, lwd = 1, horiz = TRUE)
+
+
+# plot(cut(dend, h=cut.ht)$lower[[25]], 
+#      main="Second branch of lower tree with cut at h=.15")
+
+
+#dend %>% colored_bars(clusters, dend, sort_by_labels_order = TRUE)
+# dend %>%
+#   rect.dendrogram(h = .4, lower_rect = 0, upper_rect = .05,
+#                   border = 2, lty = 1, lwd = 2, horiz = TRUE)
+#[-1]  <- cols[-5][c(1,4,2,3)]
+   # Get the clusters to have proper colors.
+   # fix the order of the colors to match the branches.
+# dend.cut <- dendextend::cutree(dend, k = 55,
+#                                   order_clusters_as_data = FALSE)
+#                                   
+# dend.cut[dend.cut == 9]                          
+# 
+# dendextend::color_branches(.,
+#                                k = 55,
+#                                col = pals::alphabet2(),
+#                                groupLabels = TRUE) %>%
+#   #branches_attr_by_clusters(clusters, values = cols) %>%
+#   color_labels(col = true_species_cols) %>%
+#   set("labels_cex", .4) %>%
+#   plot(horiz = TRUE)
 ```
 
 ```{r pvcluster analysis}
@@ -284,7 +327,6 @@ plot(dend2)
 ```
 
 ```{r plot dendrogram}
-
 require(ggdendro)
 hcdata <- dendro_data(dendro_hc, type = "rectangle")
 ggplot() +
@@ -317,21 +359,22 @@ ggd1 <- as.ggdend(dend)
 library(ggplot2)
 # the nodes are not implemented yet.
 ggplot(ggd1, horiz = TRUE, theme = NULL) # horiz plot (and let's remove theme) in ggplot2
+```
 
-
-# dendro <- fviz_dend(dendro_hc,
-#   cex = .5, lwd = .5, h = .25,
-#   rect = TRUE,
-#   type = "rectangle",
-#   k_colors = "jco",
-#   rect_border = "black",
-#   rect_fill = TRUE,
-#   lower_rect = 0,
-#   horiz = TRUE,
-#   ggtheme = theme_calc(), labels = T
-# )
-# dendro
-#ggsave("./graphics/coastal_trees_cluster.pdf", dendro, width = 12, height = 6)
+```{r plot dendrogram}
+dendro <- fviz_dend(dendro_hc,
+  cex = .5, lwd = .5, h = .20,
+  rect = TRUE,
+  type = "rectangle",
+  k_colors = "jco",
+  rect_border = "black",
+  rect_fill = TRUE,
+  lower_rect = 0,
+  horiz = TRUE,
+  ggtheme = theme_calc(), labels = T
+)
+dendro
+ggsave("./graphics/coastal_trees_cluster.pdf", dendro, width = 12, height = 6)
 ```
 
 ```{r dend with colour bars upper units}
