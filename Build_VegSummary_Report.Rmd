@@ -26,9 +26,9 @@ SiteSeries<- dbReadTable(becdb, "tblBEC_SiteSeries_v12_unique") %>% filter(Statu
 dbDisconnect(becdb)
 BGCs_noSS <- anti_join(BGCs , SiteSeries)
 
-becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECdb_Working/BECdb_ver12_2021_reduced.accdb;")
-dbWriteTable(becdb, "BGCs_NoSS",  BGCs_noSS, overwrite = TRUE, batch_rows = 1)
-dbDisconnect(becdb)
+# becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECdb_Working/BECdb_ver12_2021_reduced.accdb;")
+# dbWriteTable(becdb, "BGCs_NoSS",  BGCs_noSS, overwrite = TRUE, batch_rows = 1)
+# dbDisconnect(becdb)
 ```
 
 #### Import all BECMaster tables in /raw_data folder
@@ -101,125 +101,13 @@ source('./_functions/functions.R')
 source('./_functions/_lump_species2.R')
 vdat <- readRDS('./clean_data/Reports_BECMaster_Veg.rds')
 data.table::setDT(vdat)
-create_veg_sum <- function(vdat, siteUnits, minconstancy = 60, noiseconstancy = 20, BGC) {
-    vdat <- lump_species2(vdat, lump=lump) 
-  vdat <- merge(vdat, siteUnits, by = 'PlotNumber')
-  vdat <- vdat[PlotNumber %in% siteUnits$PlotNumber, ]
-  #vdat <- vdat %>% filter(bgc %in% BGC)
-  vdat <- vdat[bgc %in% BGC, ]
-
- vdat <- vdat[,if(.N > 1) .SD, by = .(SiteUnit,Species)]
-  vdat[ , nplots := length(unique(PlotNumber)), by = .(SiteUnit)]
-  vdat <- vdat[,.(
-    MeanCov = sum(Cover, na.rm = TRUE) / unique(nplots), # should this just be mean, is NA assumed to be 0?
-    Constancy = (.N / unique(nplots)) * 100, 
-    nplots = unique(nplots)
-#  ), by = .(SiteUnit, Species, Lifeform)]
-  ), by = .(SiteUnit, Species, Layer)]
-vdat[ , maxcons := max(Constancy), by = .(Species)]
-vdat <- vdat[maxcons > minconstancy, ]
-vdat <- vdat[Constancy > noiseconstancy, ]
-}
-
-encode_veg_sum <- function(coverage, constancy) {
-  black <- 'n'
-  grey <- 'l'
-  star <- 'v'
-  char <- black
-  if (constancy < 80) {
-    char <- grey
-  } 
-  if (constancy <= 60) {
-    char <- star
-  }
- color = "remove"
-  code <- data.table::fcase(
-    coverage <   1,
-    sprintf('%s-%s', paste0(rep(char, 1), collapse=''), color),
-    coverage <   3,
-    sprintf('%s-%s', paste0(rep(char, 2), collapse=''), color),
-    coverage <  10,
-    sprintf('%s-%s', paste0(rep(char, 3), collapse=''), color),
-    coverage <  25,
-    sprintf('%s-%s', paste0(rep(char, 4), collapse=''), color),
-    coverage < 100,
-    sprintf('%s-%s', paste0(rep(char, 5), collapse=''), color),
-    default = paste0(rep(char, 6), collapse='')
-  )
-}
-
-build_species_ordering <- function(vdat, vsum = vegSum, code.lump = lump, siteUnits, BGC){
-  vegdata <- lump_species2(vdat, code.lump) 
-  vegdata <- merge(vegdata, siteUnits, by = 'PlotNumber')
-  vegdata <- vegdata[PlotNumber %in% siteUnits$PlotNumber, ]
-  #vegData <- vegData %>% filter(bgc %in% BGC)
-  vegdata <- vegdata[bgc %in% BGC, ] %>% data.frame
-  SS <- vegdata %>% select(PlotNumber, SiteUnit) %>% distinct
-  SS <- SS$SiteUnit
-veg_anal <- vegdata %>% filter(Species %in% vsum$Species) %>% select(PlotNumber, Species,Cover) %>% group_by(PlotNumber, Species) %>% summarise(Cover = sum(Cover, na.rm = TRUE)) %>% ungroup() %>%  data.frame()
-veg_anal <- matrify(veg_anal)
-
-
-n_units <- length(unique(vsum$SiteUnit))
-indval <- indicspecies::multipatt(veg_anal, SS, 
-                    control = how(nperm=9)) 
-#summary(indval, alpha=1)
-indic.order <- indval$str %>% data.frame  %>% select(1:(all_of(n_units))) %>% rownames_to_column("spp") %>%  pivot_longer(-spp, names_to = "siteunit", values_to = "indic") %>% group_by(spp) %>% mutate(max_indic = max(indic)) %>% filter(indic == max_indic) %>% ungroup() %>% left_join(species, by=c(spp = 'Code')) %>%  arrange(desc(indic)) %>%  mutate(siteunit = str_replace(siteunit, "101", "109")) %>% arrange(siteunit)
-
-}
-
-format_veg_table <- function(vsum = vegSum, spp = species){
-  #create new variable Species2 in vegSum from Species and Layer
-  vsum$Species2 <- paste0(vsum$Species, "_", vsum$Layer)
-  vsum[ , code := encode_veg_sum(MeanCov, Constancy), by = .(Species2, SiteUnit)]
-  vsum <- vsum %>% merge(spp, by.x = 'Species', by.y = 'Code') |>
-  mutate(SiteUnit = str_replace(SiteUnit, "101", "109"))
-  #merge(spp, by.x = 'Species', by.y = 'Code') |>
-  #mutate(SiteUnit = str_replace(SiteUnit, "101", "109"))
-  nPlots <- unique(vsum[ ,.(SiteUnit, nplots)])[order(nplots, decreasing = TRUE), ] %>% 
-    arrange(SiteUnit)
-  vsum <- data.table::dcast(vsum, 
-    Layer + ScientificName + EnglishName ~ SiteUnit, 
-    value.var = 'code',
-    fill = '')[order(Layer, ScientificName), ]
-  #vsum[duplicated(ReportName, fromLast = TRUE), ReportName := '']
- vsum[ , c('Layer','ScientificName', nPlots$SiteUnit, 'EnglishName'), with = FALSE]
-  data.table::setnames(vsum, old = c('Layer', 'ScientificName', 
-    'EnglishName'), new = c('Layer', 'Scientific name', 'Common name'))
-vsum <- vsum %>% 
-  mutate_all(str_replace_all,"-remove", "")
-     # vsum$Layer <-  case_match(vsum$Layer, "1" ~ "A",
-     #                            "2" ~ "A",
-     #                            "3" ~ "B",
-     #                            "4" ~ "B",
-     #                            "5" ~ "C",
-     #                            "6" ~ "C" ,
-     #                            "7" ~ "C",
-     #                            "8" ~ "C",
-     #                            "9" ~ "D",
-     #                           "10" ~ "D",
-     #                           "11" ~ "D",
-     #                           "12" ~ "C")
-  vsum <- vsum[ order(match(vsum$Scientific, indic.order$ScientificName)), ]
-  
-  vsum2 <-   vsum %>% select(order(colnames(vsum))) %>%  
-    left_join(lifeform, by = c("Scientific name" = "ScientificName")) %>% 
-    mutate(Layer = ifelse((Layer == "Shrub" & Lifeform %in% c(1,2)), "Regen", Layer)) %>% select(Layer, `Scientific name`, everything()) %>% select(-Lifeform) %>% 
-    relocate(`Common name`, .after = last_col()) %>%
-    arrange(match(Layer, c("Tree", "Regen", "Shrub", "Herb", "Moss")), Layer)
-
-  colnames(vsum2) <- gsub("/109", "/101", colnames(vsum2))
-    colnames(vsum2) <- gsub(paste0(bgc.choose,"/"), "", colnames(vsum2))
-   nPlotRow <- c('', 'n Plots', nPlots$nplots, '') |> 
-    matrix(nrow = 1) |>
-    data.frame() |> 
-    stats::setNames(names(vsum2)) |> 
-    data.table::as.data.table()
-  vsum3 <- rbind(nPlotRow, vsum2)
-}
+source('./_functions/_create_veg_sum2.R')
+source('./_functions/_encode_veg_sum.R')
+source('./_functions/_build_species_ordering.R')
+source('./_functions/_format_veg_table.R')
 ```
 
-This can take some time since indicspecies for determining the order of species is a very slow package
+## export veg summary tables to excel with a sheet for each BGC
 ```{r build veg guide summary and export to excel, warning=FALSE}
 require(openxlsx)
 require(tictoc)
