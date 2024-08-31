@@ -80,11 +80,17 @@ su <- SU %>% dplyr::select(PlotNumber, SiteUnit)
 su$SiteUnit.orig <- su$SiteUnit
 su <- su %>% mutate(SiteUnit = gsub("/", "_", su$SiteUnit)) 
 su <- su %>% mutate(SiteUnit = gsub(" ", "", su$SiteUnit, fixed = TRUE)) 
-su.lookup <- su
-su <- su %>% select(-SiteUnit.orig)
+#su.lookup <- su
+#su <- su %>% select(-SiteUnit.orig)
 su <- su %>% 
   filter(!str_detect(SiteUnit, '[$]')) %>% filter(!str_detect(SiteUnit, "^x"))
+
+#  Fh <- fread("D:/BC_Correlation2_Vpro_2023/Highbench_siteseries.csv")
+# Fh <- Fh %>% mutate(highbench_ss = str_replace_all(string=highbench_ss, pattern=" ", repl="")) %>% mutate(highbench_ss = str_replace_all(string=highbench_ss, pattern="/", repl="_"))
+# su <- su %>% mutate(SiteUnit = str_replace_all(string=SiteUnit, pattern=" ", repl="")) %>% mutate(SiteUnit = str_replace_all(string=SiteUnit, pattern="/", repl="_"))  %>% filter(SiteUnit %in% Fh$highbench_ss)
 # 
+# #SU_Fh <- fread("./clean_tabs/CoastGuide_Highbench_SS.csv")
+# su <- su %>% filter(SiteUnit %in% SU_Fh$SiteUnit)
 sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Personal/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
 # sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
 taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
@@ -114,16 +120,16 @@ yy <- c("CDFmm_102.2")
 
 ```{r settings, echo=FALSE}
 # 
-key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL", "TSUGMER", "THUJPLI", "SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
-ksi.value = 1
-reduced.lifeform = c(9, 10, 11, 12)
-vegsum <- create_diagnostic_veg(veg.dat2, su, minimportance = 0.5, covadj = .33, 
-                                minconstancy = 55, noiseconstancy = 25,
-                                minplots = 5,  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.2,
-                                reduce.lifeform = TRUE, reduced.lifeform = reduced.lifeform, reduction = 0.1)
-yy <- c("CWHxm2_104")
-zz <- vegsum %>% filter(SiteUnit %in% yy)
-units.low.diagnostics <- vegsum %>% select(SiteUnit, unit.diag.sum) %>% distinct %>%  filter(unit.diag.sum < 40) 
+# key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL", "TSUGMER", "THUJPLI", "SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
+# ksi.value = 1
+# reduced.lifeform = c(9, 10, 11, 12)
+# vegsum <- create_diagnostic_veg(veg.dat2, su, minimportance = 0.5, covadj = .33, 
+#                                 minconstancy = 55, noiseconstancy = 20,
+#                                 minplots = 5,  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1,
+#                                 reduce.lifeform = TRUE, reduced.lifeform = reduced.lifeform, reduction = 0.1)
+# yy <- c("CWHws1_103")
+# zz <- vegsum %>% filter(SiteUnit %in% yy)
+# units.low.diagnostics <- vegsum %>% select(SiteUnit, unit.diag.sum) %>% distinct %>%  filter(unit.diag.sum < 40) 
 ```
 
 # If working with higher units apply this chunk to roll up into hierarchy units 
@@ -147,22 +153,31 @@ Returns a table of units with high similarity
 #ksi <- c("TSUGMER", "LYSIAME", "OPLOHOR", "ATHYFIL")
 #"TSUGMER", "PICEENE", "TSUGHET", "THUJPLI", 
 # ksi <- c("SPHAGNUM", "CLADONIA", "CLADINA")
-# key.site.indicators <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
+#key.site.indicators <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
+ key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL", "RUBUSPE")
+reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR")
 #reduced.lifeforms = c(1,2)
 reduced.lifeforms = c(9,10,11)
 tic()
 ###select units to run
- su2 <- su
+su2 <- su
+Fh <- fread("D:/BC_Correlation2_Vpro_2023/Highbench_siteseries.csv")
+Fh <- Fh %>% mutate(highbench_ss = str_replace_all(string=highbench_ss, pattern=" ", repl="")) %>% mutate(highbench_ss = str_replace_all(string=highbench_ss, pattern="/", repl="_")) %>% 
+  filter(!upland %in% 'x')
+su2 <- su2 %>% filter(SiteUnit %in% Fh$highbench_ss)
+#fwrite(SU_Fh, "./clean_tabs/CoastGuide_Highbench_SS.csv")
 # su2 <- su2 %>% filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|ICHvc|MHwh', SiteUnit))###BGC specific|CWHms
 # su2 <- su2 %>%filter(!grepl('101.2|101a.2|101b.2|101b|low|-S|add', SiteUnit)) %>%  filter(grepl('01', SiteUnit)) ###zonal specific
 # 
 # su2 <- su2 %>%filter(!grepl('EBM|TEM|T38', PlotNumber)) ##remove low quality projects by plotnumber series
 
-vegsum.pairs <- do_pairwise(veg.dat2, su2, minimportance = 0.5, minconstancy = 55, noiseconstancy = 10,
+vegsum.pairs <- do_pairwise(veg.dat2, su = su2, minimportance = 0.1, minconstancy = 55, 
+                            noiseconstancy = 10,
                             minplots = 5, 
                             covadj = .33, domcov = 10,
                             use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1, 
-                            reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1)
+                            reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+                            reduced.exceptions = reduced.exceptions)
 toc()
 vegsum <- create_su_vegdata(veg.dat2, su2) %>% left_join(taxon.lifeform, by = c("Species" = "Code"))
 
@@ -170,8 +185,10 @@ fwrite(vegsum, "./outputs/example_vegsum2.csv")
 fwrite(su2, "./outputs/example_siteunits.csv")
 vegsum.pairs <- vegsum.pairs %>%  filter(!is.na(Unit1), !is.na(Unit2)) 
 
-yy <- c("CWHds2_101a","CWHds2_101b" )
-zz <- vegsum.pairs %>% filter(Unit1 %in% yy, Unit2 %in% yy)
+units.low.diagnostics <- vegsum.pairs %>% select(Unit1, unit.diag.sum.x) %>% distinct %>%
+  filter(unit.diag.sum.x <40 & unit.diag.sum.x>0)
+yy <- c("CWHvh1_111","CWHvh2_112" )
+zz <- vegsum.pairs %>% filter(Unit1 %in% yy, Unit2 %in% yy) %>% select(Species, Unit1, Unit2, Constancy.x, MeanCov.x, Constancy.y, MeanCov.y, diagnostic.potential.x, diagnostic.potential.y, d.type.x, dd.type.x, diag.points.x, diag.points.y, d.type.y, dd.type.y, diag.points.x, diag.points.y,sum.shared.diag, diag.tot, diag.ratio)
 ## Sometimes units get placed in odd places in the cluster analsysis because very similar similarity
 ## Check here. Probably indicates site unit membership to be fixed.
 #su.similar <- return_similar_pairs(vegsum.pairs, similarity = .8, neighbours = 3) 
@@ -180,7 +197,7 @@ su.phases$bgc1 <-   stringr::word(su.phases$Unit1,1,sep = "\\_")
 su.phases$bgc2 <-   stringr::word(su.phases$Unit2,1,sep = "\\_") 
 su.phases <- su.phases %>%  filter(bgc1 == bgc2)
 
-su.similar <- vegsum.pairs %>% select(Unit1, Unit2, diag.ratio) %>% dplyr::filter(diag.ratio > .7) %>% filter(!Unit1 == Unit2)  %>%  distinct
+su.similar <- vegsum.pairs %>% select(Unit1, Unit2, diag.ratio) %>% dplyr::filter(diag.ratio > .1) %>% filter(!Unit1 == Unit2)  %>%  distinct
 ss.similar <- su.similar 
 ss.similar$bgc1 <-   stringr::word(ss.similar$Unit1,1,sep = "\\_") 
 ss.similar$bgc2 <-   stringr::word(ss.similar$Unit2,1,sep = "\\_") 
@@ -198,7 +215,7 @@ dis.matrix2 <- dis.matrix %>% dplyr::rename(Unit1 = Unit2, Unit2 = Unit1) %>% se
 dis.matrix <- rbind(dis.matrix, dis.matrix2) %>% arrange(Unit1, Unit2) %>% pivot_wider(id_cols = Unit1, names_from = Unit2, values_from = diss, names_sort = TRUE) %>%  column_to_rownames("Unit1") %>% mutate_all(~replace(., is.na(.), 1))%>% as.matrix
 
 ss_clst = agnes(dis.matrix , diss = TRUE, stand = TRUE,
-      method = "average")
+      method = "weighted")
 
 dendro_hc <- as.hclust(ss_clst)
 dend.dend <- as.dendrogram(dendro_hc)
@@ -206,9 +223,9 @@ dend.dend <- as.dendrogram(dendro_hc)
 dend.dis <- as.dist(dis.matrix) 
 dend.co <- cophenetic(dendro_hc)
 cophonentic <- cor(dend.dis, dend.co)
-cophonentic ## 0.891
+cophonentic ## 0.891 this value shows how well the clusters align with the data structure. >0.7 is considered good
 
-dendro <- fviz_dend(dendro_hc, cex = .5, lwd = .5, h = .4,
+dendro <- fviz_dend(dendro_hc, cex = .5, lwd = .5, h = .25,
         rect = TRUE,
          type = "rectangle",
           k_colors = "jco",
@@ -216,7 +233,7 @@ dendro <- fviz_dend(dendro_hc, cex = .5, lwd = .5, h = .4,
           rect_fill = TRUE,
           lower_rect = 0,
           horiz = TRUE,
-          ggtheme = theme_calc(),labels=T)
+       ggtheme = theme_calc(),labels=T)
 dendro
   ggsave("./graphics/coastal_trees_cluster.pdf", dendro, width=12, height=6)
 ```
@@ -266,24 +283,22 @@ clst.units <- left_join(class, order, by = "SiteUnit") %>%
                     #mutate(Suborder = "", Alliance = "forest", Assoc = "", Working = "") %>% 
                     left_join(su.lookup) %>% select(-SiteUnit) %>%  rename(SiteUnit = SiteUnit.orig)  %>%
                     select(ID, Formation, Class, Order, Suborder, Alliance, Suball, Assoc, Subass,Facies, Working, SiteUnit) %>% as.data.table
-
-
 assoc.count <- assoc %>% count(Assoc)
 alliance.count <- alliance %>% count(Alliance)
 order.count <- order %>% count(Order)
 new_su <- left_join(su2, su.lookup)%>% select(PlotNumber, SiteUnit.orig) %>% rename(SiteUnit = SiteUnit.orig)
 clst.units2 <- clst.units %>% distinct %>% left_join(new_su) 
-fwrite(clst.units2, "./outputs/coastal_orders_cutoffs_to_test_v1.csv")
-
+fwrite(clst.units2, "./outputs/coastal_orders_cutoffs_to_test_v2.csv")
 ```
 
 
-###Import Vpro hierarchy and turn to widematrix write cluster membership into hierarchy
+### Write cluster membership into Vpro hierarchy table.
+This table can be copied and pasted into a Hierarchy_template table in Vpro. Then two make table queries must be run to align the hierarchy tags with a the autonumbered ID field generated by ACCESS. The table name for the new _Hierarchy table can be named to match the intent of the hierachy
 ```{r convert into a hierarchy table}
 levelNames <- c("Formation", "Class", "Order", "Suborder", "Alliance", "Suball", "Assoc", "Subass", "Facies", "Working", "SiteUnit")
 new.hier <- tableToTree(clst.units, levelNames = levelNames) %>% as.data.frame
 
-fwrite(new.hier, "./hierarchy_to_vpro/newhierarchyfromcluster_v1.csv")
+fwrite(new.hier, "./hierarchy_to_vpro/floodplainfromcluster_v2.csv")
 ```
 
 
