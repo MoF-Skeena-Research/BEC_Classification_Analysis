@@ -10,8 +10,24 @@
 #  round = 1
 #veg.dat = vegdata
 # vegsum <- fread("test_vegsum.csv")
-do_pairwise <- function(veg.dat, su, minimportance = 0.5, minconstancy = 50, noiseconstancy = 25, minplots = 1, covadj = .33, 
-                        use.ksi = FALSE, ksi = NULL, ksi.value = 1, reduce.lifeform = FALSE, reduced.lifeforms = NULL, reduction = NULL, domcov = 10, minor = 1){
+
+# su = su2
+# minimportance = 0.1
+# minconstancy = 60
+# noiseconstancy = 10
+# minplots = 5
+# covadj = .33
+# domcov = 10
+# minor = 1
+# use.ksi = FALSE; ksi = key.site.indicators; ksi.value = 1.2
+# reduce.lifeform = FALSE; reduced.lifeforms = reduced.lifeforms; reduction = .1
+# reduced.exceptions = NULL
+
+do_pairwise <- function(veg.dat, su, minimportance = 0.5, minconstancy = 60, noiseconstancy = 10, 
+                        minplots = 5, covadj = .33, 
+                        use.ksi = FALSE, ksi = NULL, ksi.value = 1.2, 
+                        reduce.lifeform = FALSE, reduced.lifeforms = NULL, reduction = NULL, reduced.exceptions = NULL,
+                        domcov = 10, minor = 1){
     
 ###---Create vegetation summary
   su.choice <- su %>% select(SiteUnit)
@@ -25,9 +41,9 @@ do_pairwise <- function(veg.dat, su, minimportance = 0.5, minconstancy = 50, noi
   
    ##--------Create the analysis set
   vegsum <- as.data.frame(vegsum)
-  vegsum$MeanCov[vegsum$MeanCov >100] <- 100
-  vegsum$spp_importance <- vegsum$MeanCov^covadj
-  vegsum$spp_importance[vegsum$spp_importance < minimportance] <- NA 
+  vegsum$MeanCov[vegsum$MeanCov > 100] <- 100
+  vegsum$spp_importance <- vegsum$MeanCov^1/2
+  #vegsum$spp_importance[vegsum$spp_importance < minimportance] <- NA 
   #vegsum$spp_importance[vegsum$spp_importance < 1.1] <- 0.1 
   #vegsum$spp_importance[is.na(vegsum$spp_importance)] <- 0 
   vegsum <- vegsum %>% dplyr::mutate(spp_importance = spp_importance * (Constancy/100)) %>% dplyr::filter(spp_importance > minimportance)
@@ -35,33 +51,52 @@ do_pairwise <- function(veg.dat, su, minimportance = 0.5, minconstancy = 50, noi
   speciesmax <- vegsum  %>% dplyr::group_by(Species) %>% dplyr::summarise(maxcons = max(Constancy)) %>% dplyr::filter(maxcons >= minconstancy)
   vegsum <- vegsum %>%  dplyr::filter(Species %in% speciesmax$Species) %>% dplyr::filter(nplots >= minplots) %>% filter(Constancy > noiseconstancy)
   
+  #vegsum <- create_diagnostic_veg(vegsum)
   ##--------assign potential diagnostics-----------------
    vegsum <- vegsum %>% rowwise() %>% mutate(constant_type = ifelse((Constancy >=minconstancy & MeanCov >=domcov), "cd",
                                                                    ifelse((Constancy >=minconstancy & MeanCov <= minor), "cm",
                                                                           ifelse(Constancy >= minconstancy, "c", NA))))
   ###Calculate diagnostic potential
   # vegsum <- vegsum %>% mutate(d.potential = ifelse(constant_type %in% c("c", "cd"), 4,
-  #                                                  ifelse(constant_type %in% c("cm"), 2,0)))     
-  vegsum <- vegsum %>% mutate(d.potential = ifelse(constant_type %in% c("c","cd"), (Constancy^(1/2)/10)*4,
-                                                   ifelse(constant_type %in% c("cm"), (Constancy^(1/2)/10)*2,0)))   
-  vegsum <- vegsum %>% mutate(d.potential = ifelse(d.potential <0.67, 0, d.potential))
-                                                  
-    vegsum <- vegsum %>% mutate(dd.potential = ifelse(constant_type == "cd", ((MeanCov^(1/3))), 0)) 
+  #                                                  ifelse(constant_type %in% c("cm"), 2,0)))
+  # vegsum <- vegsum %>% mutate(d.potential = ifelse(constant_type %in% c("c","cd"), (Constancy^(1/2)/10)*4,
+  #                                                  ifelse(constant_type %in% c("cm"), (Constancy^(1/2)/10)*2,0)))
+  # vegsum <- vegsum %>% mutate(d.potential = ifelse(d.potential <0.67, 0, d.potential))
+  # 
+  #   vegsum <- vegsum %>% mutate(dd.potential = ifelse(constant_type == "cd", ((MeanCov^(1/3))), 0))
+  # vegsum <- vegsum %>% mutate(dd.potential = ifelse(dd.potential >4 , 4,
+  #                                                   ifelse(dd.potential <0, 0, dd.potential)))
+  # 
+  # vegsum <- vegsum %>% mutate(diagnostic.potential = ifelse((Constancy >= minconstancy & MeanCov >=domcov), ((d.potential+dd.potential)*1.25),
+  #                                                           ifelse(Constancy >= minconstancy, d.potential, 0)))
+  vegsum <- vegsum %>%  
+    mutate(d.potential = ifelse(Constancy >50 & Constancy<minconstancy,(Constancy^(1/3))* (Constancy/100)* ((Constancy - 50)/10), 
+  ifelse(constant_type %in% c("c","cd"), (Constancy^(1/3)* (Constancy/100)),
+  ifelse(constant_type %in% c("cm"), (Constancy^(1/3)* (Constancy/100) * 0.5), 0))))
+ 
+   vegsum <- vegsum %>% mutate(d.potential = ifelse(d.potential <.67, 0,
+                          ifelse(d.potential >4 , 4, d.potential)))
+
+  #vegsum <- vegsum %>% mutate(dd.potential = ifelse(constant_type == "cd", ((MeanCov^(1/3))), 0)) 
+  vegsum <- vegsum %>% mutate(dd.potential = ifelse(MeanCov>= domcov, (MeanCov^(1/3)),
+ifelse((MeanCov >=5 & MeanCov <10),(MeanCov^(1/3) * ((10 - MeanCov)/10)), 0))) 
   vegsum <- vegsum %>% mutate(dd.potential = ifelse(dd.potential >4 , 4,
-                                                    ifelse(dd.potential <0, 0, dd.potential)))
+                          ifelse(dd.potential <0.5, 0, dd.potential)))
   
-  vegsum <- vegsum %>% mutate(diagnostic.potential = ifelse((Constancy >= minconstancy & MeanCov >=domcov), ((d.potential+dd.potential)*1.25), 
-                                                            ifelse(Constancy >= minconstancy, d.potential, 0)))
-  
+  vegsum <- vegsum %>% 
+    mutate(diagnostic.potential = ifelse((d.potential >0 & dd.potential>0),
+                                         ((d.potential+dd.potential)*1.25),
+                                         (d.potential+dd.potential)))
+ 
   if (isTRUE(reduce.lifeform)){
-    vegsum <- left_join(vegsum, taxon.lifeform, by = c("Species" = "Code")) %>% 
-      mutate(diagnostic.potential = ifelse(Lifeform %in% reduced.lifeforms, (diagnostic.potential  * reduction),diagnostic.potential))%>% select(-Lifeform)
+    vegsum <- left_join(vegsum, taxon.lifeform, by = c("Species" = "Code")) %>%
+      mutate(diagnostic.potential = ifelse(Lifeform %in% reduced.lifeforms & !Species %in% reduced.exceptions, (diagnostic.potential  * reduction),diagnostic.potential))%>% select(-Lifeform)
   }
-  
+
   if (isTRUE(use.ksi)){
     vegsum <- vegsum %>% mutate(diagnostic.potential = ifelse(Species %in% ksi, diagnostic.potential * ksi.value,diagnostic.potential))
   }
-  
+
   vegsum <- vegsum %>% dplyr::group_by(SiteUnit) %>% mutate(unit.diag.sum = sum(diagnostic.potential))
   vegsum <- vegsum %>% dplyr::group_by(SiteUnit) %>% mutate(n_constants = sum(!is.na(constant_type)))                          
                                                             
@@ -171,9 +206,9 @@ setDT(vegsum.pairs)
 # Add or modify the columns as required
 vegsum.pairs[, `:=`(
   dd.points.x = fifelse((constant_type.x == "cd") & (cover2.diff > 1), cover2.diff,
-                        fifelse((constant_type.x == "cd") & (cover2.diff < 1 & cover2.diff > 0.66), cover2.diff, 0)),
+                        fifelse((constant_type.x == "cd") & (cover2.diff < 1 & cover2.diff >= 0.5), cover2.diff, 0)),
   dd.points.y = fifelse((constant_type.y == "cd") & (cover2.diff < -1), (0 - cover2.diff),
-                        fifelse((constant_type.x == "cd") & (cover2.diff > -1 & cover2.diff < -0.66), 0 - cover2.diff, 0))
+                        fifelse((constant_type.x == "cd") & (cover2.diff > -1 & cover2.diff <= -0.5), 0 - cover2.diff, 0))
 )][, `:=`(
   dd.points.x = fifelse(dd.points.x > 4, 4, dd.points.x),
   dd.points.y = fifelse(dd.points.y > 4, 4, dd.points.y)
@@ -199,54 +234,69 @@ vegsum.pairs[, `:=`(
 # Adjust points for moss layer
 if (isTRUE(reduce.lifeform)){ 
   vegsum.pairs[, `:=`(
-  d.points.x = ifelse(Lifeform %in% reduced.lifeforms, d.points.x * 0.1, d.points.x),
-  d.points.y = ifelse(Lifeform %in% reduced.lifeforms, d.points.y * 0.1, d.points.y),
-  dd.points.x = ifelse(Lifeform %in% reduced.lifeforms, dd.points.x * 0.1, dd.points.x),
-  dd.points.y = ifelse(Lifeform %in% reduced.lifeforms, dd.points.y * 0.1, dd.points.y))]
+  d.points.x = ifelse(Lifeform %in% reduced.lifeforms & !Species %in% reduced.exceptions, d.points.x * 0.1, d.points.x),
+  d.points.y = ifelse(Lifeform %in% reduced.lifeforms & !Species %in% reduced.exceptions, d.points.y * 0.1, d.points.y),
+  dd.points.x = ifelse(Lifeform %in% reduced.lifeforms & !Species %in% reduced.exceptions, dd.points.x * 0.1, dd.points.x),
+  dd.points.y = ifelse(Lifeform %in% reduced.lifeforms & !Species %in% reduced.exceptions, dd.points.y * 0.1, dd.points.y))]
 }
 # Sum sum of diagnostic differentials by species
 setkey(vegsum.pairs, "Unit1", "Unit2", "Species")
 
 ### adjust points for constancy
 vegsum.pairs[, `:=`(
-  diag.points.x = sum(d.points.x, dd.points.x, na.rm = TRUE) * (Constancy.x / 100),
-  diag.points.y = sum(d.points.y, dd.points.y, na.rm = TRUE) * (Constancy.y / 100)
+  diff.pts.x = sum(d.points.x, dd.points.x, na.rm = TRUE) * (Constancy.x / 100),
+  diff.pts.y = sum(d.points.y, dd.points.y, na.rm = TRUE) * (Constancy.y / 100)
 ), by = .(Unit1, Unit2, Species)]
 
 ## adjust ponits for being d as well as dd
 vegsum.pairs[, `:=`(
-  diag.points.x = ifelse((!is.na(d.type.x) & !is.na(dd.type.x)), (diag.points.x * 1.25), diag.points.x),
-  diag.points.y = ifelse((!is.na(d.type.y) & !is.na(dd.type.y)), (diag.points.y * 1.25), diag.points.y)
+  diff.pts.x = ifelse((!is.na(d.type.x) & !is.na(dd.type.x)), (diff.pts.x * 1.25), diff.pts.x),
+  diff.pts.y = ifelse((!is.na(d.type.y) & !is.na(dd.type.y)), (diff.pts.y * 1.25), diff.pts.y)
 ), by = .(Unit1, Unit2, Species)]
 
 ## adjust points for key indicators
 if (isTRUE(use.ksi)){
 vegsum.pairs[, `:=`(
-  diag.points.x = ifelse(Species %in% ksi, (diag.points.x * ksi.value), diag.points.x),
-  diag.points.y = ifelse(Species %in% ksi, (diag.points.x * ksi.value), diag.points.y)
+  diff.pts.x = ifelse(Species %in% ksi, (diff.pts.x * ksi.value), diff.pts.x),
+  diff.pts.y = ifelse(Species %in% ksi, (diff.pts.y * ksi.value), diff.pts.y)
 ), by = .(Unit1, Unit2, Species)]
 }
 ## adjust points for key moss layer indicators
 # vegsum.pairs[, `:=`(
-#   diag.points.x = ifelse(Species %in% key.moss.indicators, (diag.points.x * (3/reduced.lifeforms)), diag.points.x),
-#   diag.points.y = ifelse(Species %in% key.moss.indicators, (diag.points.x * (3/reduced.lifeforms)), diag.points.y)
+#   diff.pts.x = ifelse(Species %in% key.moss.indicators, (diff.pts.x * (3/reduced.lifeforms)), diff.pts.x),
+#   diff.pts.y = ifelse(Species %in% key.moss.indicators, (diff.pts.x * (3/reduced.lifeforms)), diff.pts.y)
 # ), by = .(Unit1, Unit2, Species)]
 
 # Sums by pair
 vegsum.pairs[, `:=`(
   sum.shared.diag = sum(shared.diag),
-  diag.tot.x = sum(diag.points.x, na.rm = TRUE),
-  diag.tot.y = sum(diag.points.y, na.rm = TRUE)
+  diff.tot.x = sum(diff.pts.x, na.rm = TRUE),
+  diff.tot.y = sum(diff.pts.y, na.rm = TRUE)
 ), by = .(Unit1, Unit2)]
 
 
-vegsum.pairs[ ,diag.tot :=rowSums(.SD, na.rm = TRUE), .SDcols = c("diag.tot.x", "diag.tot.y" ), by = .(Unit1, Unit2)]
+vegsum.pairs[ ,diff.tot :=rowSums(.SD, na.rm = TRUE), .SDcols = c("diff.tot.x", "diff.tot.y" ), by = .(Unit1, Unit2)]
 
 vegsum.pairs[, `:=`(
-  diag.potential.tot = sum(max(diagnostic.potential.x), max(diagnostic.potential.y, na.rm = TRUE)),
-  diag.ratio = sum.shared.diag / (diag.tot + sum.shared.diag)
+  #diag.potential.tot = sum(max(unit.diag.sum.x), max(unit.diag.sum.y, na.rm = TRUE)),
+  ## this is Sorensen's similarity - very similar to diff.ratio.mean in calculation
+  diff.ratio = (sum.shared.diag*2) / (diff.tot + (sum.shared.diag*2)) 
+  #diff.ratio = (sum.shared.diag*2) / (diff.tot),
+  #diff.ratio.x = sum.shared.diag / (max(diff.tot.x) + sum.shared.diag),
+  #diff.ratio.y = sum.shared.diag / (max(diff.tot.y) + sum.shared.diag)
+  # diff.ratio.x2 = max(unit.diag.sum.x) / (max(diff.tot.x) + max(unit.diag.sum.x)),
+  # diff.ratio.y2 = max(unit.diag.sum.y) / (max(diff.tot.y) + max(unit.diag.sum.y))
 ), by = .(Unit1, Unit2)]
+
+# vegsum.pairs[, `:=`(
+# #diff.ratio.mean = (diff.ratio.x + diff.ratio.y)/2
+# #diff.ratio.mean2 = (diff.ratio.x2 + diff.ratio.y2)/2
+# ), by = .(Unit1, Unit2)]
 # Ungroup the data.table
 vegsum.pairs <- vegsum.pairs[, .SD, .SDcols = names(vegsum.pairs)]
+vegsum.pairs <- vegsum.pairs %>% 
+  dplyr::select(-EnglishName.x, -EnglishName.y, -ScientificName.x, -ScientificName.y) %>%
+  dplyr::select(Unit1, Unit2, diff.ratio, #diff.ratio.mean,  
+                unit.diag.sum.x, unit.diag.sum.y,  everything())
 return(vegsum.pairs)
 }
