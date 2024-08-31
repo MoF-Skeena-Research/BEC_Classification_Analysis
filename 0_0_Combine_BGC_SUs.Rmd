@@ -29,7 +29,6 @@ dbWriteTable(becdb, "BGCs_NoSS",  BGCs_noSS, overwrite = TRUE, batch_rows = 1)
 dbDisconnect(becdb)
 ```
 
-
 #### Import all BECMaster tables in /raw_data folder
 ```{r set folders, include=FALSE}
 require(DBI) #loads odbc as well
@@ -63,9 +62,6 @@ dbDisconnect(master_su)
 
 ```
 
-
-
-
 ## Import SU table and BECdb for current BGC units and site series. Look for missing units. Create complete SU 
 
 ###COAST
@@ -81,10 +77,10 @@ SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotN
   arrange(desc(PlotNumber))
 ss.unique <- SU %>% select(SiteUnit) %>% distinct
 SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
-
-master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+## *** The field length of plotnumber is changed to 255 in the exported database table. This causes a fail in veg summary reporting from the hierarchy. need to change the Plot Number field length back to 7 **************
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-dbWriteTable(master_su, "All_Coast_Forest_2024v4_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+dbWriteTable(master_su, "All_Coast_Forest_2024v5_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
 dbDisconnect(master_su)
 
 #%>% mutate(PlotNumber = paste0("'",PlotNumber))
@@ -96,9 +92,7 @@ SU_siteseries <- SU %>%
 SU_siteseries$SiteUnit <- str_replace(SU_siteseries$SiteUnit, "[abc]$", "")
 fwrite(SU_siteseries, "./clean_tabs/CoastGuide_All_BGC_Forest_SS.csv")
 SU_coast <- SU_siteseries
-Fh <- fread("D:/BC_Correlation2_Vpro_2023/Highbench_siteseries.csv")
-SU_Fh <- SU_coast %>% mutate(SiteUnit = str_replace_all(string=SiteUnit, pattern=" ", repl="")) %>% filter(SiteUnit %in% Fh$highbench_ss)
-fwrite(SU_Fh, "./clean_tabs/CoastGuide_Highbench_SS.csv")
+
 ###Check that there is plot data for all
 missingplots <- anti_join(SU_coast, ENV)
 plots <- right_join(SU_coast, ENV)
