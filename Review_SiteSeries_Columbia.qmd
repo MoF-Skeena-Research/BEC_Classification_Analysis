@@ -1,0 +1,306 @@
+---
+title: "Review of Columbia Guide Site Series by BGC"
+author: "William H MacKenzie"
+date: "06/09/2024"
+format: 
+  pdf: 
+    documentclass: scrartcl
+    papersize: letter
+editor: visual
+---
+
+This script is designed to review the site series within each BGC, primarily to identify where site series do not sufficiently differentiate and need to be reviewed and merged. The script also identifies site series with too few plots or with low diagnostic potential for review and interpretation of the quantitative analysis. The script generates a table list of site unit pairs that exceed a threshold similarity and a dendrogram of the cluster analysis of site units for each BGC.
+
+## Historic BEC correlation analysis
+
+The principles of BEC analysis is outlined in Pojar et al. (1987). The method is based on Braun-Blanquet table analysis but modified to equally value significant differences in mean cover in addition to species constancy and as potential differentiating factors between units. In this method, constancy (percent of plots in a site unit that a species is present) is converted into five equal *presence classes* each of 20% width. Mean cover is divided into 10 *significance classes* following the Domin-Krajina cover scale. A species is considered *differential* if it is presence class III (40-60%) or greater and is two or more presence classes greater than in the compared site unit(s). A species is considered a *dominant differential* if it has a significance class greater or equal to 5 (10.1% mean cover) and is two or more significance classes greater than the in a site unit and not present in the other site unit(s).
+
+There are several challenges with this method:
+
+1.  The use of classes to represent continuous data creates 'steps' that may not accurately represent the differences between site units. For example, a difference of 61%(presence IV) vs 40% (presence II) constancy is the equivalent to 80% (presence IV) and 21% (presence II constancy.
+
+2.  The differential value of a species does not reflect the degree of difference between site units. For example the following comparison have the same diagnostic value: 100% constancy compared to 0% is equivalent to 60% to 20%; or 70% mean cover compared to 1% is equivalent to 10.1% vs 5% mean cover.\
+
+3.  The comparative approach is applied only within the same circumscribing (higher) unit. And the comparison is not pair-wise but within any number of site units that have been deemed to fall under the higher unit. This means that the upper hierarchical levels must be determined prior to the comparison and the diagnostic combination of species is relevant only to the units being compared.
+
+For the provincial correlation of regional classifications in the early 1990s, the general principles outlined in Pojar et al. (1987) were applied but the process was not systematic and units were combined by expert review and consensus. Klinka et al. (1996) classification of coastal units was also made through 'successive approximations'. Neither of these approaches allow replicable quantitative analysis.
+
+## A new BEC correlation method
+
+The new method is designed to be a quanititative approximation of the Pojar et al. (1987) and Klinka et al. (1996) methods. The approach constructs a new similarity metric that reflects BEC principles of equal weighting of constancy and cover differences and can be used in quantitative analysis. The method is a pair-wise comparison of reviewed and accepted site series as the working unit. The review process assesses site series for sufficient plots and internal consistency (diagnostic potential) to be considered for quantitative comparison. The pair-wise comparison compares the potential differential value (pdv) of each species in the combined Diagnostic combination of species (DCS) of the two units. A shared diagnostic sum (SDS) represents the sum of minimum species pdv values. Each unit in the comparison will have a unit differential sum (UDS) which is the sum of the species differential value (sdv) and species dominant differential value (sddv) for each species in the DCS. We calculate a BEC similarity index (BEC.sim) as the minimum UDS divided by the SDS. We use the minimum UDS value in the BEC.sim to identify cases where one of the assessed units is the central concept and has few/no diagnostic species. The BEC.sim is a value between 0 and 1 where 0 represents no similarity and 1 represents identical units. The BEC.sim is a measure of the similarity of the diagnostic species composition of two units and can be used to determine the similarity of any two units in the BEC hierarchy. We use this similarity index in a agglomerative cluster analysis with average linking to create a dendrogram of the site units within each BGC. Thesholds of similarity are set to identify site units that are too similar and should be merged or plot membership reassessed. \#### Some terminology for species:
+
+-   *Differential (d)*: species has significantly higher constancy than in the compared unit. Minimum constancy difference is 40%.
+
+-   *Dominant Differential (dd)*: species has at leasts 10% mean cover and is significantly higher mean cover than in the compared unit.
+
+-   *Companion/Constant (c)*: species with high constancy but not differential.
+
+-   *Constant dominant(cd)*: constant species have greater than 10% cover
+
+-   *Minor companion (cm)*: constant species with less than 1% mean cover.
+
+-   *Differential Potential (dp)*: The potential differential value of a species based on constancy. dp = constancy\^(1/3) \* (constancy/100) where constancy \>= 60% dp = constancy\^(1/3) \* (constancy/100) \* constancy-50/100 where constancy 50-59% The maximum dp is 4 and minimum value is 1.
+
+-   *Dominant Differential Potential (ddp)*: The potential differential value of a species based on cover. ddp = cover\^(1/3) where mean cover \>= 10%. The maximum ddp is 4 and minimum value is 0.5. pds
+
+-   *Potential Diagnostic Value (pdv)*: pdv = 1.25\* *(dp + ddp) The maximum pdv is 10.*
+
+#### Some terminology for units
+
+-   *Diagnostic Combination of Species (DCS)*: for a classification unit, the list of species that exceed the constancy threshold with associated mean cover values
+
+-   *Potential Differential Sum (PDS)*: sum of all species pdv for the DCS of a unit
+
+#### Some terminology for pair-wise comparison
+
+-   *Species Differential Value (sdv)*: sdv = Constancy Unit1 ^1/3^ - Constancy Unit2 ^1/3^
+
+-   *Species Dominant Differential Value (sddv)*: sddv = Mean Cover Unit1 ^1/3^ - Mean Cover Unit2 ^1/3^
+
+-   *Shared Differential Sum (SDS)*: SDS = sum(min(pdv)) of all species in DCS of both units
+
+-   *Unit Differential Sum(UDS)*: UDS = sum(sdv +sddv)
+
+-   *BEC.sim*: BEC.sim= min(UDS1, UDS2))/SDS
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(DBI)
+require(data.table)
+require(cluster)
+require(dendextend)
+require(dynamicTreeCut)
+require(gtable)
+require(gtsummary)
+require(colorspace)
+require(openxlsx)
+require(tictoc)
+require(labdsv)
+require(indicspecies)
+require(Polychrome)
+require(ggdendro)
+require(purrr)
+require(ggplotify)
+require(grid)
+require(indicspecies)
+#require(kableExtra)
+#require(tatoo)
+set.seed(1279)
+source("./_functions/_bec_dist.R")
+source("./_functions/_bec_dist_matrix.R")
+source("./_functions/_lump_species.R")
+source("./_functions/_lump_species2.R")
+source("./_functions/_create_su_vegdata.R")
+source("./_functions/_create_analysis_vegsum.R")
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+source("./_functions/_add_vars.R")
+source("./_functions/_do_pairwise.R")
+source("./_functions/_create_diagnostic_veg.R")
+source("./_functions/_return_similar_pairs.R")
+source("./_functions/_read_sppmaster.R")
+source("./_functions/_combined_su.R")
+source("./_functions/_create_veg_sum.R")
+#source('./_functions/_create_veg_sum2.R')
+source('./_functions/_build_species_ordering.R')
+source('./_functions/_format_veg_table.R')
+source('./_functions/_format_veg_table2.R')
+source('./_functions/_encode_veg_sum.R')
+source('./_functions/_create_dendro.R')
+source('./_functions/_create_dendro_all.R')
+source('./_functions/_create_dendro_bybgc.R')
+source('./_functions/_draw_ss_edatope.R')
+```
+
+#### Read in data
+
+Vegetation data is read in from saved .RDS file generated from the BECMaster cleaning scripts. A compiled SU table is build from all BGC \_SU tables stored in the coast guide Vpro database. Taxonomy is read in from the species taxonomy database. A species lumping code table is read in from the Correlation2_Spp_lump.accdb database and the vegetation data is lumped using the lump_species function.
+
+```{r load data, echo=FALSE, message=FALSE}
+veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
+taxon.all <- read_sppmaster()
+taxon.lifeform <- taxon.all %>%
+  filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
+  dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
+  distinct()
+veglump <- dbConnect(
+  odbc::odbc(),
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
+lump <- dbReadTable(veglump, "CorrelationII_Lump")
+dbDisconnect(veglump)
+veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
+db <- "D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb"
+su <- combined_su(db)
+su <- su %>%
+  filter(!grepl('poor|low|-S|add|nudum|x|nf', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+#   filter(grepl('01', SiteUnit)) ###zonal specific
+su <- su %>%
+filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
+
+bgc.unique <- unique(su$bgc)
+ss.unique <- su %>% select(SiteUnit, bgc) %>% distinct
+
+ becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/GitHub/BECMaster_Cleaning/updated_vpro/BECMaster_fixing.accdb;")
+plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
+dbDisconnect(becmaster)
+
+```
+
+### Evaluate site series within each BGC
+
+1.  Identify site series that have fewer than 5 plots (difficult to quantitatively analyse)
+
+2.  Identify site series that have low diagnostic potential (review units for membership consistency).
+
+3.  Compare site series within each BGCs to identify site series below the minimal threshold to separate
+
+```{r build pair.wise similarity matrix, echo=FALSE}
+
+key.site.indicators <- c("LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG")#,  "TIARELLA", "DRYOEXP" )
+reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
+# reduced.lifeforms = c(1,2)
+reduced.lifeforms <- c(9, 10, 11)
+### select units to run
+su2 <- su
+
+vegsum.pairs <- do_pairwise(veg.dat2,
+  su = su2, minimportance = 0, minconstancy = 60,
+  noiseconstancy = 10,
+  minplots = 1,
+  covadj = .33, domcov = 10, minor = 1,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  reduced.exceptions = reduced.exceptions
+)
+
+xx <- vegsum.pairs %>%
+  filter(Unit1 == "CWHvm1_103", Unit2 == "CWHvm1_103->111.2")
+
+unit.compare <- vegsum.pairs %>%
+  select(Unit1, Unit2, BEC.sim, diff.ratio.x, diff.ratio.y, nplots.x, nplots.y,
+         unit.diag.sum.x, unit.diag.sum.y) %>% filter(nplots.x>0) %>%
+  mutate(BEC.sim = round(BEC.sim, 2)) %>% 
+ distinct()
+unit.compare$bgc1 <- stringr::word(unit.compare$Unit1, 1, sep = "\\_")
+unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
+
+yy <- vegsum.pairs %>% 
+  select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, shared.diag, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, diff.ratio,diff.ratio.mean, BEC.sim) %>% 
+  filter(Unit1 == "CWHvm1_111.1", Unit2 == "CWHvm1_101->111.1")
+
+```
+
+```{r site series with too few plots, echo=FALSE}
+#| label: tab-too-few-plots
+#| tbl-cap: "Site Units with Fewer than 5 Plots"
+#| tbl-cap-location: top
+#| warning: false
+#| tbl-align: "left"
+
+compared <- unit.compare %>% filter(bgc1 == bgc2)
+ss_too.few1 <- compared %>%
+  select(Unit1, nplots.x) %>% 
+  filter(nplots.x < 5, nplots.x>0) %>% 
+  rename("Number of Plots" = nplots.x, "Site Unit" = Unit1) %>% 
+  distinct()
+ss_too.few2 <- compared %>%
+  select(Unit2, nplots.y) %>% 
+  filter(nplots.y < 5, nplots.y>0) %>% 
+  rename("Number of Plots" = nplots.y, "Site Unit" = Unit2) %>% 
+  distinct()
+ss_too.few <- rbind(ss_too.few1, ss_too.few2) %>% distinct() %>% arrange(`Site Unit`)
+# low.num <- gt::as_gtable(gt::gt(ss_too.few) %>% gt::fmt_number(decimals = 0)|> gt::tab_options(table.font.size = 10), plot = TRUE)
+
+gt::gt(ss_too.few) %>% gt::fmt_number(decimals = 0)|> gt::tab_options(table.font.size = 10)
+```
+
+```{r site series with low diagnostic potential, echo=FALSE}
+#| label: tab-low-diagnostic
+#| tbl-cap: "Site Units with Low Diagnostic Potential"
+#| tbl-cap-location: top
+#| warning: false
+#| tbl-align: "left"
+ss_low.diag1 <- compared %>%
+  select(Unit1, unit.diag.sum.x)  %>%  distinct() %>%
+  filter(unit.diag.sum.x < 30, unit.diag.sum.x >0) %>% 
+  rename("Diagnostic Potential" = unit.diag.sum.x, "Site Unit" = Unit1) %>%
+  distinct()
+ss_low.diag2 <- compared %>%
+  select(Unit2, unit.diag.sum.y)  %>% 
+  filter(unit.diag.sum.y <30, unit.diag.sum.y >0) %>% 
+  rename("Diagnostic Potential" = unit.diag.sum.y, "Site Unit" = Unit2) %>%
+  distinct()
+ss_low.diag <- rbind(ss_low.diag1, ss_low.diag2) %>% distinct()
+# low.diag.pot <- gt::as_gtable(gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10), plot = TRUE)
+gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10)
+# require(gridExtra)
+# grid.arrange(low.num, low.diag.pot, ncol = 2)
+```
+
+```{r site units that are too similar, echo=FALSE}
+#| label: tab-sites-similar
+#| tbl-cap: "Site Series pairs with poor differentiation"
+#| tbl-cap-location: top
+#| warning: false
+#| tbl-align: "left"
+ss_similar <- compared %>%
+  select(Unit1, Unit2, BEC.sim) %>%
+  dplyr::filter(BEC.sim >= .93) %>% mutate(Units = paste0(Unit1, " vs ", Unit2)) %>%
+  select(-Unit2, -Unit1) %>% 
+  rename("Similarity" = BEC.sim, "Site Units" = Units) %>%
+  distinct() 
+# low.diff <- gt::as_gtable((gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) |> gt::cols_width(Site.Units ~ gt::px(250))), plot = TRUE, text_grob = gridtext::richtext_grob)
+gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) 
+```
+
+## Dendrogram of cluster analysis by BGC
+
+The dendrogram is an approximate representation of the similarity matrix. It is constructed using agglomerative hierarchical clustering which merges site units from the bottom up.
+
+The green line represents the dissimilarity threshold for an association. Site unit 'leaves' to the right of this threshold will fall under the same association in the hierarchy. Current threshold is set at 17% but assessment is required. The red line represents the minimal dissimilarity required to separate units into different site series. Any splits to the right of the red line should be considered for merging into the same site series (possibly as phases). Current threshold is set at 6% but assessment is required. Splits that occur between the green association threshold and the red minimum threshold will likely be merged at the subassociation level in the hierarchy.
+
+```{r cluster analysis, echo=FALSE}
+#bgc.unique <- c("CDFmm", "CWHvm3")
+for (bgc.choose in bgc.unique){
+  create_dendro_bybgc(bgc.choose, unit.compare, threshold.low = .07, threshold.high = .18)
+}
+```
+
+
+###Build edatopic table
+
+```{r build edatopic table, echo=FALSE}
+
+#bgc.choose <- "CWHvm1"
+draw_ss_edatope(plot.env, su, bgc.choose = bgc.unique)
+```
+
+## Generate formatted table summary report for BGC
+
+```{r association sum table, echo=FALSE}
+#for(bgc.choose in bgc.list){
+vegdata <- readRDS('./clean_data/Reports_BECMaster_Veg.rds')
+veg.dat2 <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE)
+BGC <- "ICHmw1"
+#for(bgc.choose in bgc.unique){
+  vegSum <- 
+  create_veg_sum(vdat = veg.dat2, siteUnits = su , BGC = bgc.choose, strata.by = "Layer")
+##determine order of species by unit
+indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su, BGC = bgc.choose)
+veg.sum.table <- format_veg_table(vsum = vegSum, spp = taxon.lifeform)
+
+veg.sum.gt <- gt::gt(veg.sum.table) |> gt::tab_options(table.font.size = 8)|> gt::tab_style(
+    style = gt::cell_text(font = gt::google_font(name = "wingdings")),
+    locations = gt::cells_body(columns = 4:(ncol(veg.sum.table))-1, rows = 2:nrow(veg.sum.table))) |>  gt::tab_style(
+    style = gt::cell_text(weight = "bold"),
+    locations = gt::cells_body(rows =1)) |>
+  gt::tab_header(
+    title = paste0(bgc.choose),
+    subtitle = paste("Summary Vegetation Table")
+  )
+#     veg.sum.gt2 <- gt::as_latex(veg.sum.gt)
+# view_pdf(veg.sum.gt2)
+print(veg.sum.gt)
+#}
+```

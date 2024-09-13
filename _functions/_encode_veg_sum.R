@@ -4,10 +4,10 @@ encode_veg_sum <- function(coverage, constancy) {
   grey <- 'l'
   star <- 'v'
   char <- black
-  if (constancy < 80) {
+  if (constancy < 70) {
     char <- grey
   } 
-  if (constancy <= 60) {
+  if (constancy <= 50) {
     char <- star
   }
   color = "remove"

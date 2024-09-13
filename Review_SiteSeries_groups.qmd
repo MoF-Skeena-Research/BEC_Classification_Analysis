@@ -1,0 +1,217 @@
+---
+title: "Review of LMH 77 Highbench by BGC"
+author: "William H MacKenzie"
+date: "06/09/2024"
+format: 
+  pdf: 
+    documentclass: scrartcl
+    papersize: letter
+editor: visual
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(DBI)
+require(data.table)
+require(cluster)
+require(dendextend)
+require(dynamicTreeCut)
+require(gtable)
+require(gtsummary)
+require(colorspace)
+require(openxlsx)
+require(tictoc)
+require(labdsv)
+require(indicspecies)
+require(Polychrome)
+require(ggdendro)
+require(purrr)
+require(ggplotify)
+require(grid)
+set.seed(1279)
+source("./_functions/_bec_dist.R")
+source("./_functions/_bec_dist_matrix.R")
+source("./_functions/_lump_species.R")
+source("./_functions/_lump_species2.R")
+source("./_functions/_create_su_vegdata.R")
+source("./_functions/_create_analysis_vegsum.R")
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+source("./_functions/_add_vars.R")
+source("./_functions/_do_pairwise.R")
+source("./_functions/_create_diagnostic_veg.R")
+source("./_functions/_return_similar_pairs.R")
+source("./_functions/_read_sppmaster.R")
+source("./_functions/_combined_su.R")
+source("./_functions/_create_veg_sum.R")
+#source('./_functions/_create_veg_sum2.R')
+source('./_functions/_build_species_ordering.R')
+source('./_functions/_format_veg_table.R')
+source('./_functions/_format_veg_table2.R')
+source('./_functions/_encode_veg_sum.R')
+source('./_functions/_create_dendro.R')
+source('./_functions/_create_dendro_all.R')
+source('./_functions/_create_dendro_bybgc.R')
+source('./_functions/_draw_dendro_split.R')
+```
+
+#### Read in data
+
+Vegetation data is read in from saved .RDS file generated from the BECMaster cleaning scripts. A compiled SU table is build from all BGC \_SU tables stored in the coast guide Vpro database. Taxonomy is read in from the species taxonomy database. A species lumping code table is read in from the Correlation2_Spp_lump.accdb database and the vegetation data is lumped using the lump_species function.
+
+```{r load data, echo=FALSE}
+veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
+taxon.all <- read_sppmaster()
+taxon.lifeform <- taxon.all %>%
+  filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
+  dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
+  distinct()
+veglump <- dbConnect(
+  odbc::odbc(),
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
+lump <- dbReadTable(veglump, "CorrelationII_Lump")
+dbDisconnect(veglump)
+veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
+db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
+su <- combined_su(db)
+su <- su %>%
+  filter(!grepl('poor|low|-S|add|nudum', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+#   filter(grepl('01', SiteUnit)) ###zonal specific
+su <- su %>%
+filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
+
+bgc.unique <- unique(su$bgc)
+ss.unique <- su %>% select(SiteUnit, bgc) %>% distinct
+ss.count <- length(ss.unique$SiteUnit)
+ becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/GitHub/BECMaster_Cleaning/updated_vpro/BECMaster_fixing.accdb;")
+plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
+dbDisconnect(becmaster)
+
+```
+
+### Evaluate site series within each BGC
+
+1.  Identify site series that have fewer than 5 plots (difficult to quantitatively analyse)
+
+2.  Identify site series that have low diagnostic potential.
+
+3.  Compare site series within each BGCs to identify site series below the minimal threshold to separate
+
+```{r build pair.wise similarity matrix, echo=FALSE}
+
+key.site.indicators <- c("LYSIAME", "OPLOHOR", "GAULSHA", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN")#, "TIARELLA", "DRYOEXP" )
+reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
+# reduced.lifeforms = c(1,2)
+reduced.lifeforms <- c(9, 10, 11)
+### select units to run
+su2 <- su
+
+# Fh <- fread("D:/BC_Correlation2_Vpro_2023/Highbench_siteseries.csv")
+# Fh <- Fh %>%
+#   mutate(highbench_ss = str_replace_all(string = highbench_ss,
+#                                         pattern = " ", repl = "")) %>%
+#   mutate(highbench_ss = str_replace_all(string = highbench_ss,
+#                                         pattern = "/", repl = "_")) #%>%
+#   #filter(!upland %in% "x")
+# su2 <- su2 %>%
+#   filter(SiteUnit %in% Fh$highbench_ss)
+
+vegsum.pairs <- do_pairwise(veg.dat2,
+  su = su2, minimportance = 0.1, minconstancy = 60,
+  noiseconstancy = 10,
+  minplots = 1,
+  covadj = .33, domcov = 10, minor = 1,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  reduced.exceptions = reduced.exceptions
+)
+
+xx <- vegsum.pairs %>%
+  filter(Unit1 == "CWHws2_112a", Unit2 == "CWHws2_112b")
+
+unit.compare <- vegsum.pairs %>%
+  select(Unit1, Unit2, BEC.sim,diff.ratio.x, diff.ratio.y, diff.ratio,diff.ratio.mean, diff.ratio.min, nplots.x, unit.diag.sum.x) %>% filter(nplots.x>0) %>% 
+ distinct()
+unit.compare$bgc1 <- stringr::word(unit.compare$Unit1, 1, sep = "\\_")
+unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
+
+yy <- vegsum.pairs %>% 
+  select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, diff.ratio,diff.ratio.mean, diff.ratio.min) %>% 
+  filter(Unit1 == "CWHws2_101", Unit2 == "CWHws2_110")
+
+```
+
+```{r site series with too few plots, echo=FALSE}
+#| label: tab-too-few-plots
+#| fig-cap: "Site Units with Fewer than 5 Plots"
+#| warning: false
+#| fig-align: "left"
+
+compared <- unit.compare %>% filter(bgc1 == bgc2)
+ss_too.few <- compared %>%
+  select(Unit1, nplots.x) %>% 
+  filter(nplots.x < 5) %>% 
+  rename("Number of Plots" = nplots.x, "Site Unit" = Unit1) %>% 
+  distinct()
+# low.num <- gt::as_gtable(gt::gt(ss_too.few) %>% gt::fmt_number(decimals = 0)|> gt::tab_options(table.font.size = 10), plot = TRUE)
+
+gt::gt(ss_too.few) %>% gt::fmt_number(decimals = 0)|> gt::tab_options(table.font.size = 10)
+```
+
+```{r site series with low diagnostic potential, echo=FALSE}
+#| label: tab-low-diagnostic
+#| fig-cap: "Site Units with Low Diagnostic Potential"
+#| warning: false
+#| fig-align: "left"
+ss_low.diag <- compared %>%
+  select(Unit1, unit.diag.sum.x)  %>% 
+  filter(unit.diag.sum.x < 30) %>% 
+  rename("Diagnostic Potential" = unit.diag.sum.x, "Site Unit" = Unit1) %>%
+  distinct()
+# low.diag.pot <- gt::as_gtable(gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10), plot = TRUE)
+gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10)
+# require(gridExtra)
+# grid.arrange(low.num, low.diag.pot, ncol = 2)
+```
+
+```{r site units that are too similar, echo=FALSE}
+#| label: tab-sites-similar
+#| tbl-cap: "Site Series with poor differentiation"
+#| tbl-cap-location: top
+#| warning: false
+#| tbl-align: "left"
+ss_similar <- compared %>%
+  select(Unit1, Unit2, diff.ratio.min) %>%
+  dplyr::filter(diff.ratio.min >= .93) %>% mutate(Unit1 = paste0(Unit1, " vs ", Unit2)) %>%
+  select(-Unit2) %>% 
+  rename("Similarity" = diff.ratio.min, "Site Units" = Unit1) %>%
+  distinct() 
+# low.diff <- gt::as_gtable((gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) |> gt::cols_width(Site.Units ~ gt::px(250))), plot = TRUE, text_grob = gridtext::richtext_grob)
+gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) 
+```
+
+## Dendrogram of cluster analysis by BGC
+
+The dendrogram is an approximate representation of the similarity matrix. It is constructed using agglomerative hierarchical clustering which merges site units from the bottom up.
+
+The green line represents the dissimilarity threshold for an association. Currently set at 20% but some ; site unit 'leaves' to the right of this threshold will fall under the same association in the hierarchy.
+
+Splits between the association threshold and the red minimum threshold are subassociation level divisions.
+
+Any splits to the right of the red line should be considered for merging into the same site series.
+
+```{r cluster analysis, echo=FALSE}
+
+create_dendro_all(unit.compare)
+
+#bgc.unique <- c("CDFmm", "CWHvm3")
+# for (bgc.choose in bgc.unique){
+#   create_dendro_bybgc(bgc.choose, unit.compare)
+# }
+```
+```{r split dendrogram, echo=FALSE}
+
+draw_dendro_split(unit.compare, cut=.2)
+```
+

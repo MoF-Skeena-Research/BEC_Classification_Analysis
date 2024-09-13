@@ -2,7 +2,7 @@
 
 format_veg_table2 <- function(vsum = vegSum, spp = species){
   #create new variable Species2 in vegSum from Species and Layer
-  vsum <- vsum %>% mutate(Layer = as.character(Layer))
+  vsum <- vsum %>% mutate(Layer = as.character(Lifeform))
   vsum$Layer <-  case_match(vsum$Layer, "1" ~ "Tree",
                              "2" ~ "Tree",
                              "3" ~ "Shrub",
@@ -17,8 +17,7 @@ format_veg_table2 <- function(vsum = vegSum, spp = species){
                             "12" ~ "Herb")
   vsum$Species2 <- paste0(vsum$Species, "_", vsum$Layer)
   vsum[ , code := encode_veg_sum(MeanCov, Constancy), by = .(Species2, SiteUnit)]
-  vsum <- vsum %>% merge(spp, by.x = 'Species', by.y = 'Code') |>
-    mutate(SiteUnit = str_replace(SiteUnit, "101", "109"))
+  vsum <- vsum %>% merge(spp, by.x = 'Species', by.y = 'Code') 
   #merge(spp, by.x = 'Species', by.y = 'Code') |>
   #mutate(SiteUnit = str_replace(SiteUnit, "101", "109"))
   nPlots <- unique(vsum[ ,.(SiteUnit, nplots)])[order(nplots, decreasing = TRUE), ] %>% 
@@ -48,12 +47,10 @@ format_veg_table2 <- function(vsum = vegSum, spp = species){
   vsum <- vsum[ order(match(vsum$Scientific, indic.order$ScientificName)), ]
   
   vsum2 <-   vsum %>% select(order(colnames(vsum))) %>%  
-    left_join(lifeform, by = c("Scientific name" = "ScientificName")) %>% 
-    mutate(Layer = ifelse((Layer == "Shrub" & Lifeform %in% c(1,2)), "Regen", Layer)) %>% select(Layer, `Scientific name`, everything()) %>% select(-Lifeform) %>% 
+   select(Layer, `Scientific name`, everything()) %>% 
     relocate(`Common name`, .after = last_col()) %>%
     arrange(match(Layer, c("Tree", "Regen", "Shrub", "Herb", "Moss")), Layer)
   
-  colnames(vsum2) <- gsub("_109|_101", "",colnames(vsum2))
   #colnames(vsum2) <- gsub(paste0(bgc.choose,"?"), "", colnames(vsum2))
   nPlotRow <- c('', 'n Plots', nPlots$nplots, '') |> 
     matrix(nrow = 1) |>
