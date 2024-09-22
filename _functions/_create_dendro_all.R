@@ -1,4 +1,4 @@
-create_dendro_all <- function(unit.compare){
+create_dendro_all <- function(unit.compare, threshold.low = .1, threshold.high = .2){
   compared <- unit.compare 
   dis.matrix <- bec_dist_matrix(compared) 
   ss_clst <- agnes(dis.matrix,
@@ -18,27 +18,20 @@ create_dendro_all <- function(unit.compare){
     ) +
     geom_text(data = label(hcdata), 
               aes(x = x, y = y, label = label, hjust = 0), 
-              size = 2
+              size = 3
     ) +
-    geom_hline(yintercept = .07, linetype = "dashed", color = "red")+
+    geom_hline(yintercept = threshold.low, linetype = "dashed", color = "red")+
     
     
-    geom_hline(yintercept = .2, linetype = "dashed", color = "green")+
-    
-    geom_hline(yintercept = .4, linetype = "dashed", color = "darkgreen")+
-    geom_hline(yintercept = .6, linetype = "dashed", color = "blue")+
-    geom_hline(yintercept = .8, linetype = "dashed", color = "purple")+
+    geom_hline(yintercept = threshold.high, linetype = "dashed", color = "darkgreen")+
     # add value label to hline
-    geom_text(aes(x = 0, y = .07, label = "7%", hjust = 0), angle = 90,color = "red", size = 3)+
-    geom_text(aes(x = 0, y = .2, label = "20%", hjust = 0), angle = 90, color = "green", size = 3)+
+    geom_text(aes(x = 0, y = (threshold.low+0.02), label = paste0((threshold.low*100),"%"), hjust = 0), angle = 90,color = "red", size = 3)+
+    geom_text(aes(x = 0, y = (threshold.high+0.02), label = paste0((threshold.high*100),"%"), hjust = 0), angle = 90, color = "darkgreen", size = 3)+
     
     # add label to graph 
     geom_text(data=coph_annotation, aes( x=x, y=y, label=label), 
               color="black", 
               size=3 , angle=0, fontface="bold" ) +
-    # annotate(cophenetic, x = .1, y = .1,
-    #      label = "Cophonetic" , color="orange",
-    #       size=7 , angle=0, fontface="bold")+
     coord_flip()+
     scale_y_reverse(limits = c(1, -.3))+
     labs(x = "", y = "Difference")+

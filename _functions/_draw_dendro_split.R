@@ -1,5 +1,5 @@
 
-draw_dendro_split <- function(unit.compare, cut=NULL){
+draw_dendro_split <- function(unit.compare, cut.level=NULL){
   singles.count = 0
   singles.list = data.frame(SiteUnit = character(), stringsAsFactors = FALSE)
   new.unit <- data.frame(SiteUnit = character(), stringsAsFactors = FALSE)
@@ -11,7 +11,7 @@ draw_dendro_split <- function(unit.compare, cut=NULL){
   dendro_hc <- as.hclust(ss_clst)
   dendro_hc.dend <- as.dendrogram(dendro_hc)
   if (!is.null(cut)){
-    dendro_hc.dend <- cut(dendro_hc.dend, h = cut)
+    dendro_hc.dend <- cut(dendro_hc.dend, h = cut.level)
   }
   n <- length(dendro_hc.dend$lower)
   for (i in 1:n){
@@ -39,10 +39,10 @@ draw_dendro_split <- function(unit.compare, cut=NULL){
       geom_hline(yintercept = .07, linetype = "dashed", color = "red")+
       
       
-      geom_hline(yintercept = .2, linetype = "dashed", color = "green")+
+      geom_hline(yintercept = cut.level, linetype = "dashed", color = "green")+
       # add value label to hline
       geom_text(aes(x = 0, y = .07, label = "7%", hjust = 0), angle = 90,color = "red", size = 3)+
-      geom_text(aes(x = 0, y = .2, label = "20%", hjust = 0), angle = 90, color = "green", size = 3)+
+      geom_text(aes(x = 0, y = cut.level, label = paste0(cut.level,"%"), hjust = 0), angle = 90, color = "green", size = 3)+
       
       # add label to graph 
       # geom_text(data=coph_annotation, aes( x=x, y=y, label=label), 
@@ -56,10 +56,10 @@ draw_dendro_split <- function(unit.compare, cut=NULL){
       labs(x = "", y = "Difference")+
       theme_minimal()+
       theme(axis.text.y=element_blank(), axis.title.y = element_blank())+
-      ggtitle(paste0("Cluster Dendrogram of Site Units: branch ", i, " at hcut = ", cut))
+      ggtitle(paste0("Cluster Dendrogram of Site Units: branch ", i, " at hcut = ", cut.level))
     print(yy)
   }
   print(paste0("The total number of site units is ", ss.count))
-  print(paste0("The number of singles at hcut ", cut, " is ", singles.count))
+  print(paste0("The number of singles at hcut ", cut.level, " is ", singles.count))
  return(singles.list)
 }
