@@ -106,11 +106,13 @@ gt::gt(su.too.few) %>% gt::fmt_number(decimals = 0)|> gt::tab_options(table.font
 Performed on base site units or hierarchical units. The function 'do_pairwise' applies a new similarity measure that balances the value of constancy and mean cover differences between units. This comparison starts with previously classification and reviewed site series as working units. Only species with high constancy in one of the units is used in the analysis. Key site indicators can be given higher importance The diagnostic value of non-vasculars is reduced but taxonomy exceptions can be assigned Returns a table of units with high similarity. Produce output table for review where units have low diagnostic potential (usually a function of heterogenous units in forest types) or high variability in plot membership
 
 ```{r build pair.wise assocs}
-key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL", "POLYMUN", "TIARTRI",
-                         "ATHYFIL", "GYMNDRY",                       "CLADINA", "SPHAGNUM")
-reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR")
-reduced.lifeforms <- c(9, 10, 11)
+# key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL", "POLYMUN", "TIARTRI",
+#                          "ATHYFIL", "GYMNDRY",                       "CLADINA", "SPHAGNUM")
+# reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR")
 
+key.site.indicators <- c("PICESIT", "POPUTRI", "LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG")#,  "TIARELLA", "DRYOEXP" )
+reduced.lifeforms <- c(9, 10, 11)
+reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
 
 vegsum.pairs <- do_pairwise(veg.dat2,
   su = su, minimportance = 0.1, minconstancy = 60,
@@ -152,7 +154,7 @@ gt::gt(cophonentic) %>% gt::fmt_number(decimals = 2) |>
 
 ```{r association cluster, warning=FALSE}
 dend <- dendro_hc %>% as.dendrogram 
-cut.ht <- 0.20
+cut.ht <- 0.2
 cluster_grps <- cutreeHybrid(dendro_hc, distM = dis.matrix, cutHeight = cut.ht,
                            minClusterSize = 2, deepSplit = 2)
 # cluster_grps <- cutreeDynamicTree(dendro_hc, maxTreeHeight = .1, minModuleSize = 2)
@@ -164,12 +166,12 @@ clusters <- assocs[order.dendrogram(dend)] %>% data.frame %>% rename("clusters" 
 su_grps <- su_grps$SiteUnit[order.dendrogram(dend)] %>% as.data.frame %>% rename("SiteUnit" = 1) %>% cbind(., clusters) %>% mutate(clusters = as.character(clusters))
 ###build colours for clusters
 clusters_numbers <- (unique(clusters)) # - (0 %in% clusters)
-n_clusters <- length(unique(assocs))-1
+n_clusters <- length(unique(assocs))#-1
 #cols <- colorspace::diverging_hcl(n_clusters, palette = "Vik")
 cols = createPalette(n_clusters,  c("#ff0000", "#00ff00", "#0000ff"))
 #swatch(cols)
 #cols <- pals::polychrome(n_clusters)
-#cols[cols = 0] <- "black"
+cols[cols = 0] <- "black"
 cluster.cols <- cbind(clusters_numbers, cols) %>% as.data.frame %>% mutate(clusters = as.character(clusters)) %>% mutate(cols = ifelse(clusters_numbers == 0, "black", cols))
 ## dendrogram ordered site units with colours
 su_grps <- left_join(su_grps, cluster.cols)
@@ -235,13 +237,13 @@ su.ass <- left_join(su, su_grps) %>% filter(!is.na(clusters)) %>% mutate(assocs 
 assoc.list <- unique(su.ass$assocs)
 su.ass <- su.ass %>% arrange(assocs)
 ###Dels
-cluster.choose <- c("22")
+assoc.choose <- c("22")
 #multi.gt <- gt::gt_group()
 #for(assoc.choose in assoc.list){
 vegSum <- 
   create_veg_sum_assoc(vdat = veg.dat2, siteUnits = su.ass , Assoc = assoc.choose, strata.by = "Lifeform")
 ##determine order of species by unit
-indic.order <- build_species_ordering_hier(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.ass, cluster = cluster.choose)
+indic.order <- build_species_ordering_hier(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.ass, cluster = assoc.choose)
 veg.sum.table <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 
 veg.sum.gt <- gt::gt(veg.sum.table) |> gt::tab_options(table.font.size = 8)|> gt::tab_style(

@@ -100,7 +100,7 @@ dbDisconnect(becmaster)
 
 ```{r build pair.wise similarity matrix, echo=FALSE}
 
-key.site.indicators <- c("LYSIAME", "OPLOHOR", "GAULSHA", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN")#, "TIARELLA", "DRYOEXP" )
+key.site.indicators <- c("PICESIT", "POPUTRI", "LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG")#,  "TIARELLA", "DRYOEXP" )
 reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
 # reduced.lifeforms = c(1,2)
 reduced.lifeforms <- c(9, 10, 11)
@@ -210,8 +210,8 @@ create_dendro_all(unit.compare)
 #   create_dendro_bybgc(bgc.choose, unit.compare)
 # }
 ```
+
 ```{r split dendrogram, echo=FALSE}
 
 draw_dendro_split(unit.compare, cut=.2)
 ```
-
