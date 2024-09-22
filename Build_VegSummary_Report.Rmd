@@ -14,6 +14,7 @@ source("./_functions/_TreetoTable.R")
 source("./_functions/_TabletoTree.R")
 require(labdsv)
 require(indicspecies)
+source("./_functions/_read_sppmaster.R")
 ```
 
 #### Import becdb
@@ -50,13 +51,19 @@ conL <- DBI::dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Acc
 DBQ=Vpro/CoastGuide_Spp_Lump.accdb;")
 lump <- DBI::dbReadTable(conn = conL, name = 'CoastGuide2023_Lump')
 data.table::setDT(lump)
-species <- DBI::dbReadTable(conn = conL, name = 'SpeciesNames')
-data.table::setDT(species)
-lifeform <- species[ Codetype == 'U', .(ScientificName, Lifeform)] |> 
-  unique()
-species <- species[ Codetype == 'U', .(Code, EnglishName, ScientificName)] |> 
-  unique()
+# species <- DBI::dbReadTable(conn = conL, name = 'SpeciesNames')
+# data.table::setDT(species)
+# lifeform <- species[ Codetype == 'U', .(ScientificName, Lifeform)] |> 
+#   unique()
+# species <- species[ Codetype == 'U', .(Code, EnglishName, ScientificName)] |> 
+#   unique()
 rm(conL)
+
+taxon.all <- read_sppmaster()
+taxon.lifeform <- taxon.all %>%
+  filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
+  dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
+  distinct()
 ```
 
 ## Import site unit tables
@@ -119,11 +126,10 @@ bgc.list = c("CDFmm", "CWHds2", "CWHmm1", "CWHmm2", "CWHws1", "CWHws2",
 bgc.list = c("CWHds1", "CWHms1", "CWHms2", "CWHms3", "MHmm1",
 "MHmm2", "MHws", "MHvh")
 ### Allen's
-# bgc.list = c("CWHvh1", "CWHvh2", "CWHvm1", "CWHvm2", "CWHvm3",
-# "CWHvm4", "CWHwm")
+bgc.list = c("CWHvh1", "CWHvh2", "CWHvm1", "CWHvm2", "CWHvm3", "CWHvm4", "CWHwm")
 #bgc.list = c("CDFmm")
 SU <- SU %>% arrange(bgc)
-#bgc.choose = "CDFmm"
+bgc.choose = "CWHvh1"
 vegsum.wbk <- createWorkbook()
 tic()
 for(bgc.choose in bgc.list){
@@ -131,7 +137,7 @@ vegSum <-
   create_veg_sum(vdat = vegData, siteUnits = SU , BGC = bgc.choose, strata.by = "Layer")
 ##determine order of species by unit
 indic.order <- build_species_ordering(vdat = vegData, vsum = vegSum, code.lump=lump, siteUnits = SU, BGC = bgc.choose)
-veg.sum.table <- format_veg_table(vsum = vegSum)
+veg.sum.table <- format_veg_table(vsum = vegSum, spp=taxon.lifeform)
 openxlsx::addWorksheet(vegsum.wbk, sheetName = bgc.choose)
 openxlsx::writeData(vegsum.wbk, sheet = bgc.choose, veg.sum.table) 
 }
