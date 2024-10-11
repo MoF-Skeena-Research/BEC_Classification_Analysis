@@ -273,16 +273,16 @@ do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 60,
   ), by = .(Unit1, Unit2)]
 
   vegsum.pairs[, `:=`(
-    diff.ratio.mean = (diff.ratio.x + diff.ratio.y) / 2,
+    BEC.sim.mean = (diff.ratio.x + diff.ratio.y) / 2,
     diff.ratio.min = pmin(diff.ratio.x, diff.ratio.y),
-    BEC.sim = pmin(diff.ratio.x, diff.ratio.y)
+    BEC.sim.min = pmin(diff.ratio.x, diff.ratio.y)
   ), by = .(Unit1, Unit2)]
   # Ungroup the data.table
   vegsum.pairs <- vegsum.pairs[, .SD, .SDcols = names(vegsum.pairs)]
   vegsum.pairs <- vegsum.pairs %>%
     # dplyr::select(-EnglishName.x, -EnglishName.y, -ScientificName.x, -ScientificName.y) %>%
     dplyr::select(
-      Unit1, Unit2, BEC.sim, diff.ratio, diff.ratio.mean,
+      Unit1, Unit2, BEC.sim.min, BEC.sim.mean, diff.ratio,
       unit.diag.sum.x, unit.diag.sum.y, everything()
     )
   return(vegsum.pairs)

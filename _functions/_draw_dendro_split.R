@@ -34,7 +34,7 @@ draw_dendro_split <- function(unit.compare, cut.level=NULL){
       ) +
       geom_text(data = label(hcdata), 
                 aes(x = x, y = y, label = label, hjust = 0), 
-                size = 2
+                size = 3
       ) +
       geom_hline(yintercept = .07, linetype = "dashed", color = "red")+
       
@@ -59,7 +59,7 @@ draw_dendro_split <- function(unit.compare, cut.level=NULL){
       ggtitle(paste0("Cluster Dendrogram of Site Units: branch ", i, " at hcut = ", cut.level))
     print(yy)
   }
-  print(paste0("The total number of site units is ", ss.count))
+  #print(paste0("The total number of site units is ", ss.count))
   print(paste0("The number of singles at hcut ", cut.level, " is ", singles.count))
  return(singles.list)
 }

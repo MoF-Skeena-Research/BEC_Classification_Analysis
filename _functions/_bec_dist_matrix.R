@@ -1,6 +1,7 @@
 bec_dist_matrix <- function(vegsum.pairs) {
   dis.matrix1 <- as.data.frame(vegsum.pairs) |>
-    dplyr::mutate(diss = 1 - BEC.sim) |>
+   dplyr::mutate(diss = 1 - BEC.sim.min) |>
+    #dplyr::mutate(diss = 1 - BEC.sim.mean) |>
     dplyr::mutate(Unit1 = as.character(Unit1)) |>
     dplyr::select(Unit1, Unit2, diss) |>
     dplyr::distinct() |>

@@ -1,4 +1,4 @@
-create_dendro_all <- function(unit.compare, threshold.low = .1, threshold.high = .2){
+create_dendro_all <- function(unit.compare, threshold.low = .1, cut.level = .2){
   compared <- unit.compare 
   dis.matrix <- bec_dist_matrix(compared) 
   ss_clst <- agnes(dis.matrix,
@@ -11,7 +11,7 @@ create_dendro_all <- function(unit.compare, threshold.low = .1, threshold.high =
   cophenetic ## 0.891 this value shows how well the clusters align with the data
   # ### >0.7 is considered good
   coph_annotation <- data.frame(x = 9, y=.85, label = paste0("Cophenetic:",cophenetic))
-  hcdata <- dendro_data(dendro_hc, type = "rectangle")
+  hcdata <- ggdendro::dendro_data(dendro_hc, type = "rectangle")
   yy <- ggplot() +
     geom_segment(data = segment(hcdata), 
                  aes(x = x, y = y, xend = xend, yend = yend)
@@ -23,10 +23,10 @@ create_dendro_all <- function(unit.compare, threshold.low = .1, threshold.high =
     geom_hline(yintercept = threshold.low, linetype = "dashed", color = "red")+
     
     
-    geom_hline(yintercept = threshold.high, linetype = "dashed", color = "darkgreen")+
+    geom_hline(yintercept = cut.level, linetype = "dashed", color = "darkgreen")+
     # add value label to hline
     geom_text(aes(x = 0, y = (threshold.low+0.02), label = paste0((threshold.low*100),"%"), hjust = 0), angle = 90,color = "red", size = 3)+
-    geom_text(aes(x = 0, y = (threshold.high+0.02), label = paste0((threshold.high*100),"%"), hjust = 0), angle = 90, color = "darkgreen", size = 3)+
+    geom_text(aes(x = 0, y = (cut.level+0.02), label = paste0((cut.level*100),"%"), hjust = 0), angle = 90, color = "darkgreen", size = 3)+
     
     # add label to graph 
     geom_text(data=coph_annotation, aes( x=x, y=y, label=label), 
