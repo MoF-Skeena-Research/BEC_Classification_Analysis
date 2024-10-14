@@ -1,0 +1,287 @@
+---
+title: "Zonal Correlation Analysis"
+author: "William H MacKenzie"
+date: "27/08/2024"
+format: 
+  pdf: 
+    documentclass: scrartcl
+    papersize: letter
+editor: visual
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(DBI)
+require(data.table)
+require(cluster)
+require(dendextend)
+require(dynamicTreeCut)
+require(gtable)
+require(colorspace)
+set.seed(1279)
+source("./_functions/_bec_dist.R")
+source("./_functions/_bec_dist_matrix.R")
+source("./_functions/_lump_species.R")
+source("./_functions/_create_su_vegdata.R")
+source("./_functions/_create_analysis_vegsum.R")
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+source("./_functions/_add_vars.R")
+source("./_functions/_do_pairwise.R")
+source("./_functions/_create_diagnostic_veg.R")
+source("./_functions/_return_similar_pairs.R")
+source("./_functions/_read_sppmaster.R")
+source("./_functions/_combined_su.R")
+```
+
+# Correlation of BGC zonal vegetation
+
+Test of existing subzone variant groupings using BEC correlation process. Works reasonably well in identifying lower groups but sometimes it seems like subzone group branches are misassigned to expected higher groupings. Generally the clustering matches the expected groupings when tree species and other key climate indicators are emphasized in the analysis.
+
+#### Read in data
+
+Vegetation data is read in from saved .RDS file generated from the BECMaster cleaning scripts. Taxonomy is read-in from the species taxonomy database. A species lumping table is read-in from a Vpro database and applied to the vegetation data. The species taxonomy is joined to the vegetation data.
+
+```{r load data}
+veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
+veg.dat2 <- veg.dat
+taxon.all <- read_sppmaster()
+taxon.lifeform <- taxon.all %>%
+  filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
+  dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
+  distinct()
+x <- veg.dat2 %>% filter(Species %in% "PSEUMEN1")
+veglump <- dbConnect(
+  odbc::odbc(),
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
+lump <- dbReadTable(veglump, "CorrelationII_Lump")
+dbDisconnect(veglump)
+veg.dat2 <- lump_species(vegdata = veg.dat2, lump, use.subtaxa = TRUE)
+```
+
+Project SU tables (e.g. BGC_SU for a LMH) are read-in from regional databases and combined into a project specific table. Then the zonal units are selected for the analysis.
+
+```{r read in SU data}
+db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
+su <- combined_su(db)
+db <- "D:/BC_Correlation2_Vpro_2023/SIFR_LMH_SU.accdb"
+su2 <- combined_su(db)
+db <- "D:/BC_Correlation2_Vpro_2023/NIFR_SU_Tables.accdb"
+su3 <- combined_su(db)
+su <- rbind(su, su2, su3)
+su <- su %>%
+  filter(!grepl('101.2|101a.2|101b.2|101b|low|-S|add|nudum', SiteUnit)) %>%
+  filter(grepl('01', SiteUnit)) ###zonal specific
+su <- su %>% select(-SiteUnit.orig)
+bgc.unique <- su %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(bgc) 
+###write combined SU to database
+# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+# DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
+# dbWriteTable(master_su, "All_BC_zonals2_SU",  su, overwrite = TRUE, batch_rows = 1)
+# dbDisconnect(master_su)
+
+su <- su %>%
+filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|MHwh', SiteUnit))###BGC specific|CWHms
+
+```
+
+## Pairwise diagnostic analysis
+
+Performed on base site units or hierarchical units. The function 'do_pairwise' applies a new similarity measure that balances the value of constancy and mean cover differences between units. This comparison starts with previously classification and reviewed site series as working units. Only species with high constancy in one of the units is used in the analysis. Key site indicators can be given higher importance The diagnostic value of non-vasculars is reduced but taxonomy exceptions can be assigned Returns a table of units with high similarity. Produce output table for review where units have low diagnostic potential (usually a function of heterogenous units in forest types) or high variability in plot membership
+
+```{r build pair.wise}
+key.site.indicators <- c("TSUGMER", "PICESIT", "TSUGHET", "THUJPLI", "CALLNOO",
+                         "PSEUMEN1","PSEUMEN2", "ABIELAS", "PICEENE", "PICEGLA",
+                         "PINUCON1", "PINUCON2","PICEMAR", "LARIOCC", "ABIEAMA",
+                         "CALARUB", "PSEUSPI", "RHODALB", "MERTPAN", "VACCVIT",
+                         "VACCOVL", "CLADPYR") 
+reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR")
+reduced.lifeforms <- c(9, 10, 11)
+
+
+vegsum.pairs <- do_pairwise(veg.dat2,
+  su = su, minimportance = 0.1, minconstancy = 60,
+  noiseconstancy = 10,
+  minplots = 5,
+  covadj = .33, domcov = 10, minor = 1,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  reduced.exceptions = reduced.exceptions
+)
+
+vegsum.pairs <- vegsum.pairs %>% filter(!is.na(Unit1), !is.na(Unit2))
+
+units.low.diagnostics <- vegsum.pairs %>% 
+  select(Unit1, unit.diag.sum.x) %>% 
+  group_by(Unit1) %>%  mutate(diagnostic.sum = max(unit.diag.sum.x)) %>% select(-unit.diag.sum.x) %>% distinct %>%  filter(diagnostic.sum < 40) %>% ungroup()
+gt::gt(units.low.diagnostics) %>% gt::fmt_number(decimals = 2)
+```
+
+```{r cluster analysis}
+dis.matrix <- bec_dist_matrix(vegsum.pairs)
+diss.table <- data.frame(SiteUnit = row.names(dis.matrix), dis.matrix)
+fwrite(diss.table, "./outputs/example_dissimilarity_matrix.csv")
+ss_clst <- agnes(dis.matrix,
+  diss = TRUE, stand = TRUE,
+  method = "average")
+dendro_hc <- as.hclust(ss_clst)
+# dend.dend <- as.dendrogram(dendro_hc)
+### returns to cophonetic value - considered good if over 0.75
+dend.dis <- as.dist(dis.matrix)
+dend.co <- stats::cophenetic(dendro_hc)
+cophonentic <- cor(dend.dis, dend.co) %>% data.frame %>% rename(cophonentic = ".")
+gt::gt(cophonentic) %>% gt::fmt_number(decimals = 2) 
+## measure of clusters alignment with the data; >0.7 is considered good
+```
+
+## Dendrogram of cluster analysis
+
+```{r subzone_group cluster, warning=FALSE}
+dend <- dendro_hc %>% as.dendrogram 
+cut.ht <- 0.30
+cluster_grps <- cutreeHybrid(dendro_hc, distM = dis.matrix, cutHeight = cut.ht,
+                           minClusterSize = 2, deepSplit = 2)
+# cluster_grps <- cutreeDynamicTree(dendro_hc, maxTreeHeight = .1, minModuleSize = 2)
+
+assocs <- cluster_grps$labelsassocs <- cluster_grps$labelsassocs <- cluster_grps$labels
+su_grps <- cbind(as.data.frame(assocs), as.data.frame(row.names(dis.matrix)))
+# we need to sort them to the order of the dendrogram:
+clusters <- assocs[order.dendrogram(dend)]
+clusters_numbers <- unique(clusters)# - (0 %in% clusters)
+n_clusters <- length(clusters_numbers)
+
+cols <- colorspace::rainbow_hcl(n_clusters)
+true_species_cols <- colorspace::rainbow_hcl(n_clusters)[as.numeric(assocs[order.dendrogram(dend)])]
+# clusters <- factor(clusters)
+# levels(clusters)
+```
+
+```{r subzonegroup dendro, warning=FALSE}
+#| label: fig-subzonegrp-dendro
+#| fig-cap: "Cluster analysis of zonal correlation units(.3 = subzone/groups)."
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 7
+#| fig-height: 11
+#| fig-dpi: 600
+
+dend %>%
+      dendextend::color_branches(.,
+                               h = cut.ht,
+                               col = pals::trubetskoy(),
+                               groupLabels = TRUE) %>%
+  branches_attr_by_clusters(clusters, values = cols) %>%
+  color_labels(h = cut.ht, col = pals::trubetskoy()) %>%
+  set("labels_cex", .5) %>%
+  plot(horiz = TRUE)
+```
+
+## Dendrogram of cluster analysis
+
+```{r subzone cluster, warning=FALSE}
+dend <- dendro_hc %>% as.dendrogram 
+cut.ht <- 0.15
+cluster_grps <- cutreeHybrid(dendro_hc, distM = dis.matrix, cutHeight = cut.ht,
+                           minClusterSize = 2, deepSplit = 2)
+# cluster_grps <- cutreeDynamicTree(dendro_hc, maxTreeHeight = .1, minModuleSize = 2)
+
+assocs <- cluster_grps$labelsassocs <- cluster_grps$labelsassocs <- cluster_grps$labels
+su_grps <- cbind(as.data.frame(assocs), as.data.frame(row.names(dis.matrix)))
+# we need to sort them to the order of the dendrogram:
+clusters <- assocs[order.dendrogram(dend)]
+clusters_numbers <- unique(clusters)# - (0 %in% clusters)
+n_clusters <- length(clusters_numbers)
+
+
+cols <- rainbow_hcl(n_clusters)
+true_species_cols <- rainbow_hcl(n_clusters)[as.numeric(assocs[order.dendrogram(dend)])]
+# clusters <- factor(clusters)
+# levels(clusters)
+```
+
+```{r subzone dendro, warning=FALSE}
+#| label: fig-subzone-dendro
+#| fig-cap: "Cluster analysis of zonal correlation units(.15 = Subzones)."
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 7
+#| fig-height: 11
+#| fig-dpi: 600
+
+dend %>%
+      dendextend::color_branches(.,
+                               h = cut.ht,
+                               col = pals::polychrome(),
+                               groupLabels = TRUE) %>%
+  branches_attr_by_clusters(clusters, values = cols) %>%
+  color_labels(h = cut.ht, col = pals::polychrome()) %>%
+  set("labels_cex", .5) %>%
+  plot(horiz = TRUE)
+```
+
+## Cluster Analysis of Climate Variables
+
+```{r read in BGC climate data}
+# clim_vars <- readRDS("./climate_data/coastzonal.rds")
+# su.bgc <- su2 %>% mutate(bgc = sub("\\_.*", "", su2$SiteUnit)) %>% select(bgc) %>%  distinct %>% mutate(bgc = ifelse(bgc =="IDFww1", "IDFww",                                                                   ifelse(bgc == "CWHxm3", "CWHdm", bgc)))
+# clim_vars2 <- clim_vars %>% filter(BGC %in% su.bgc$bgc)
+# 
+# bgc.climate <- clim_vars2 %>% group_by(BGC) %>%  summarise(across(where(is.numeric), mean, na.rm = TRUE), n = n()) 
+# bgc.climate2 <- bgc.climate %>% mutate(across(where(is.numeric), scale, center = FALSE))  %>% select_if(~ ! any(is.na(.)))#%>% select(where(is.numeric))
+```
+
+```{r climate dendro}
+# bgc.clim.choose <- bgc.climate2 %>% select(BGC, CMD, PAS, TD, DD5)%>% column_to_rownames("BGC") %>% as.matrix
+# 
+# 
+# require(ecodist)
+# clim.dist <- ecodist::bcdist(bgc.clim.choose) %>%  as.matrix %>% as.data.frame
+# 
+# ss_clst = agnes(clim.dist , diss = TRUE, method = "average")
+# 
+# dendro_clim <- as.hclust(ss_clst)
+# ### returns to cophonetic value - considered good if over 0.75
+# dend.dis <- as.dist(clim.dist) 
+# dend.co <- cophenetic(dendro_clim)
+# cophonentic <- cor(dend.dis, dend.co)
+# cophonentic ##
+```
+
+```{r climate dendro2}
+# dendro.clim <- 
+#   fviz_dend(dendro_clim, cex = .6, lwd = 1, h=.25,
+#         rect = TRUE,
+#          type = "rectangle",
+#           k_colors = "jco",
+#       rect_border = "black",
+#           rect_fill = TRUE,
+#           lower_rect = -.1,
+#           horiz = TRUE,
+#           ggtheme = theme_calc(),labels=F)
+# dendro.clim
+#ggsave("./graphics/coastal_zonals_cluster.pdf", dendro, width=12, height=6)
+```
+
+### Double dendrogram between zonal and climate
+
+```{r double dendrogram}
+# require(dendextend)
+# dend.veg <- as.dendrogram(dendro_hc)
+# dend.clim <- as.dendrogram(dendro_clim)
+# dl <- dendlist(dend.veg, dend.clim)
+# tanglegram(dl, sort = TRUE)#, common_subtrees_color_lines = FALSE, highlight_distinct_edges  = FALSE, highlight_branches_lwd = FALSE)
+```
+
+## Generate comparative veg summary report
+
+```{r zonal table}
+su2 <- su %>% mutate(bgc = str_extract(SiteUnit, "[^_]+"))
+bgc.choose <- c("CWHxm1", "CWHvh1", "MHmm1")
+vegSum <- create_veg_sum(vdat = veg.dat2, siteUnits = su2 , BGC = bgc.choose)
+##determine order of species by unit
+indic.order <- build_species_ordering(vdat = vegData, vsum = vegSum, code.lump=lump, siteUnits = su2, BGC = bgc.choose)
+veg.sum.table <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+
+gt::gt(veg.sum.table) 
+```

@@ -1,0 +1,483 @@
+---
+title: "Zonal Correlation Analysis"
+author: "William H MacKenzie"
+date: "27/08/2024"
+format: 
+  pdf: 
+    documentclass: scrartcl
+    papersize: letter
+editor: visual
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(DBI)
+require(data.table)
+require(cluster)
+require(dendextend)
+require(dynamicTreeCut)
+require(gtable)
+require(gtsummary)
+require(colorspace)
+require(openxlsx)
+require(tictoc)
+require(labdsv)
+require(indicspecies)
+require(Polychrome)
+set.seed(1279)
+source("./_functions/_bec_dist.R")
+source("./_functions/_bec_dist_matrix.R")
+source("./_functions/_lump_species.R")
+source("./_functions/_lump_species2.R")
+source("./_functions/_create_su_vegdata.R")
+source("./_functions/_create_analysis_vegsum.R")
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+source("./_functions/_add_vars.R")
+source("./_functions/_do_pairwise.R")
+source("./_functions/_create_diagnostic_veg.R")
+source("./_functions/_return_similar_pairs.R")
+source("./_functions/_read_sppmaster.R")
+source("./_functions/_combined_su.R")
+source("./_functions/_create_veg_sum.R")
+#source('./_functions/_create_veg_sum2.R')
+source('./_functions/_build_species_ordering.R')
+source('./_functions/_format_veg_table.R')
+source('./_functions/_format_veg_table2.R')
+source('./_functions/_encode_veg_sum.R')
+```
+
+# Group site series into subassociations and associations
+
+Test of existing subzone variant groupings using BEC correlation process. Works reasonably well in identifying lower groups but sometimes it seems like subzone group branches are misassigned to expected higher groupings. Generally the clustering matches the expected groupings when tree species and other key climate indicators are emphasized in the analysis.
+
+#### Read in data
+
+Vegetation data is read in from saved .RDS file generated from the BECMaster cleaning scripts. Taxonomy is read-in from the species taxonomy database. A species lumping table is read-in from a Vpro database and applied to the vegetation data. The species taxonomy is joined to the vegetation data.
+
+```{r load data}
+veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
+veg.dat2 <- veg.dat
+taxon.all <- read_sppmaster()
+taxon.lifeform <- taxon.all %>%
+  filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
+  dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
+  distinct()
+x <- veg.dat2 %>% filter(Species %in% "PSEUMEN1")
+veglump <- dbConnect(
+  odbc::odbc(),
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
+lump <- dbReadTable(veglump, "CorrelationII_Lump")
+dbDisconnect(veglump)
+veg.dat2 <- lump_species(vegdata = veg.dat2, lump, use.subtaxa = TRUE)
+```
+
+Project SU tables (e.g. BGC_SU for a LMH) are read-in from regional databases and combined into a project specific table. Then the zonal units are selected for the analysis.
+
+```{r read in SU data}
+db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
+su <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/SIFR_LMH_SU.accdb"
+# su2 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/NIFR_SU_Tables.accdb"
+# su3 <- combined_su(db)
+# su <- rbind(su, su2, su3)
+su <- su %>%
+  filter(!grepl('poor|low|-S|add|nudum', SiteUnit)) #%>%
+#   filter(grepl('01', SiteUnit)) ###zonal specific
+su <- su %>% select(-SiteUnit.orig)
+bgc.unique <- su %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(bgc) 
+###write combined SU to database
+# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+# DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
+# dbWriteTable(master_su, "All_BC_zonals2_SU",  su, overwrite = TRUE, batch_rows = 1)
+# dbDisconnect(master_su)
+
+su <- su %>%
+filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|MHwh', SiteUnit))###BGC specific|CWHms
+
+su.too.few <- su %>% count(SiteUnit)  %>% filter(n < 4)
+gt::gt(su.too.few) %>% gt::fmt_number(decimals = 0)|> gt::tab_options(table.font.size = 8)
+```
+
+## Pairwise diagnostic analysis
+
+Performed on base site units or hierarchical units. The function 'do_pairwise' applies a new similarity measure that balances the value of constancy and mean cover differences between units. This comparison starts with previously classification and reviewed site series as working units. Only species with high constancy in one of the units is used in the analysis. Key site indicators can be given higher importance The diagnostic value of non-vasculars is reduced but taxonomy exceptions can be assigned Returns a table of units with high similarity. Produce output table for review where units have low diagnostic potential (usually a function of heterogenous units in forest types) or high variability in plot membership
+
+```{r build pair.wise assocs}
+# key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL", "POLYMUN", "TIARTRI",
+#                          "ATHYFIL", "GYMNDRY",                       "CLADINA", "SPHAGNUM")
+# reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR")
+
+key.site.indicators <- c("PICESIT", "POPUTRI", "LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG")#,  "TIARELLA", "DRYOEXP" )
+reduced.lifeforms <- c(9, 10, 11)
+reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
+
+vegsum.pairs <- do_pairwise(veg.dat2,
+  su = su, minimportance = 0.1, minconstancy = 60,
+  noiseconstancy = 10,
+  minplots = 4,
+  covadj = .33, domcov = 10, minor = 1,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  reduced.exceptions = reduced.exceptions
+)
+
+vegsum.pairs <- vegsum.pairs %>% filter(!is.na(Unit1), !is.na(Unit2))
+
+units.low.diagnostics <- vegsum.pairs %>% 
+  select(Unit1, unit.diag.sum.x) %>% 
+  group_by(Unit1) %>%  mutate(diagnostic.sum = max(unit.diag.sum.x)) %>% select(-unit.diag.sum.x) %>% distinct %>%  filter(diagnostic.sum < 35) %>% ungroup()
+gt::gt(units.low.diagnostics) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 8)
+```
+
+```{r cluster analysis assocs}
+dis.matrix <- bec_dist_matrix(vegsum.pairs)
+diss.table <- data.frame(SiteUnit = row.names(dis.matrix), dis.matrix)
+fwrite(diss.table, "./outputs/example_dissimilarity_matrix.csv")
+ss_clst <- agnes(dis.matrix,
+  diss = TRUE, stand = TRUE,
+  method = "average")
+dendro_hc <- as.hclust(ss_clst)
+# dend.dend <- as.dendrogram(dendro_hc)
+### returns to cophonetic value - considered good if over 0.75
+dend.dis <- as.dist(dis.matrix)
+dend.co <- stats::cophenetic(dendro_hc)
+cophonentic <- cor(dend.dis, dend.co) %>% data.frame %>% rename(cophonentic = ".")
+gt::gt(cophonentic) %>% gt::fmt_number(decimals = 2) |>
+  gt::tab_options(table.font.size = 8)
+## measure of clusters alignment with the data; >0.7 is considered good
+```
+
+## Dendrogram of cluster analysis
+
+```{r association cluster, warning=FALSE}
+dend <- dendro_hc %>% as.dendrogram 
+cut.ht <- 0.2
+cluster_grps <- cutreeHybrid(dendro_hc, distM = dis.matrix, cutHeight = cut.ht,
+                           minClusterSize = 2, deepSplit = 2)
+# cluster_grps <- cutreeDynamicTree(dendro_hc, maxTreeHeight = .1, minModuleSize = 2)
+
+assocs <- cluster_grps$labels
+su_grps <- cbind(as.data.frame(assocs), as.data.frame(row.names(dis.matrix))) %>% rename("SiteUnit" = 2 )
+# we need to sort them to the order of the dendrogram:
+clusters <- assocs[order.dendrogram(dend)] %>% data.frame %>% rename("clusters" = 1)
+su_grps <- su_grps$SiteUnit[order.dendrogram(dend)] %>% as.data.frame %>% rename("SiteUnit" = 1) %>% cbind(., clusters) %>% mutate(clusters = as.character(clusters))
+###build colours for clusters
+clusters_numbers <- (unique(clusters)) # - (0 %in% clusters)
+n_clusters <- length(unique(assocs))#-1
+#cols <- colorspace::diverging_hcl(n_clusters, palette = "Vik")
+cols = createPalette(n_clusters,  c("#ff0000", "#00ff00", "#0000ff"))
+#swatch(cols)
+#cols <- pals::polychrome(n_clusters)
+cols[cols = 0] <- "black"
+cluster.cols <- cbind(clusters_numbers, cols) %>% as.data.frame %>% mutate(clusters = as.character(clusters)) %>% mutate(cols = ifelse(clusters_numbers == 0, "black", cols))
+## dendrogram ordered site units with colours
+su_grps <- left_join(su_grps, cluster.cols)
+
+no.clusters <- su_grps %>% filter(clusters == 0) %>% summarize(singles=n()) 
+no.clusters$associations <-  n_clusters
+no.clusters$siteunits <- nrow(su_grps)
+no.clusters <- no.clusters %>% select(siteunits, associations, singles) %>% rename("Site Units" = siteunits, "Associations" = associations, "Site Units with no association" = singles)
+gt::gt(no.clusters) |> gt::tab_options(table.font.size = 8) |>
+  gt::tab_header(
+    title = "Associations from cluster analysis",
+    subtitle = paste0("@ cut height = ",cut.ht))
+```
+
+```{r assoc dendro, warning=FALSE}
+#| label: fig-association-dendro
+#| fig-cap: "Cluster analysis of zonal correlation units(.20 = associations)."
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 7
+#| fig-height: 11
+#| fig-dpi: 600
+#labels(dend)
+dend %>% set("labels_col", su_grps$cols) %>%  #%>% # change color
+  set("labels_cex", .4) %>%
+  dendextend::color_branches(.,groupLabels = su_grps$clusters) %>% 
+  branches_attr_by_clusters(su_grps$clusters, values = su_grps$cols) %>%
+  # Change size
+  plot(horiz = TRUE)
+
+  #     dendextend::color_branches(.,
+  #                              k = n_clusters,
+  #                              col = pals::trubetskoy(),
+  #                              groupLabels = clusters_numbers) %>%
+  # branches_attr_by_clusters(clusters, values = cols) %>%
+  # set("labels_col", su_grps$cols) %>% 
+  # #color_labels(h = cut.ht, col = pals::trubetskoy()) %>%
+  # set("labels_cex", .4) %>%
+  # plot(horiz = TRUE)
+# dend %>% set("labels_col", su_grps$cols) %>%  #%>% # change color
+#   set("labels_cex", .4) %>%
+#   dendextend::color_branches(.,groupLabels = su_grps$clusters) %>% 
+#   branches_attr_by_clusters(su_grps$clusters, values = su_grps$cols) %>%
+#   # Change size
+#   plot(horiz = TRUE)
+
+  #     dendextend::color_branches(.,
+  #                              k = n_clusters,
+  #                              col = pals::trubetskoy(),
+  #                              groupLabels = clusters_numbers) %>%
+  # branches_attr_by_clusters(clusters, values = cols) %>%
+  # set("labels_col", su_grps$cols) %>% 
+  # #color_labels(h = cut.ht, col = pals::trubetskoy()) %>%
+  # set("labels_cex", .4) %>%
+  # plot(horiz = TRUE)
+```
+
+## Generate formatted table summary report for associations
+
+```{r association sum table}
+#su2 <- su %>% mutate(bgc = str_extract(SiteUnit, "[^_]+"))
+su.ass <- left_join(su, su_grps) %>% filter(!is.na(clusters)) %>% mutate(assocs = clusters)
+assoc.list <- unique(su.ass$assocs)
+su.ass <- su.ass %>% arrange(assocs)
+###Dels
+assoc.choose <- c("22")
+#multi.gt <- gt::gt_group()
+#for(assoc.choose in assoc.list){
+vegSum <- 
+  create_veg_sum_assoc(vdat = veg.dat2, siteUnits = su.ass , Assoc = assoc.choose, strata.by = "Lifeform")
+##determine order of species by unit
+indic.order <- build_species_ordering_hier(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.ass, cluster = assoc.choose)
+veg.sum.table <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+
+veg.sum.gt <- gt::gt(veg.sum.table) |> gt::tab_options(table.font.size = 8)|> gt::tab_style(
+    style = gt::cell_text(font = gt::google_font(name = "wingdings")),
+    locations = gt::cells_body(columns = 4:(ncol(veg.sum.table))-1, rows = 2:nrow(veg.sum.table))) |>  gt::tab_style(
+    style = gt::cell_text(weight = "bold"),
+    locations = gt::cells_body(rows =1)) |>
+  gt::tab_header(
+    title = "Example Association Summary Table",
+    subtitle = paste("Association", assoc.choose)
+  )
+veg.sum.gt
+
+# veg.sum.gt.grp <-   gt::grp_add(.data = multi.gt,  gt = veg.sum.gt)
+# }
+# return(veg.sum.gt2)
+
+
+#gt::gtsave(veg.sum.gt, "./vegsum.tables/Test_Assocs.docx")
+# lapply(veg.sum.gt2, as_tibble) |> 
+#   openxlsx::write.xlsx(file = "Test_output.xlsx")
+```
+
+## export veg summary tables to excel with a sheet for each association
+
+```{r build association summary and export to excel, warning=FALSE, message=FALSE}
+assoc.list <- unique(as.character(su.ass$assocs))
+#assoc.list <- c("1")
+
+#bgc.choose = "CDFmm"
+vegsum.wbk <- createWorkbook()
+tic()
+for(assoc.choose in assoc.list){
+vegSum <- 
+  create_veg_sum_assoc(vdat = veg.dat2, siteUnits = su.ass , Assoc = assoc.choose, strata.by = "Lifeform")
+##determine order of species by unit
+indic.order <- build_species_ordering_assoc(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.ass, Assoc = assoc.choose)
+veg.sum.table <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+
+openxlsx::addWorksheet(vegsum.wbk, sheetName = assoc.choose)
+openxlsx::writeData(vegsum.wbk, sheet = assoc.choose, veg.sum.table) 
+
+}
+toc()
+saveWorkbook(vegsum.wbk, "./vegsum.tables/Coast_Assocs.xlsx", overwrite = TRUE)
+```
+
+## Now build alliances from associations
+
+```{r build pair.wise alliances}
+key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL", "POLYMUN", "TIARTRI",
+                         "ATHYFIL", "GYMNDRY",
+                         "CLADINA", "SPHAGNUM")
+reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR")
+reduced.lifeforms <- c(9, 10, 11)
+
+su.all <- su.ass %>% mutate(SiteUnit = as.character(clusters)) %>% filter(!clusters == "0") 
+vegsum.pairs <- do_pairwise(veg.dat2,
+  su = su.all, minimportance = 0.1, minconstancy = 60,
+  noiseconstancy = 10,
+  minplots = 4,
+  covadj = .33, domcov = 10, minor = 1,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  reduced.exceptions = reduced.exceptions
+)
+
+vegsum.pairs <- vegsum.pairs %>% filter(!is.na(Unit1), !is.na(Unit2))
+
+units.low.diagnostics <- vegsum.pairs %>% 
+  select(Unit1, unit.diag.sum.x) %>% 
+  group_by(Unit1) %>%  mutate(diagnostic.sum = max(unit.diag.sum.x)) %>% select(-unit.diag.sum.x) %>% distinct %>%  filter(diagnostic.sum < 35) %>% ungroup()
+gt::gt(units.low.diagnostics) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 8)
+```
+
+```{r cluster analysis -alliance}
+dis.matrix <- bec_dist_matrix(vegsum.pairs)
+diss.table <- data.frame(SiteUnit = row.names(dis.matrix), dis.matrix)
+fwrite(diss.table, "./outputs/example_dissimilarity_matrix.csv")
+ss_clst <- agnes(dis.matrix,
+  diss = TRUE, stand = TRUE,
+  method = "average")
+dendro_hc <- as.hclust(ss_clst)
+# dend.dend <- as.dendrogram(dendro_hc)
+### returns to cophonetic value - considered good if over 0.75
+dend.dis <- as.dist(dis.matrix)
+dend.co <- stats::cophenetic(dendro_hc)
+cophonentic <- cor(dend.dis, dend.co) %>% data.frame %>% rename(cophonentic = ".")
+gt::gt(cophonentic) %>% gt::fmt_number(decimals = 2) |>
+  gt::tab_options(table.font.size = 8)
+## measure of clusters alignment with the data; >0.7 is considered good
+
+```
+
+## Dendrogram of cluster analysis
+
+```{r alliance cluster, warning=FALSE}
+# dend <- dendro_hc %>% as.dendrogram 
+# cut.ht <- 0.3
+# cluster_grps <- cutreeHybrid(dendro_hc, distM = dis.matrix, cutHeight = cut.ht,
+#                            minClusterSize = 2, deepSplit = 2)
+# # cluster_grps <- cutreeDynamicTree(dendro_hc, maxTreeHeight = .1, minModuleSize = 2)
+# 
+# alliances <- cluster_grps$labels
+# su_grps <- cbind(as.data.frame(alliances), as.data.frame(row.names(dis.matrix))) %>% rename("SiteUnit" = 2 )
+# # we need to sort them to the order of the dendrogram:
+# clusters <- alliances[order.dendrogram(dend)]
+# clusters_numbers <- unique(clusters)# - (0 %in% clusters)
+# n_clusters <- length(clusters_numbers)
+# 
+# cols <- colorspace::rainbow_hcl(n_clusters)
+# true_species_cols <- colorspace::rainbow_hcl(n_clusters)[as.numeric(alliances[order.dendrogram(dend)])]
+
+dend <- dendro_hc %>% as.dendrogram 
+cut.ht <- 0.3
+cluster_grps <- cutreeHybrid(dendro_hc, distM = dis.matrix, cutHeight = cut.ht,
+                           minClusterSize = 2, deepSplit = 2)
+# cluster_grps <- cutreeDynamicTree(dendro_hc, maxTreeHeight = .1, minModuleSize = 2)
+
+alliances <- cluster_grps$labels
+su_grps <- cbind(as.data.frame(alliances), as.data.frame(row.names(dis.matrix))) %>% rename("SiteUnit" = 2 )
+# we need to sort them to the order of the dendrogram:
+clusters <- alliances[order.dendrogram(dend)] %>% data.frame %>% rename("clusters" = 1)
+su_grps <- su_grps$SiteUnit[order.dendrogram(dend)] %>% as.data.frame %>% rename("SiteUnit" = 1) %>% cbind(., clusters) %>% mutate(clusters = as.character(clusters))
+###build colours for clusters
+clusters_numbers <- (unique(clusters)) # - (0 %in% clusters)
+n_clusters <- length(unique(assocs))
+#cols <- colorspace::diverging_hcl(n_clusters, palette = "Vik")
+cols = createPalette(n_clusters,  c("#ff0000", "#00ff00", "#0000ff"))
+#swatch(cols)
+#cols <- pals::polychrome(n_clusters)
+#cols[cols = 0] <- "black"
+cluster.cols <- cbind(clusters_numbers, cols) %>% as.data.frame %>% mutate(clusters = as.character(clusters)) %>% mutate(cols = ifelse(clusters_numbers == 0, "black", cols))
+## dendrogram ordered site units with colours
+su_grps <- left_join(su_grps, cluster.cols)
+
+no.clusters <- su_grps %>% filter(clusters == 0) %>% summarize(n=n())
+gt::gt(no.clusters) |> gt::tab_options(table.font.size = 8) |>
+  gt::tab_header(
+    title = paste0("Number of Site Units with no near neighbours @ cut height = ",cut.ht))
+
+# clusters <- factor(clusters)
+# levels(clusters)
+```
+
+```{r alliance dendro, warning=FALSE}
+#| label: fig-alliance-dendro
+#| fig-cap: "Cluster analysis of forest alliance units(.3 = alliances)."
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 7
+#| fig-height: 11
+#| fig-dpi: 600
+
+dend %>% set("labels_col", su_grps$cols) %>%  #%>% # change color
+  set("labels_cex", .4) %>%
+  dendextend::color_branches(.,groupLabels = su_grps$clusters) %>% 
+  branches_attr_by_clusters(su_grps$clusters, values = su_grps$cols) %>%
+  # Change size
+  plot(horiz = TRUE)
+
+# dend %>%
+#       dendextend::color_branches(.,
+#                                k = n_clusters,
+#                                col = pals::trubetskoy(),
+#                                groupLabels = TRUE) %>%
+#   branches_attr_by_clusters(clusters, values = cols) %>%
+#   color_labels(h = cut.ht, col = pals::trubetskoy()) %>%
+#   set("labels_cex", .4) %>%
+#   plot(horiz = TRUE)
+```
+
+## Generate formatted table summary report for alliances
+
+```{r alliance sum table}
+# su2 <- su %>% mutate(bgc = str_extract(SiteUnit, "[^_]+"))
+SU <- left_join(su.all, su_grps) #%>% mutate(assocs = alliances)
+ assoc.list <- unique(SU$assocs)
+# SU <- SU %>% arrange(assocs)
+###Dels
+unit.choose <- c("1")
+#multi.gt <- gt::gt_group()
+#for(assoc.choose in assoc.list){
+vegSum <- 
+  create_veg_sum_alliance(vdat = veg.dat2, siteUnits = SU , cluster.choose = unit.choose, strata.by = "Lifeform")
+##determine order of species by unit
+# indic.order <- build_species_ordering_assoc(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.all, Assoc = unit.choose)
+veg.sum.table <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+
+veg.sum.gt <- gt::gt(veg.sum.table) |> gt::tab_options(table.font.size = 8)|> gt::tab_style(
+    style = gt::cell_text(font = gt::google_font(name = "wingdings")),
+    locations = gt::cells_body(columns = 4:(ncol(veg.sum.table))-1, rows = 2:nrow(veg.sum.table))) |>  gt::tab_style(
+    style = gt::cell_text(weight = "bold"),
+    locations = gt::cells_body(rows =1)) |>
+  gt::tab_header(
+    title = "Example Alliance Summary Table",
+    subtitle = paste("Alliance", unit.choose)
+  )
+veg.sum.gt
+
+# veg.sum.gt.grp <-   gt::grp_add(.data = multi.gt,  gt = veg.sum.gt)
+# }
+# return(veg.sum.gt2)
+
+
+#gt::gtsave(veg.sum.gt, "./vegsum.tables/Test_Assocs.docx")
+# lapply(veg.sum.gt2, as_tibble) |> 
+#   openxlsx::write.xlsx(file = "Test_output.xlsx")
+```
+
+## export veg summary tables to excel with a sheet for each BGC
+
+```{r build alliances and export to excel, warning=FALSE, message=FALSE}
+#require(huxtable)
+
+#SU <- left_join(su, su_grps)%>% arrange(assocs) %>% filter(!assocs == 0)
+
+#assoc.list <- unique(as.character(SU$assocs))
+###Dels
+# assoc.choose <- c("1")
+
+#bgc.choose = "CDFmm"
+vegsum_alliance.wbk <- createWorkbook()
+tic()
+for(assoc.choose in assoc.list){
+vegSum <- 
+  create_veg_sum_assoc(vdat = veg.dat2, siteUnits = SU , Assoc = assoc.choose, strata.by = "Lifeform")
+##determine order of species by unit
+indic.order <- build_species_ordering_assoc(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = SU, Assoc = assoc.choose)
+veg.sum.table <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+openxlsx::addWorksheet(vegsum_alliance.wbk, sheetName = assoc.choose)
+openxlsx::writeData(vegsum_alliance.wbk, sheet = assoc.choose, veg.sum.table) 
+
+}
+toc()
+saveWorkbook(vegsum_alliance.wbk, "./vegsum.tables/Coast_Alliances.xlsx", overwrite = TRUE)
+```

@@ -1,0 +1,462 @@
+---
+title: "Pairwise Diagnostic"
+author: "William H MacKenzie"
+date: "27/08/2024"
+format: 
+  pdf: 
+    documentclass: scrartcl
+    papersize: letter
+editor: visual
+---
+
+html: theme: pandoc
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(reshape2)
+require(plyr)
+require(dplyr)
+require(tidyr)
+require(ggplot2)
+require(magrittr)
+require(foreach)
+require(tcltk)
+require(openxlsx)
+require(doParallel)
+require(doBy)
+require(doParallel)
+require(DBI)
+require(data.table)
+require(data.tree)
+require(labdsv)
+require(tidyverse)
+library(cluster)
+require(ape)
+require(factoextra)
+require(tictoc)
+require(ggthemes)
+require(styler)
+source("./_functions/_lump_species.R")
+source("./_functions/_create_su_vegdata.R")
+source("./_functions/_create_analysis_vegsum.R")
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+source("./_functions/_add_vars.R")
+source("./_functions/_do_pairwise.R")
+source("./_functions/_create_diagnostic_veg.R")
+source("./_functions/_return_similar_pairs.R")
+source("./_functions/_read_sppmaster.R")
+source("./_functions/_combined_su.R")
+```
+
+#### Read in data
+
+Vegetation data is read in from saved .RDS file generated from the BECMaster cleaning scripts,
+
+Taxonomy is read-in from the species taxonomy database
+
+```{r load data}
+veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
+veg.dat2 <- veg.dat
+taxon.all <- read_sppmaster()
+taxon.lifeform <- taxon.all %>%
+  filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
+  dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
+  distinct()
+trees <- c(1, 2)
+```
+
+Project specific species lumping codes and sorts are read - in from a Vpro databases with multiple \_SU tables.
+
+```{r read in project data}
+veglump <- dbConnect(
+  odbc::odbc(),
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Spp_lump.accdb;")
+lump <- dbReadTable(veglump, "CoastGuide2023_Lump")
+dbDisconnect(veglump)
+
+hierarchy <- dbConnect(
+odbc::odbc(),
+.connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;"
+)
+# su <- dbReadTable(master_su, "All_Coast_Forest_2024v4_SU")
+hier <- dbReadTable(hierarchy, "CoastForest_v2024_2_Hierarchy")
+dbDisconnect(hierarchy)
+
+db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
+su <- combined_su(db)
+veg.dat2 <- lump_species(vegdata = veg.dat2, lump, use.subtaxa = FALSE)
+### for reviewing specific units
+# yy <- c("CDFmm_102.2")
+#   xx <- veg.dat2 %>% left_join(su) %>% filter(SiteUnit %in% yy)
+```
+
+## Evaluate base units
+
+Produce output tables for review where units have low diagnostic potential (usually a function of heterogenous units in forest types) or high variability in plot membership (Noise Clustering)
+
+```{r evaluate units, echo=FALSE}
+
+key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL",
+"TSUGMER", "THUJPLI", "SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
+ksi.value = 1
+reduced.lifeform = c(9, 10, 11, 12)
+vegsum <- create_diagnostic_veg(
+      veg.dat2, su, minimportance = 0.5, covadj = .33,
+      minconstancy = 55, noiseconstancy = 20,minplots = 5,
+      use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1,
+      reduce.lifeform = TRUE, reduced.lifeform = reduced.lifeform,
+reduction = 0.1)
+yy <- c("CWHws1_103")
+zz <- vegsum %>% filter(SiteUnit %in% yy)
+units.low.diagnostics <- vegsum %>%
+select(SiteUnit, unit.diag.sum) %>%
+  distinct %>%
+  filter(unit.diag.sum < 40)
+```
+
+### If working with higher units apply this chunk to roll up into hierarchy units
+
+```{r}
+# source("./_functions/_TabletoTree.R")
+# source("./_functions/_TreetoTable.R")
+# hier2 <- treeToTable(hier)
+# hier2 <- hier2[[1]]
+# unit.filter = "Class conifer"
+# hier3 <- hier2 %>% filter(Class %in% unit.filter)
+# hier3 <- hier3 %>% mutate(SiteUnit = gsub("/", "_", hier3$SiteUnit))
+# hier3 <- hier3 %>% mutate(SiteUnit = gsub(" ", "", hier3$SiteUnit, fixed = TRUE))
+# su <- su %>% mutate(SiteUnit = gsub(" ", "", su$SiteUnit, fixed = TRUE))
+# su2 <- left_join(hier3, su, by = "SiteUnit") %>% select(PlotNumber, Assoc) %>% dplyr::rename("SiteUnit" = 2)
+```
+
+## Pairwise diagnostic analysis
+
+Performed on base site units or hierarchical units. The function 'do_pairwise' applies a new similarity measure that balances the value of constancy and mean cover differences between units. This comparison starts with previously classification and reviewed site series as working units. Only species with high constancy in one of the units is used in the analysis. Key site indicators gave be given higher importance The diagnostic value of non-vasculars is reduced but taxonomy exceptions can be assigned Returns a table of units with high similarity
+
+```{r build pair.wise}
+# ksi <- c("TSUGMER", "LYSIAME", "OPLOHOR", "ATHYFIL")
+# "TSUGMER", "PICEENE", "TSUGHET", "THUJPLI",
+# ksi <- c("SPHAGNUM", "CLADONIA", "CLADINA")
+key.site.indicators <- c("LYSIAME", "OPLOHOR", "ATHYFIL", "RUBUSPE")
+reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR")
+# reduced.lifeforms = c(1,2)
+reduced.lifeforms <- c(9, 10, 11)
+tic()
+### select units to run
+su2 <- su
+# Fh <- fread("D:/BC_Correlation2_Vpro_2023/Highbench_siteseries.csv")
+# Fh <- Fh %>%
+#   mutate(highbench_ss = str_replace_all(string = highbench_ss,
+#                                         pattern = " ", repl = "")) %>%
+#   mutate(highbench_ss = str_replace_all(string = highbench_ss,
+#                                         pattern = "/", repl = "_")) %>%
+#   filter(!upland %in% "x")
+# su2 <- su2 %>%
+#   filter(SiteUnit %in% Fh$highbench_ss)
+su2 <- su2 %>% 
+  filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|ICHvc|MHwh', SiteUnit))###BGC specific|CWHms
+# su2 <- su2 %>%
+#   filter(!grepl('101.2|101a.2|101b.2|101b|low|-S|add', SiteUnit)) %>%
+#   filter(grepl('01', SiteUnit)) ###zonal specific
+##remove low quality projects by plotnumber series
+# su2 <- su2 %>%filter(!grepl('EBM|TEM|T38', PlotNumber)) 
+
+vegsum.pairs <- do_pairwise(veg.dat2,
+  su = su2, minimportance = 0.1, minconstancy = 60,
+  noiseconstancy = 10,
+  minplots = 5,
+  covadj = .33, domcov = 10, minor = 1,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  reduced.exceptions = reduced.exceptions
+)
+toc()
+vegsum <- create_su_vegdata(veg.dat2, su2) %>% 
+  left_join(taxon.lifeform, by = c("Species" = "Code"))
+
+fwrite(vegsum, "./outputs/example_vegsum2.csv")
+fwrite(su2, "./outputs/example_siteunits.csv")
+vegsum.pairs <- vegsum.pairs %>% filter(!is.na(Unit1), !is.na(Unit2))
+
+units.low.diagnostics <- vegsum.pairs %>%
+  select(Unit1, unit.diag.sum.x) %>%
+  distinct() %>%
+  filter(unit.diag.sum.x < 40 & unit.diag.sum.x > 0)
+# yy <- c("CWHvh1_111", "CWHvh2_112")
+# zz <- vegsum.pairs %>%
+#   filter(Unit1 %in% yy, Unit2 %in% yy) %>%
+#   select(Species, Unit1, Unit2, Constancy.x, MeanCov.x, 
+#          Constancy.y, MeanCov.y, diagnostic.potential.x,
+#          diagnostic.potential.y, d.type.x, dd.type.x, diag.points.x,
+#          diag.points.y, d.type.y, dd.type.y, diag.points.x, diag.points.y,
+#          sum.shared.diag, diag.tot, diag.ratio)
+
+su.phases <- vegsum.pairs %>%
+  select(Unit1, Unit2, diff.ratio) %>%
+  filter(endsWith(Unit1, c("a", "b")), endsWith(Unit2, c("b"))) %>%
+  distinct()
+su.phases$bgc1 <- stringr::word(su.phases$Unit1, 1, sep = "\\_")
+su.phases$bgc2 <- stringr::word(su.phases$Unit2, 1, sep = "\\_")
+su.phases <- su.phases %>% filter(bgc1 == bgc2)
+
+su.similar <- vegsum.pairs %>%
+  select(Unit1, Unit2, diff.ratio) %>%
+  dplyr::filter(diff.ratio > .1) %>%
+  filter(!Unit1 == Unit2) %>%
+  distinct()
+ss.similar <- su.similar
+ss.similar$bgc1 <- stringr::word(ss.similar$Unit1, 1, sep = "\\_")
+ss.similar$bgc2 <- stringr::word(ss.similar$Unit2, 1, sep = "\\_")
+hg.units <- c("CWHwh1", "CWHwh2", "CWHvh3")
+ss.similar <- ss.similar %>%
+  filter(bgc1 == bgc2) %>%
+  filter(!bgc1 %in% hg.units)
+```
+
+```{r cluster analysis}
+set.seed(1279)
+source("./_functions/_bec_dist.R")
+source("./_functions/_bec_dist_matrix.R")
+tic()
+dis.matrix <- bec_dist_matrix(vegsum.pairs)
+toc()
+tic()
+ss_clst <- agnes(dis.matrix,
+  diss = TRUE, stand = TRUE,
+  method = "average")
+dendro_hc <- as.hclust(ss_clst)
+# dend.dend <- as.dendrogram(dendro_hc)
+### returns to cophonetic value - considered good if over 0.75
+dend.dis <- as.dist(dis.matrix)
+dend.co <- stats::cophenetic(dendro_hc)
+cophonentic <- cor(dend.dis, dend.co)
+cophonentic ## 0.891 this value shows how well the clusters align with the data
+### >0.7 is considered good
+```
+
+```{r treecut analysis}
+# let's get the clusters
+library(dynamicTreeCut)
+require(dendextend)
+#data(iris)
+#x  <- iris[,-5] %>% as.matrix
+# hc <- dis.matrix %>% dist %>% hclust
+dend <- dendro_hc %>% as.dendrogram 
+require(dynamicTreeCut)
+# Find special clusters:
+# clusters <- cutreeDynamic(dendro_hc, distM = dis.matrix,  method = "hybrid",
+#                           cutHeight = .2, minClusterSize = 1)
+
+cluster_grps <- cutreeHybrid(dendro_hc, distM = dis.matrix, cutHeight = .2,
+                           minClusterSize = 2, deepSplit = 1)
+assocs <- cluster_grps$labels
+su_grps <- cbind(as.data.frame(assocs), as.data.frame(row.names(dis.matrix)))
+# we need to sort them to the order of the dendrogram:
+clusters <- assocs[order.dendrogram(dend)]
+clusters_numbers <- unique(clusters)# - (0 %in% clusters)
+n_clusters <- length(clusters_numbers)
+
+library(colorspace)
+cols <- rainbow_hcl(n_clusters)
+true_species_cols <- rainbow_hcl(n_clusters)[as.numeric(assocs[order.dendrogram(dend)])]
+dend2 <- dend %>% 
+         branches_attr_by_clusters(clusters, values = cols) %>% 
+         color_labels(col = true_species_cols)
+plot(dend2)
+# clusters <- factor(clusters)
+# levels(clusters)[-1]  <- cols[-5][c(1,4,2,3)] 
+#    # Get the clusters to have proper colors.
+#    # fix the order of the colors to match the branches.
+# colored_bars(clusters, dend, sort_by_labels_order = TRUE)
+```
+
+```{r pvcluster analysis}
+# toc()
+# ### test clusters 
+# tic()
+# require(pvclust)
+# result <- pvclust(vegsum.pairs, method.dist=bec_dist, method.hclust="average",  nboot=1000, parallel=TRUE, iseed = 1279)
+# plot(result);pvrect(result, alpha=0.9)
+# toc()
+# # seplot(result, identify=TRUE)
+```
+
+```{r plot dendrogram}
+
+require(ggdendro)
+hcdata <- dendro_data(dendro_hc, type = "rectangle")
+ggplot() +
+  geom_segment(data = segment(hcdata), 
+               aes(x = x, y = y, xend = xend, yend = yend)
+  ) +
+  geom_text(data = label(hcdata), 
+            aes(x = x, y = y, label = label, hjust = 0), 
+            size = 3
+  ) +
+  coord_flip() +
+  scale_y_reverse(expand = c(0.2, 0))
+
+
+require(dendextend)
+# avg_dend_obj <- as.dendrogram(ss_clst)
+# avg_dend_obj %>%   set("branches_k_color") %>% plot(horiz = TRUE);abline(v = .25, col = "red")
+# avg_dend_obj %>% rect.dendrogram(h=.25, horiz = TRUE,
+#                            border = 8, lty = 5, lwd = 2)
+
+# Create a complex dend:
+dend <- dendro_hc %>% as.dendrogram %>%
+   set("branches_k_color", h=.25) %>% set("branches_lwd", c(1.5,1,1.5)) %>%
+   set("branches_lty", c(1,1,3,1,1,2)) %>%
+   set("labels_colors") %>% set("labels_cex", c(.9,1.2)) %>% 
+   set("nodes_pch", 19) %>% set("nodes_col", c("orange", "black", "plum", NA))
+
+# Now let's do it in ggplot2 :)
+ggd1 <- as.ggdend(dend)
+library(ggplot2)
+# the nodes are not implemented yet.
+ggplot(ggd1, horiz = TRUE, theme = NULL) # horiz plot (and let's remove theme) in ggplot2
+
+
+# dendro <- fviz_dend(dendro_hc,
+#   cex = .5, lwd = .5, h = .25,
+#   rect = TRUE,
+#   type = "rectangle",
+#   k_colors = "jco",
+#   rect_border = "black",
+#   rect_fill = TRUE,
+#   lower_rect = 0,
+#   horiz = TRUE,
+#   ggtheme = theme_calc(), labels = T
+# )
+# dendro
+#ggsave("./graphics/coastal_trees_cluster.pdf", dendro, width = 12, height = 6)
+```
+
+```{r dend with colour bars upper units}
+group.level <- "Order"
+
+dend.dend <- as.dendrogram(dendro_hc) %>% set("labels_cex", .4)
+unit.lab <- as.data.frame(dendro_hc$labels) %>%
+  dplyr::rename(Assoc = 1) %>%
+  left_join(hier2, by = "Assoc") %>%
+  distinct(Assoc, .keep_all = TRUE) %>%
+  dplyr::select(group.level)
+unit.cats <- factor(unit.lab[, 1])
+n_units <- length(unique(unit.cats))
+# cols_4 <- colorspace::rainbow_hcl(n_units, c = 70, l  = 50)
+cols_4 <- colorspace::divergingx_hcl("RdYlBu", n = n_units)
+unit.col <- cols_4[unit.cats]
+par(mar = c(1, 1, 1, 14))
+plot(dend.dend, horiz = TRUE)
+colored_bars(unit.col, dend.dend, rowLabels = group.level,
+             horiz = TRUE, y_shift = .1)
+legend("topleft", legend = levels(unit.cats), fill = cols_4, cex = .4)
+```
+
+```{r examine pairs}
+# xx <- vegsum.pairs %>%
+#   select(Unit1, Unit2, Species, diagnostic.potential.x,
+#          diagnostic.potential.y, diag.potential.tot, shared.diag,
+#          diag.points.x, diag.points.y, sum.shared.diag, diag.points.x,
+#          diag.points.y, diag.tot, diag.ratio) %>%
+#   filter(diag.ratio > .7)
+# # %>% filter(Unit1 %in% c("MHmm2_101"), Unit2 %in% c("MHmm2_110"))
+# 
+# xx <- vegsum.pairs %>%
+#   filter(Unit1 == "IDFww1_101.1", Unit2 == "CWHds2_101a") %>%
+#   select(Unit1, Unit2, Species, diagnostic.potential.x,
+#          diagnostic.potential.y, diag.potential.tot, shared.diag,
+#          diag.points.x, diag.points.y,sum.shared.diag, diag.points.x,
+#          diag.points.y, diag.tot, diag.ratio)
+```
+
+```{r assign hierarchical level from cluster}
+working <- cutree(h = .05, dendro_hc) %>%
+  data.frame() %>%
+  rownames_to_column("SiteUnit") %>%
+  rename(Working = ".") %>%
+  mutate(Working = paste0("working-", Working))
+facies <- cutree(h = .1, dendro_hc) %>%
+  data.frame() %>%
+  rownames_to_column("SiteUnit") %>%
+  rename(Facies = ".") %>%
+  mutate(Facies = paste0("facies-", Facies))
+subass <- cutree(h = .12, dendro_hc) %>%
+  data.frame() %>%
+  rownames_to_column("SiteUnit") %>%
+  rename(Subass = ".") %>%
+  mutate(Subass = paste0("subass-", Subass))
+assoc <- cutree(h = .2, dendro_hc) %>%
+  data.frame() %>%
+  rownames_to_column("SiteUnit") %>%
+  rename(Assoc = ".") %>%
+  mutate(Assoc = paste0("assoc-", Assoc))
+suball <- cutree(h = .3, dendro_hc) %>%
+  data.frame() %>%
+  rownames_to_column("SiteUnit") %>%
+  rename(Suball = ".") %>%
+  mutate(Suball = paste0("suball-", Suball))
+alliance <- cutree(h = .40, dendro_hc) %>%
+  data.frame() %>%
+  rownames_to_column("SiteUnit") %>%
+  rename(Alliance = ".") %>%
+  mutate(Alliance = paste0("all-", Alliance))
+suborder <- cutree(h = .66, dendro_hc) %>%
+  data.frame() %>%
+  rownames_to_column("SiteUnit") %>%
+  rename(Suborder = ".") %>%
+  mutate(Suborder = paste0("subord-", Suborder))
+order <- cutree(h = .9, dendro_hc) %>%
+  data.frame() %>%
+  rownames_to_column("SiteUnit") %>%
+  rename(Order = ".") %>%
+  mutate(Order = paste0("ord-", Order))
+class <- cutree(h = .95, dendro_hc) %>%
+  data.frame() %>%
+  rownames_to_column("SiteUnit") %>%
+  rename(Class = ".") %>%
+  mutate(Class = paste0("class-", Class))
+clst.units <- left_join(class, order, by = "SiteUnit") %>%
+  left_join(suborder, by = "SiteUnit") %>%
+  left_join(alliance, by = "SiteUnit") %>%
+  left_join(suball, by = "SiteUnit") %>%
+  left_join(assoc, by = "SiteUnit") %>%
+  left_join(subass, by = "SiteUnit") %>%
+  left_join(facies, by = "SiteUnit") %>%
+  left_join(working, by = "SiteUnit") %>%
+  arrange(SiteUnit) %>%
+  rowid_to_column("ID") %>%
+  mutate(Formation = "") %>%
+  # , Class = "forest", Suball = "", Subass = "", Faces = "")%>%
+  # mutate(Suborder = "", Alliance = "forest", Assoc = "", Working = "") %>%
+  left_join(su) %>%
+  select(-SiteUnit) %>%
+  rename(SiteUnit = SiteUnit.orig) %>%
+  select(ID, Formation, Class, Order, Suborder, Alliance, Suball, Assoc,
+         Subass, Facies, Working, SiteUnit) %>%
+  as.data.table()
+assoc.count <- assoc %>% count(Assoc)
+alliance.count <- alliance %>% count(Alliance)
+order.count <- order %>% count(Order)
+new_su <- left_join(su2, su) %>%
+  select(PlotNumber, SiteUnit.orig) %>%
+  rename(SiteUnit = SiteUnit.orig)
+clst.units2 <- clst.units %>%
+  distinct() %>%
+  left_join(new_su)
+fwrite(clst.units2, "./outputs/coastal_orders_cutoffs_to_test_v2.csv")
+```
+
+### Write cluster membership into Vpro hierarchy table.
+
+This table can be copied and pasted into a Hierarchy_template table in Vpro. Then two make table queries must be run to align the hierarchy tags with a the autonumbered ID field generated by ACCESS. The table name for the new \_Hierarchy table can be named to match the intent of the hierachy
+
+```{r convert into a hierarchy table}
+levelNames <- c("Formation", "Class", "Order", "Suborder", "Alliance",
+                "Suball", "Assoc", "Subass", "Facies", "Working", "SiteUnit")
+new.hier <- tableToTree(clst.units, levelNames = levelNames) %>% as.data.frame()
+
+fwrite(new.hier, "./hierarchy_to_vpro/floodplainfromcluster_v2.csv")
+```

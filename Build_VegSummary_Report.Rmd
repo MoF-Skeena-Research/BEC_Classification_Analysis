@@ -1,0 +1,168 @@
+---
+title: "FieldGuide Summary Tables"
+author: "Will MacKenzie"
+date: "2024-08-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require(data.table)
+require(tidyverse)
+require(dplyr)
+require(data.tree)
+source("./_functions/_TreetoTable.R")
+source("./_functions/_TabletoTree.R")
+require(labdsv)
+require(indicspecies)
+source("./_functions/_read_sppmaster.R")
+```
+
+#### Import becdb
+```{r set folders, include=FALSE}
+require(DBI) #loads odbc as well
+ becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECdb_Working/BECdb_ver12_2021_reduced.accdb;")
+
+BGCs <- dbReadTable(becdb, "tblBGC_Units_v12") %>% select(BGC_label, BGC_NoSpace, BGC_Zone)
+SiteSeries<- dbReadTable(becdb, "tblBEC_SiteSeries_v12_unique") %>% filter(Status == "Current") %>% select(BGC_NoSpace, SS_NoSpace, SS_Label)
+dbDisconnect(becdb)
+BGCs_noSS <- anti_join(BGCs , SiteSeries)
+
+# becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECdb_Working/BECdb_ver12_2021_reduced.accdb;")
+# dbWriteTable(becdb, "BGCs_NoSS",  BGCs_noSS, overwrite = TRUE, batch_rows = 1)
+# dbDisconnect(becdb)
+```
+
+#### Import all BECMaster tables in /raw_data folder
+```{r set folders, include=FALSE}
+require(DBI) #loads odbc as well
+ becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/GitHub/BECMaster_Cleaning/updated_vpro/BECMaster_fixing.accdb;")
+
+ENV <- dbReadTable(becmaster, "BECMaster_fixing_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
+# ADMIN<- dbReadTable(becmaster, "BECMaster_fixing_Admin")
+# VEG <- dbReadTable(becmaster, "BECMaster_fixing_Veg")
+env.fields <- colnames(ENV)
+odbc::odbcListColumns(becmaster, table = "BECMaster_fixing_ENV")
+dbDisconnect(becmaster)
+
+vegData <- readRDS('./clean_data/Reports_BECMaster_Veg.rds')
+data.table::setDT(vegData)
+# Lump Data
+conL <- DBI::dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+DBQ=Vpro/CoastGuide_Spp_Lump.accdb;")
+lump <- DBI::dbReadTable(conn = conL, name = 'CoastGuide2023_Lump')
+data.table::setDT(lump)
+# species <- DBI::dbReadTable(conn = conL, name = 'SpeciesNames')
+# data.table::setDT(species)
+# lifeform <- species[ Codetype == 'U', .(ScientificName, Lifeform)] |> 
+#   unique()
+# species <- species[ Codetype == 'U', .(Code, EnglishName, ScientificName)] |> 
+#   unique()
+rm(conL)
+
+taxon.all <- read_sppmaster()
+taxon.lifeform <- taxon.all %>%
+  filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
+  dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
+  distinct()
+```
+
+## Import site unit tables
+```{r import SU tables and look for errors}
+require(DBI) #loads odbc as well
+correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb;")
+all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
+dbDisconnect(correlation)
+SU <- do.call(rbind.data.frame, all_su)
+SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% mutate(bgc = str_replace_all(string=bgc, pattern=" ", repl=""), SiteUnit = str_replace_all(string=SiteUnit, pattern=" ", repl="") ) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
+  arrange(desc(PlotNumber))
+SU$SiteUnit <- str_replace(SU$SiteUnit, "[abc]$", "")
+SU <- SU %>% filter(!str_detect(SiteUnit, '[$]|-poor|.nudum'), !startsWith(SiteUnit,'x'))
+ss.unique <- SU %>% select(SiteUnit) %>% distinct
+# SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
+# 
+# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+# DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+# dbWriteTable(master_su, "All_Coast_Forest_2024v4_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+# dbDisconnect(master_su)
+
+#%>% mutate(PlotNumber = paste0("'",PlotNumber))
+#fwrite(SU, "./clean_tabs/CoastGuide_All_BGC_Forest_SU.csv")
+###remove phases and seral units
+# SU_siteseries <- SU %>% 
+#   filter(!str_detect(SiteUnit, '[$]'))
+# phases = c("a", "b", "c")
+# SU_siteseries$SiteUnit <- str_replace(SU_siteseries$SiteUnit, "[abc]", "")
+# fwrite(SU_siteseries, "./clean_tabs/CoastGuide_All_BGC_Forest_SS.csv")
+
+# all_zonals <- SU2 %>% filter(str_detect(SiteUnit, "101|/01"))
+# zonal_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+# DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+# dbWriteTable(zonal_su, "Coast_Zonals_SU", all_zonals, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+# dbDisconnect(zonal_su)
+
+```
+## functions to build BGC veg summary table
+```{r build summary}
+source('./_functions/functions.R')
+source('./_functions/_lump_species2.R')
+vdat <- readRDS('./clean_data/Reports_BECMaster_Veg.rds')
+data.table::setDT(vdat)
+source('./_functions/_create_veg_sum.R')
+source('./_functions/_encode_veg_sum.R')
+source('./_functions/_build_species_ordering.R')
+source('./_functions/_format_veg_table2.R')
+```
+
+## export veg summary tables to excel with a sheet for each BGC
+```{r build veg guide summary and export to excel, warning=FALSE, message=FALSE}
+require(openxlsx)
+require(tictoc)
+bgc.list <- unique(SU$bgc)
+###Dels
+bgc.list = c("CDFmm", "CWHds2", "CWHmm1", "CWHmm2", "CWHws1", "CWHws2",
+"CWHws3", "CWHxm1", "CWHxm2", "CWHxm3", "IDFww1")
+### Bobs
+bgc.list = c("CWHds1", "CWHms1", "CWHms2", "CWHms3", "MHmm1",
+"MHmm2", "MHws", "MHvh")
+### Allen's
+bgc.list = c("CWHvh1", "CWHvh2", "CWHvm1", "CWHvm2", "CWHvm3", "CWHvm4", "CWHwm")
+#bgc.list = c("CDFmm")
+SU <- SU %>% arrange(bgc)
+bgc.choose = "CWHvh1"
+vegsum.wbk <- createWorkbook()
+tic()
+for(bgc.choose in bgc.list){
+vegSum <- 
+  create_veg_sum(vdat = vegData, siteUnits = SU , BGC = bgc.choose, strata.by = "Layer")
+##determine order of species by unit
+indic.order <- build_species_ordering(vdat = vegData, vsum = vegSum, code.lump=lump, siteUnits = SU, BGC = bgc.choose)
+veg.sum.table <- format_veg_table(vsum = vegSum, spp=taxon.lifeform)
+openxlsx::addWorksheet(vegsum.wbk, sheetName = bgc.choose)
+openxlsx::writeData(vegsum.wbk, sheet = bgc.choose, veg.sum.table) 
+}
+toc()
+saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_draft_veg_tables-BG.xlsx", overwrite = TRUE)
+
+
+# vegsum.wbk <- XLConnect::loadWorkbook("./vegsum.tables/XLConnect.xlsx", create = TRUE)
+# tic()
+# for(bgc.choose in bgc.list){
+# vegSum <- 
+#   create_veg_sum(vdat = vegData, siteUnits = SU ,BGC = bgc.choose)
+# ##determine order of species by unit
+# indic.order <- build_species_ordering(vdat = vegData, vsum = vegSum, code.lump=lump, siteUnits = SU, BGC = bgc.choose)
+# veg.sum.table <- format_veg_table(vsum = vegSum)
+# XLConnect::createSheet(vegsum.wbk, name = bgc.choose)
+# XLConnect::createName(vegsum.wbk, name = bgc.choose)
+# XLConnect::writeNamedRegion(vegsum.wbk, region = bgc.choose, data = veg.sum.table)
+# XLConnect::file.remove("XLConnect.xlsx")
+# #openxlsx::writeData(vegsum.wbk, sheet = bgc.choose, veg.sum.table) 
+# }
+# toc()
+# XLConnect::saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_draft_veg_tables2.xlsx", overwrite = TRUE)
+
+```
+
+
+

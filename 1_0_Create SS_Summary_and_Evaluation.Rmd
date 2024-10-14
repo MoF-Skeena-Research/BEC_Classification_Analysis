@@ -45,7 +45,7 @@ dbDisconnect(becmaster)
 # ###created in 0_0_Plot_su_Hierarchy checks script
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-su <- dbReadTable(master_su, "Coast_Forest_2024v4_SU")
+su <- dbReadTable(master_su, "All_Coast_Forest_2024v4_SU")
 hier <- dbReadTable(master_su, "CoastForest_v2024_2_Hierarchy")
 dbDisconnect(master_su)
 

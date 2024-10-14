@@ -1,6 +1,6 @@
 ### Converts Vpro veg table into long form analysis set
 
-convert_vpro_veg <- function(plot.veg, taxon.lifeform){
+create_veg_analysis_dataset <- function(plot.veg, taxon.lifeform){
   plot.veg <- as.data.table(plot.veg)
   fields = c("PlotNumber", "Species", "TotalA", "TotalB", "Cover6", "Cover7")
   vegdat <- plot.veg %>% dplyr::select(fields) 
@@ -12,3 +12,27 @@ convert_vpro_veg <- function(plot.veg, taxon.lifeform){
   return(vegdat)
 }
   
+create_veg_reports_dataset <- function(plot.veg, taxon.lifeform){
+  plot.veg <- as.data.table(plot.veg)
+  fields = c("PlotNumber", "Species", "TotalA", "TotalB", "Cover6", "Cover7")
+  vegdat <- plot.veg %>% dplyr::select(fields) 
+  vegdat[setDT(taxon.lifeform), "Lifeform" := Lifeform, on = c("Species" = "Code")]  
+  vegdat <- vegdat %>% pivot_longer(cols = c("TotalA", "TotalB", "Cover6", "Cover7"), 
+                                    names_to = "Layer", values_to = "Cover")
+  # change value"Total A" in Layer to "Tree" using dplyr
+  setDT(vegdat)[, Layer := fcase(
+    Layer == "TotalA", "Tree",
+    Layer == "TotalB", "Shrub",
+    Layer == "Cover6", "Herb",
+    Layer == "Cover7", "Moss",
+    default = "Layer"
+  )]
+  # vegdat2 <- vegdat %>% mutate(Layer = ifelse(Layer == "TotalA", "Tree",
+  #                                            ifelse(Layer == "TotalB", "Shrub",
+  #                                                   ifelse(Layer == "Cover6", "Herb",
+  #                                                          ifelse(Layer == "Cover7", "Moss", Layer)))))
+  
+
+  vegdat <- vegdat %>% filter(Cover > 0 )
+  return(vegdat)
+}
