@@ -51,7 +51,15 @@ data.path = "D:/OneDrive - Government of BC/GitHub_data"
 
 # Correlation of BGC zonal vegetation
 
-Test of existing subzone variant groupings using BEC correlation process. Works reasonably well in identifying lower groups but sometimes it seems like subzone group branches are misassigned to expected higher groupings. Generally the clustering matches the expected groupings when tree species and other key climate indicators are emphasized in the analysis.
+Test of existing subzone variant groupings using BEC correlation process.
+
+Need climate indicators and proper weighting of indicators vs non-indicators.
+
+Works reasonably well in identifying lower groups but sometimes it seems like subzone group branches are misassigned to expected higher groupings. Generally the clustering matches the expected groupings when tree species and other key climate indicators are emphasized in the analysis.
+
+Levels of differentiation of variants (subassociation level), subzones (association level), and zones are pretty good when tree subtaxa are used. Units often link up well into subzone groups though sometime these groups are 'misplaced'. The MS and SBPS as transitional zones are often linked to related subzone groups and not as a cohesive whole as expected.
+
+Need to factor in USA 'zonal' ecosystems for cross-border correlation.
 
 #### Read in data
 
@@ -202,18 +210,10 @@ xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.7)
 ```
 
 ## Review of BGCs
-There are some 'mis-placed BGC units from this analysis.
-The original designation of Zone membership is more rule based: first by leading tree species, some for practical or conceptual reasons, and with some use important secondary species or geographic distribution.
-MS separated from SBS as intermediate montane unit below ESSF above IDF or ICH
-SBPS separated from SBS
-northern ICH separate from CWH and southern ICH
-PP
-CWHvh as subzones rather than CCPH zone 
-CDF separte from CWH.
 
-Some individual unit issues:
-BWBSwk1 zonal plots are largely Pl leading due to a lack of older sample stands. 
-For this reason does not match well with BWBS but closer to MS or SBPS
+There are some 'mis-placed BGC units from this analysis. The original designation of Zone membership is more rule based: first by leading tree species, some for practical or conceptual reasons, and with some use important secondary species or geographic distribution. MS separated from SBS as intermediate montane unit below ESSF above IDF or ICH SBPS separated from SBS northern ICH separate from CWH and southern ICH PP CWHvh as subzones rather than CCPH zone CDF separte from CWH.
+
+Some individual unit issues: BWBSwk1 zonal plots are largely Pl leading due to a lack of older sample stands. For this reason does not match well with BWBS but closer to MS or SBPS
 
 ```{r subzone_group cluster, warning=FALSE}
 dend <- dendro_hc %>% as.dendrogram 
