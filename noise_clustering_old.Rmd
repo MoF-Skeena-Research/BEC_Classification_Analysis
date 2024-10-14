@@ -1,187 +1,535 @@
 ---
-title: "NoiseClustering to Add Plots to Classification"
-author: "William H MacKenzie"
-date: "13/01/2023"
+title: "Noise Clustering Tests"
+author: "WH MacKenzie"
+date: "2024-10-14"
 output: html_document
-editor_options: 
-  markdown: 
-    wrap: 72
 ---
 
+ 
+ 
+@@ -1,187 +0,0 @@ 
+Unstage chunk	
+ 
+1
+ 
+--- 
+Unstage selection	
+ 
+2
+ 
+title: "NoiseClustering to Add Plots to Classification"
+3
+ 
+author: "William H MacKenzie"
+4
+ 
+date: "13/01/2023"
+5
+ 
+output: html_document
+6
+ 
+editor_options: 
+7
+ 
+  markdown: 
+8
+ 
+    wrap: 72
+9
+ 
+---
+10
+ 
+11
+ 
 Based on the vegclust package and procedures described by Caceres and
+12
+ 
 Wiser the basic method is plotmembership \<- vegclust::vegclass(vegclust
+13
+ 
 object of defined groups, new plot data)
-
+14
+ 
+15
+ 
 1\. We'll be using existing Associations as predefined groups and this
+16
+ 
 will be using species importance (sqrt cover \* constancy)
-
+17
+ 
+18
+ 
 2\. Plot data will have different species so we'll need the function
+19
+ 
 vegclust::conformveg to harmonize the species lists. May need to do some
+20
+ 
 cleanup of species to remove low cover and rare species?
-
+21
+ 
+22
+ 
 3\. Will need experiment to deal with settings of noise level and
+23
+ 
 defuzzify
-
+24
+ 
+25
+ 
 ```{r setup, include=FALSE}
+26
+ 
 knitr::opts_chunk$set(echo = TRUE)
+27
+ 
 require(vegclust)
+28
+ 
 require(data.table)
+29
+ 
 require(tidyverse)
+30
+ 
 require(DBI)
+31
+ 
 require(labdsv)
+32
+ 
 source("./_functions/_lump_species.R")
+33
+ 
 ```
-
+34
+ 
+35
+ 
 read in veg_anal and SU at the Assoc level convert to vegclust object
-
+36
+ 
+37
+ 
 ```{r import data}
+38
+ 
 #testunit <- c("CDF mm   /101", "CWH vm 2 /103", "MH  mm 1 /112", "CWH xm 1 /101")
+39
+ 
 coast.ss <- fread ("./clean_tabs/CoastGuide_All_BGC_Forest_SS.csv") %>% distinct(SiteUnit)
-
+40
+ 
+41
+ 
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds")
-
+42
+ 
+43
+ 
 load("./clean_data/SS_sum_analysis.RData")
-
+44
+ 
+45
+ 
 veglump <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=C:/BC_Correlation2_Vpro_2023/CoastGuide_Spp_Lump.accdb;")
+46
+ 
 LUMP <- dbReadTable(veglump, "CoastGuide2023_Lump")
+47
+ 
 dbDisconnect(veglump) 
-
+48
+ 
+49
+ 
 ```
-
+50
+ 
+51
+ 
 ```{r prep data and units}
+52
+ 
 ##remove units with few plots
+53
+ 
 plots_SS <- coast.ss %>% group_by(SiteUnit) %>% dplyr::summarise(plots = n())
+54
+ 
 SS_count <- length(unique(coast.ss$SiteUnit))
+55
+ 
 siteunits_toofew <- plots_SS %>% filter(plots <5) 
-
+56
+ 
+57
+ 
 ##set this number to the max number of units
+58
+ 
 testunit <- sample_n(coast.ss, 100, replace = FALSE)
+59
+ 
 ## remove non-vasculars
+60
+ 
 vegdata <- veg.dat %>% filter(Lifeform <9 | Lifeform == 12)
+61
+ 
 ## lump to species and lump file
+62
+ 
 vegdata <- lump_species(vegdata, LUMP)
-
+63
+ 
+64
+ 
 assocs <- fread("./outputs/working_SU.csv") %>% arrange(PlotNumber) %>% filter(SiteUnit %in% testunit$SiteUnit) %>% filter(!SiteUnit %in% siteunits_toofew)
-
+65
+ 
+66
+ 
 plots <- unique(assocs$PlotNumber)
+67
+ 
 assocs2 <- assocs %>% dplyr::select(-SiteUnit) %>%  column_to_rownames("PlotNumber") %>% t %>% as.vector
+68
+ 
 ##reduce data to only those in assoc list
+69
+ 
 vegdata2 <- vegdata %>% filter(PlotNumber %in% plots) %>% arrange(PlotNumber)
+70
+ 
 ### reduce list to constant species or high in indiv plots and convet to matrix
+71
+ 
 const_spp <- unique(veg_anal$Species)
-
+72
+ 
+73
+ 
 vegdata2 <- vegdata2 %>% mutate(spp_importance = totalcov^0.5) %>% dplyr::select(PlotNumber, Species, spp_importance) %>% filter(spp_importance >2 | Species %in% const_spp ) %>% matrify()
+74
+ 
 ##produce dissimiarity for all plots
+75
+ 
 all_dissim <- proxy::dist(vegdata2, method="ejaccard", diag=TRUE, upper = FALSE)
-
+76
+ 
+77
+ 
 ##create vegclust object
+78
+ 
 # assoc_data <- as.vegclust(vegdata2, assocs2, method="KM", dnoise = 0.8)
+79
+ 
 # xx <- as.data.frame(assoc_data$memb)
+80
+ 
 # ## Look at variation within cluster - might not be useful here?
+81
+ 
 # veg.var <- clustvar(assoc_data) %>% as.data.frame
-
+82
+ 
+83
+ 
 ```
-
+84
+ 
+85
+ 
 ################ ###Test using split of guide classification into
-
+86
+ 
+87
+ 
 training and testing data
-
+88
+ 
+89
+ 
 ```{r split data set and test classification}
-
+90
+ 
+91
+ 
 veg.test <- sample_n(vegdata2,50)
+92
+ 
 test.plots <- row.names(veg.test)
+93
+ 
 assocs.test <- assocs %>% dplyr::filter(PlotNumber %in% test.plots) %>%  arrange(PlotNumber)
+94
+ 
 veg.test.diss <-  as.data.frame(as.matrix(all_dissim)) %>% select(-one_of(test.plots)) 
+95
+ 
 veg.test.diss <- veg.test.diss %>% filter(row.names(veg.test.diss) %in% test.plots)  
-
+96
+ 
+97
+ 
 veg.model <- vegdata2 %>% dplyr::filter(!rownames(vegdata2) %in% test.plots) %>%  arrange(row.names(.))
+98
+ 
 assocs.model <-assocs %>% dplyr::filter(!PlotNumber %in% test.plots) %>%  arrange(PlotNumber)
+99
+ 
 assocs.model <- assocs.model %>% dplyr::select(-SiteUnit) %>%  column_to_rownames("PlotNumber") %>% t %>% as.vector
+100
+ 
 #assoc.model <- as.vegclust(veg.model, assocs.model, method="HNC", dnoise = 10)
+101
+ 
 assoc.model.diss <- as.vegclust(proxy::dist(veg.model, method="ejaccard", diag=TRUE, upper = FALSE), assocs.model, method="HNC", dnoise = 0.4)
-
+102
+ 
+103
+ 
 vegComb <- vegclass(assoc.model.diss, veg.test.diss) ##classify vegNew
+104
+ 
 vegComb.memb <- vegComb[["memb"]]
+105
+ 
 newGroup <- dematrify(vegComb.memb) ##extract classification
+106
+ 
 newGroup <- newGroup[,1:2]
+107
+ 
 colnames(newGroup) <- c("PlotNumber","Class.pred")
+108
+ 
 newGroup <- newGroup %>% arrange(PlotNumber)
+109
+ 
 newGroup <- cbind(newGroup, assocs.test)
+110
+ 
 ####merge actual classification for comparison
+111
+ 
 #colnames(newGroup)[3] <- "Actual"
-
+112
+ 
+113
+ 
 ```
-
+114
+ 
+115
+ 
 #####Place new plots in predefined classes
-
+116
+ 
+117
+ 
 Probably better to do this in smaller chunks of a hierarchy rather than
+118
+ 
 all at once
-
+119
+ 
+120
+ 
 ```{r classify new plots}
+121
+ 
 ##conform data
-
+122
+ 
+123
+ 
 cf = conformveg(wetland.31, wetland.10)
-
-
+124
+ 
+125
+ 
+126
+ 
 vegComb <- vegclass(vegOld.clust, vegNew) ##classify vegNew
+127
+ 
 vegComb.memb <- vegComb[["memb"]]
+128
+ 
 newGroup <- dematrify(vegComb.memb) ##extract classification
+129
+ 
 newGroup <- newGroup[,1:2]
+130
+ 
 colnames(newGroup) <- c("SiteSeries","Class")
+131
+ 
 newGroup <- cbind(newGroup, actualClass$Class)####merge actual classification for comparison
+132
+ 
 colnames(newGroup)[3] <- "Actual"
-
-
+133
+ 
+134
+ 
+135
+ 
 vegDat.chord <- decostand(SUsumMatrix[-1], "normalize") ##standardise data
+136
+ 
 vegMat <- vegDat.chord
+137
+ 
 vegMat <- cbind(SUsumMatrix[,1],vegDat.chord)
-
+138
+ 
+139
+ 
 ####create training and testing data sets
+140
+ 
 vegNew <- vegMat[rownames(vegMat) %in% sample(rownames(vegMat), 100, replace = FALSE),] 
+141
+ 
 vegOld <- vegMat[!(rownames(vegMat) %in% rownames(vegNew)),]
+142
+ 
 #actualClass <- vegNew[,1:2] ###siteseries to grouping lookup
+143
+ 
 #rownames(vegNew)  <- vegNew[1] ###set rownames to siteseries
+144
+ 
 k <- ncol(vegOld)
+145
+ 
 n <- nrow(vegOld)
+146
+ 
 ###grouping of training set
+147
+ 
 grouping <- vegOld[1]
+148
+ 
 vegOld <- vegOld[,-(1)]
+149
+ 
 vegNew <- vegNew[,-(1)]
+150
+ 
 k <- ncol(vegOld)
+151
+ 
 n <- nrow(vegOld)
-
+152
+ 
+153
+ 
 grouping <- as.vector.factor(grouping)
+154
+ 
 vegOld.clust <- as.vegclust(vegOld, grouping)###create noise clustering with grouping as classes
+155
+ 
 ###Kmeans Clustering
+156
+ 
 vegOld.kmclst <- vegclust(x = vegOld[,-1], mobileCenters=5, method = "KM", nstart=20)###create noise clustering with grouping as classes
+157
+ 
 t(vegOld.kmclst$memb)
+158
+ 
 ###NC Clustering
+159
+ 
 vegOld.kmclst <- vegclust(x = vegOld[,-1], mobileCenters=5, method = "NC", m=1.2, dnoise=0.8, nstart=20)###create noise clustering with grouping as classes
+160
+ 
 round(t(vegOld.kmclst$memb), dig=2)
+161
+ 
 groups = defuzzify(vegOld.kmclst, method="cut", alpha=0.8)$cluster
+162
+ 
 table(groups)
-
-
+163
+ 
+164
+ 
+165
+ 
 vegComb <- vegclass(vegOld.clust, vegNew) ##classify vegNew
+166
+ 
 vegComb.memb <- vegComb[["memb"]]
+167
+ 
 newGroup <- dematrify(vegComb.memb) ##extract classification
+168
+ 
 newGroup <- newGroup[,1:2]
+169
+ 
 colnames(newGroup) <- c("SiteSeries","Class")
+170
+ 
 newGroup <- cbind(newGroup, actualClass$Class)####merge actual classification for comparison
+171
+ 
 colnames(newGroup)[3] <- "Actual"
-
+172
+ 
+173
+ 
 ###MDS for visualisation
+174
+ 
 MDS <- metaMDS(vegNew, distance = "bray", k = 2, trymax = 200)
+175
+ 
 MDS.df <- as.data.frame(scores(MDS, display = "sites"))###extract mds scores
+176
+ 
 MDS.df$SiteSeries <- rownames(MDS.df)
+177
+ 
 MDS.df <- merge(MDS.df,newGroup, by = "SiteSeries") ##merge predicted and actual classification
+178
+ 
 MDS.df <- MDS.df[,-1]
-
+179
+ 
+180
+ 
 colnames(MDS.df)[3:4] <- c("Actual","Predict")
-
+181
+ 
+182
+ 
 ggplot(MDS.df)+
+183
+ 
   geom_point(mapping = aes(x = NMDS1, y = NMDS2, colour = Predict), size = 2.5, shape = 17)+
+184
+ 
   coord_fixed()+
+185
+ 
   theme_bw()+
+186
+ 
   theme(legend.position = "none")
+187
+ 
 ```
