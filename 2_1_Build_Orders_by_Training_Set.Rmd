@@ -17,6 +17,7 @@ require(C50)
 require(indicspecies)
 require(doParallel)
 require(philentropy)
+require(DBI)
 source("./_functions/_TabletoTree.R")
 source("./_functions/_TreetoTable.R")
 source("./_functions/_VegdatSUsummary.R")
@@ -74,7 +75,7 @@ veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds")
 # dbDisconnect(becmaster)
 ###created in 0_0_Plot_SU_Hierarchy checks script
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
-DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
+DBQ=C:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
 su <- dbReadTable(master_su, "Coast_Forest_2024v4_SU")
 hier <- dbReadTable(master_su, "CoastForest_v2024_2_Hierarchy")
 dbDisconnect(master_su)
@@ -84,8 +85,8 @@ dbDisconnect(master_su)
 ##roll up into site series summary data and reduce to analysis set
 ```{r summarize site series, echo=FALSE}
 ### test run without non-vasculars
-vegdata <- veg.dat %>% filter(Lifeform <9 | Lifeform == 12)
-#vegdata <- veg.dat %>% filter(Lifeform <3)
+#vegdata <- veg.dat %>% filter(Lifeform <9 | Lifeform == 12)
+vegdata <- veg.dat %>% filter(Lifeform <3)
 vegsum <- create_su_vegdata(vegdata, su)
 veg_anal <- create_analysis_vegsum (vegsum, minimportance = 0.5, minconstancy = 60, minplots = 0) 
 SS_reduced_list <- unique(veg_anal$SiteUnit)
@@ -101,7 +102,7 @@ SU_reduced <- su %>% filter(SiteUnit %in% SS_reduced_list)
 ##Import wide matrix as training data
 #SUhier <- fread("./outputs/BECv12_Hierarchy_Matrix.csv")
 #source("./_functions/_TreetoTable.R")
-unit = "Alliance"
+unit = "Order"
 
 ###Import Vpro hierarchy and turn to widematrix
 SUhier <- treeToTable(hier)
@@ -150,7 +151,7 @@ BEC_new[is.na(BEC_new)] <- 0
 
 ```
 
-```{r build initial model of suborders, include = FALSE}
+```{r build initial model of higher orders, include = FALSE}
 
 BEC_recipe <-
     recipe(Unit ~ ., data = BEC_good) %>%
@@ -174,7 +175,7 @@ BEC_ranger_model$fit
 
 save(BEC_ranger_model, file = "./rFmodels/BECv12_Orders_rFmodel.Rdata")
 
-BEC.pred <- predict(BEC_ranger_model, BEC_good) %>% bind_cols(BEC_good %>% dplyr::select(SiteUnit, Unit)) 
+#BEC.pred <- predict(BEC_ranger_model, BEC_good) %>% bind_cols(BEC_good %>% dplyr::select(SiteUnit, Unit)) 
 
 
 # %>%  metrics(truth = Class), estimate = .pred_class)
@@ -193,45 +194,14 @@ Hier.clean <- Hier.clean %>% mutate(Formation = ifelse(is.na(Class), "unplaced",
 
 ```{r create C50 decision tree}
 library(C50)
+require(partykit)
+#to do this well need to convert the modified cover values back to percent cover or something
+BEC_good <- BEC_good %>% filter(!Unit %in% "unplaced") %>% droplevels()
+mod <- C5.0(Unit ~ ., data = BEC_good[-1])
+summary(mod)
+c5plot <- as.party.C5.0(mod, type = "extended", cex = .1)
 
-BEC_recipe <-
-    recipe(Unit ~ ., data = BEC_good) %>%
-     update_role(SiteUnit, new_role = "id variable") %>% 
-  step_novel(SiteUnit) %>% 
-    prep() 
-    summary(BEC_recipe)
-    
-BEC_C5model <- decision_tree(min_n = 2) %>%
-  set_mode("classification") %>%
-  set_engine("C5.0")# %>%   translate()#or "permutations
-
-# note in RF as a tree based model it is not required to scale and normalize covariates and may have negative influence on the model performance  
-# 2: set up cross validation for parameter tuning data sets # note vc is default to 10 fold
-BEC_workflow <- workflow() %>%
-  add_model(BEC_C5model) %>% 
-    add_recipe(BEC_recipe,blueprint = hardhat::default_recipe_blueprint(allow_novel_levels = TRUE))
-
-BEC_C5_model <- fit(BEC_workflow, BEC_good)
-save(BEC_C5_model, file = "./rFmodels/BECv12_Orders_C5model.Rdata")
-
-
-fit.C5 <- extract_fit_engine(BEC_C5_model)
-prepped_predictors <- fit.C5 |> 
-  extract_recipe() |> 
-  prep(BEC_good) |>
-  bake(new_data = NULL, all_predictors())
-
-fit.C5$call <- rlang::call_modify(
-  fit.C5$call,
-  x = fit.C5$predictors,
-  y = fit.C5$levels
-)
-
-fit.C5 |>
-  plot()
-
-
-
+plot(c5plot, gp = gpar(fontsize = 5))
 ```
 
 

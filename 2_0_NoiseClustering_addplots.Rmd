@@ -27,6 +27,8 @@ knitr::opts_chunk$set(echo = TRUE)
 require(vegclust)
 require(data.table)
 require(tidyverse)
+require(DBI)
+require(labdsv)
 source("./_functions/_lump_species.R")
 ```
 
@@ -40,7 +42,7 @@ veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds")
 
 load("./clean_data/SS_sum_analysis.RData")
 
-veglump <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Spp_Lump.accdb;")
+veglump <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=C:/BC_Correlation2_Vpro_2023/CoastGuide_Spp_Lump.accdb;")
 LUMP <- dbReadTable(veglump, "CoastGuide2023_Lump")
 dbDisconnect(veglump) 
 
@@ -53,9 +55,9 @@ SS_count <- length(unique(coast.ss$SiteUnit))
 siteunits_toofew <- plots_SS %>% filter(plots <5) 
 
 ##set this number to the max number of units
-testunit <- sample_n(coast.ss,338, replace = FALSE)
+testunit <- sample_n(coast.ss, 100, replace = FALSE)
 ## remove non-vasculars
-vegdata <- vegdata %>% filter(lifeform <9 | lifeform == 12)
+vegdata <- veg.dat %>% filter(Lifeform <9 | Lifeform == 12)
 ## lump to species and lump file
 vegdata <- lump_species(vegdata, LUMP)
 
