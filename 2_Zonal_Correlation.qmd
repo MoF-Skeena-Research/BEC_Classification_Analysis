@@ -55,7 +55,7 @@ Test of existing subzone variant groupings using BEC correlation process.
 
 Need climate indicators and proper weighting of indicators vs non-indicators.
 
-Works reasonably well in identifying lower groups but sometimes it seems like subzone group branches are misassigned to expected higher groupings. Generally the clustering matches the expected groupings when tree species and other key climate indicators are emphasized in the analysis.
+Works reasonably well in identifying lower groups but sometimes it seems like subzone group branches are mis-assigned to expected higher groupings. Generally the clustering matches the expected groupings when tree species and other key climate indicators are emphasized in the analysis.
 
 Levels of differentiation of variants (subassociation level), subzones (association level), and zones are pretty good when tree subtaxa are used. Units often link up well into subzone groups though sometime these groups are 'misplaced'. The MS and SBPS as transitional zones are often linked to related subzone groups and not as a cohesive whole as expected.
 
