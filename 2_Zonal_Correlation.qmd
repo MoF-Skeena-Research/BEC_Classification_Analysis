@@ -74,10 +74,11 @@ taxon.lifeform <- taxon.all %>%
   dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
   distinct()
 x <- veg.dat2 %>% filter(Species %in% "PSEUMEN1")
+y = veg.dat2 %>% filter(PlotNumber %in% "PSEUMEN2")
 veglump <- dbConnect(
   odbc::odbc(),
   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
-lump <- dbReadTable(veglump, "CorrelationII_Lump")
+lump <- dbReadTable(veglump, "CorrelationZonal_Lump")
 dbDisconnect(veglump)
 veg.dat2 <- lump_species(vegdata = veg.dat2, lump, use.subtaxa = TRUE)
 
@@ -108,12 +109,14 @@ db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/ThompsonOK_Sorts.accdb"
 su7 <- combined_su(db)
 db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/LMH65_Boreal_Sorts.accdb"
 su8 <- combined_su(db)
-
-su <- rbind(su, su2, su3, su4, su5, su6, su7, su8)
+db <- "D:/BC_Correlation2_Vpro_2023/Cassiar_SUs.accdb"
+su9 <- combined_su(db)
+su <- rbind(su, su2, su3, su4, su5, su6, su7, su8, su9)
+#xx <- su %>% filter(PlotNumber == "K780448")
 su <- su %>%
-  filter(!grepl('101.2|101a.2|101b.2|101b|low|-S|add|nudum|poor|yc|_W|_F|ys', SiteUnit)) %>%
+  filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|101.2', SiteUnit)) %>% #|101b|101.2
   filter(grepl('01', SiteUnit)) ###zonal specific
-su <- su %>% select(-SiteUnit.orig)
+su <- su %>% select(-SiteUnit.orig) %>% mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct() %>% mutate(zone = str_extract(bgc, "([A-Z]+)"))
 bgc.unique <- su %>% distinct(bgc) 
 no.su <- anti_join(bgcv13, bgc.unique, by = c("BGC_NoSpace" = "bgc")) %>% filter(!SiteClassificationStatus == "none")
 ###write combined SU to database
@@ -121,7 +124,7 @@ no.su <- anti_join(bgcv13, bgc.unique, by = c("BGC_NoSpace" = "bgc")) %>% filter
 # DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
 # dbWriteTable(master_su, "All_BC_zonals2_SU",  su, overwrite = TRUE, batch_rows = 1)
 # dbDisconnect(master_su)
-
+xx <- su %>% filter(SiteUnit == "IDFww1_101.2")
 su <- su %>%
 filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|MHwh', SiteUnit))###BGC specific|CWHms
 
@@ -132,9 +135,14 @@ filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|MHwh', SiteUnit))###BGC specific|CWHm
 Performed on base site units or hierarchical units. The function 'do_pairwise' applies a new similarity measure that balances the value of constancy and mean cover differences between units. This comparison starts with previously classification and reviewed site series as working units. Only species with high constancy in one of the units is used in the analysis. Key site indicators can be given higher importance The diagnostic value of non-vasculars is reduced but taxonomy exceptions can be assigned Returns a table of units with high similarity. Produce output table for review where units have low diagnostic potential (usually a function of heterogenous units in forest types) or high variability in plot membership
 
 ```{r build pair.wise}
-key.site.indicators <- c("TSUGMER",  "CALLNOO","PICESIT","PSEUMEN2",
-                         "ELLIPYR","GAULSHA", "VACCPAR", "PAXIMYR",
-                         "STRUSPI")
+key.site.indicators <- c("TSUGHET", "THUJPLI", "CALLNOO","PICESIT","PSEUMEN2", "TSUGMER",
+                         "ELLIPYR","GAULSHA", "VACCPAR", "PAXIMYR", "CLADPYR", 
+                         "STRUSPI", ## coast
+                         "ACERGLA", "GEOCLIV", "CALARUB",## interior
+                          "PICEGLA", "VACCVIT","MERTPAN",##boreal
+                         "RHODALB") ## ESSF
+
+
                          # "TSUGHET", "THUJPLI",  "ABIEGRA", "PSEUMEN1",  
                          # "RHODALB", "MENZFER",   
                          # "CALARUB", "MERTPAN", "VACCVIT", "BALSSAG")
@@ -143,8 +151,8 @@ key.site.indicators <- c("TSUGMER",  "CALLNOO","PICESIT","PSEUMEN2",
 
 #                          "PSEUMEN1","PSEUMEN2", "PICEENE", "ABIELAS", "ABIEGRA", "GYMNDRY", "OPLOHOR",, "VACCMEM"
 #                           "PICEMAR", "LARIOCC", "ABIEAMA","PICEGLA","PINUCON1", "PINUCON2", "PINUPON")#,
-                         # "RHODALB", "VACCOVL", "ACERGLA", "CLADPYR", "VACCPAR", "GAULSHA", "OPLOHOR",
-                         # "CALARUB", "PSEUSPI",  "MERTPAN", "VACCVIT", "GYMNDRY"
+                         # "RHODALB", "VACCOVL", "GAULSHA", "OPLOHOR",
+                         # "CALARUB", "PSEUSPI",    "GYMNDRY"
                          #  ) 
 #key.site.indicators <- taxon.all %>% filter(Lifeform %in% c(1,2)) %>% pull(Code)
 #reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR")
@@ -154,19 +162,19 @@ reduced.lifeforms <- c(9,10, 11)
 vegsum.pairs <- do_pairwise(veg.dat2,
   su = su, minimportance = 0.1, minconstancy = 60,
   noiseconstancy = 10,
-  minplots = 5,
+  minplots = 3,
   covadj = .33, domcov = 10, minor = 1,
   use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 2,
-  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .5,
   reduced.exceptions = NULL
 )
 
 yy <- vegsum.pairs %>% 
   select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, shared.diag, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, diff.ratio,BEC.sim.min, BEC.sim.mean) %>% 
-  filter(Unit1== "SBSmc2_01", Unit2 == "ESSFmv1_01")
+  filter(Unit1== "SBSmz_101", Unit2 == "MSdc2_01")
 
 vegsum.pairs <- vegsum.pairs %>% filter(!is.na(Unit1), !is.na(Unit2))
-xx <- vegsum.pairs %>% filter(Unit1 %in% "ICHxm1_101")
+xx <- vegsum.pairs %>% filter(Unit1 == "ICHxm1_101")
 units.low.diagnostics <- vegsum.pairs %>% 
   select(Unit1, unit.diag.sum.x) %>% 
   group_by(Unit1) %>%  mutate(diagnostic.sum = max(unit.diag.sum.x)) %>% select(-unit.diag.sum.x) %>% distinct %>%  filter(diagnostic.sum < 25) %>% ungroup()
@@ -194,7 +202,7 @@ gt::gt(cophonentic) %>% gt::fmt_number(decimals = 2)
 
 ```{r cluster analysis, echo=FALSE}
 
-create_dendro_all(unit.compare = vegsum.pairs, cut.level = 0.6)
+create_dendro_all(unit.compare = vegsum.pairs, cut.level = 0.2)
 
 #bgc.unique <- c("CDFmm", "CWHvm3")
 # for (bgc.choose in bgc.unique){
@@ -206,14 +214,142 @@ create_dendro_all(unit.compare = vegsum.pairs, cut.level = 0.6)
 
 ```{r split dendrogram, echo=FALSE}
 
-xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.7)
+xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.5)
+xx
+```
+
+```{r add cut level as group}
+add_cluster_membership <- function(unit.compare, cut.level = .7){
+  compared <- unit.compare 
+  dis.matrix <- bec_dist_matrix(compared) 
+  ss_clst <- agnes(dis.matrix,
+                   diss = TRUE, stand = TRUE,
+                   method = "average")
+  dendro_hc <- as.hclust(ss_clst)
+  groups <- cutree(dendro_hc, h = cut.level)
+  SiteUnit <- rownames(dis.matrix)
+  groups <- cbind(SiteUnit, groups) %>% data.frame() 
+  # groups <- groups %>%  mutate(bgc = str_trim(str_extract(units, "([:upper:]|[:space:]){2,}"))) 
+  return(groups)
+  }
+
+groups <- add_cluster_membership(vegsum.pairs, cut.level = .5)
+
 ```
 
 ## Review of BGCs
 
-There are some 'mis-placed BGC units from this analysis. The original designation of Zone membership is more rule based: first by leading tree species, some for practical or conceptual reasons, and with some use important secondary species or geographic distribution. MS separated from SBS as intermediate montane unit below ESSF above IDF or ICH SBPS separated from SBS northern ICH separate from CWH and southern ICH PP CWHvh as subzones rather than CCPH zone CDF separte from CWH.
+There are some 'mis-placed' BGC units from this analysis. The original designation of Zone membership is more rule based: first by leading tree species, some for practical or conceptual reasons, and with some use important secondary species or geographic distribution. MS separated from SBS as intermediate montane unit below ESSF above IDF or ICH SBPS separated from SBS northern ICH separate from CWH and southern ICH PP CWHvh as subzones rather than CCPH zone CDF separte from CWH.
 
 Some individual unit issues: BWBSwk1 zonal plots are largely Pl leading due to a lack of older sample stands. For this reason does not match well with BWBS but closer to MS or SBPS
+
+## Climate of zonal plots
+
+```{r climate summaries}
+# plot.climr <- fread("./clean_data/plot_dat_climr.csv")
+# plot.climatena <- fread("./clean_data/plot_dat_climatena.csv")
+# zonal.climr <- left_join(su, plot.climr, by = c("PlotNumber" = "PlotNumber"))
+# zonal.climatena <- left_join(su, plot.climatena, by = c("PlotNumber" = "ID1"))
+# zonal.test <- zonal.climatena %>% filter(startsWith(bgc, "ICHx")) #%>% mutate(zone = ifelse(bgc %in% "ICHxm1", "NewICH", zone))
+
+grid.climr <- fread("./clean_data/climr_WNAv12_5kmgrid.csv") %>% as.data.table
+coast.climr<- fread("./clean_data/climr_coastv13_2_5kmgrid.csv")  %>%  mutate(zone = str_extract(BGC_2, "([A-Z]+)"))%>% as.data.table
+
+grid.climr[coast.climr, "BGC" := BGC_2, on = c("xcoord" = "xcoord", "ycoord" = "ycoord")]
+ 
+grid.test <- grid.climr   %>% filter(zone %in% c("CWH","IDF", "ICH")) %>% mutate(zone = ifelse(BGC %in% c("IDFww", "IDFww1", "IDFmw2", "ICHxm1", "ICHxw") , "NewICH", zone)) %>% 
+  mutate(BGC = as.factor(BGC), zone = as.factor(zone)) %>%
+  mutate(BGC = fct_reorder(BGC, CMD.total, .fun='median'))
+
+ggplot(grid.test, aes(x=BGC, y=CMD.total, colour = zone))+
+  geom_boxplot()+
+ scale_colour_manual(values=c("darkgreen", "lightgreen", "orange", "red"))+
+  theme(legend.position = 'left')+ ggtitle("CMD.total for subzones of CWH, ICH, & IDF with new ICH subzones from wet IDF")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size=8))
+
+grid.test <- grid.test %>%  mutate(BGC = fct_reorder(BGC, MWMT, .fun='median'))
+
+ggplot(grid.test, aes(x=BGC, y=MWMT, colour = zone))+
+  geom_boxplot()+
+ scale_colour_manual(values=c("darkgreen", "lightgreen", "orange", "red"))+
+  theme(legend.position = 'left')+ ggtitle("MWMT for subzones of CWH, ICH, & IDF with new ICH subzones from wet IDF")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size=8))
+
+grid.test <- grid.test %>%  mutate(BGC = fct_reorder(BGC, MAP, .fun='median'))
+
+ggplot(grid.test, aes(x=BGC, y=MAP, colour = zone))+
+  geom_boxplot()+
+ scale_colour_manual(values=c("darkgreen", "lightgreen", "orange", "red"))+
+  theme(legend.position = 'left')+ ggtitle("MAP for subzones of CWH, ICH, & IDF with new ICH subzones from wet IDF")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size=8))
+
+grid.test <- grid.climr %>% mutate(zone = ifelse(BGC %in% c("IDFww", "IDFww1", "IDFmw2", "ICHxm1", "ICHxw") , "NewICH", zone)) %>% filter(zone %in% c("CWH","CDF", "ICH", "NewICH"))%>% 
+  mutate(BGC = as.factor(BGC), zone = as.factor(zone)) %>%
+  mutate(BGC = fct_reorder(BGC, TD, .fun='median', .na_rm = TRUE))
+
+ggplot(grid.test, aes(x=BGC, y=TD, colour = zone))+
+  geom_boxplot()+
+ scale_colour_manual(values=c("darkgreen", "lightgreen", "orange", "red"))+
+  theme(legend.position = 'left')+ ggtitle("TD for subzones of CWH, ICH, & CDF with new ICH subzones from wet IDF")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size=8))
+# zonal.test <- zonal.climr  %>% filter(zone %in% c("IDF", "ICH")) %>% mutate(zone = ifelse(startsWith(bgc, "IDFmw") , "NewICH", zone))
+# #order by CMD.total
+# zonal.test <- zonal.test %>% arrange(CMD.total)
+# ggplot(zonal.test, aes(x=BGC, y=CMD.total, colour = zone))+
+#   geom_boxplot()+
+#  # geom_smooth(method='lm')+
+#   theme(legend.position = 'left')+ ggtitle("Zonal Climate")
+
+```
+
+```{r zonal indicator species}
+# SS <- su %>% left_join(groups) %>% 
+#  mutate(zone = str_trim(str_extract(bgc, "([:upper:]|[:space:]){2,}"))) %>%
+#       select(PlotNumber, groups) %>%
+#     distinct()
+# vegdata <- merge(veg.dat2, SS, by = "PlotNumber") %>% filter(!is.na(groups))
+#   vegdata <- setDT(vegdata)[PlotNumber %in% SS$PlotNumber, ]
+#   vegdata <- setDT(vegdata)[Species %in% vegsum.pairs$Species, ]
+# 
+#   veg_anal <- vegdata %>%
+#     filter(Species %in% vegsum.pairs$Species) %>%
+#     select(PlotNumber, Species, Cover) %>%
+#     group_by(PlotNumber, Species) %>%
+#     summarise(Cover = sum(Cover, na.rm = TRUE)) %>%
+#     ungroup() %>%
+#     data.frame() %>% arrange(PlotNumber)
+#     veg_anal <- labdsv::matrify(veg_anal)
+#     
+#     groups2 <- SS %>% filter(PlotNumber %in% vegdata$PlotNumber) %>%
+#       arrange(PlotNumber) %>% pull(groups)
+# 
+# indval <- indicspecies::multipatt(veg_anal, groups2,
+#     control = how(nperm = 100)
+#   )
+#   summary(indval) 
+# fwrite(indval, "./outputs/indval.csv")
+#   
+#    ## capture conditions where no species in a plot are in the selected vsum species
+# veg.anal.plots <- rownames(veg_anal)%>% data.frame() %>% rename( PlotNumber= 1)
+ 
+ 
+#    # veg.anal.plots$present <- "exists"
+#    # missing <- left_join(SS, veg.anal.plots) %>% filter(is.na(present)) %>% select(PlotNumber)
+#    groups <- SS %>% filter(PlotNumber %in% veg.anal.plots$PlotNumber) %>% distinct(PlotNumber, .keep_all = TRUE) %>% arrange(PlotNumber) %>%  pull(bgc)
+#    # ss <- SS$SiteUnit
+#    # n_units <- length(unique(vegsum.pairs$SiteUnit))
+#    #   bgc <- vegdata $bgc
+#
+#
+
+
+# zone <- rownames(dis.matrix) %>% data.frame() %>% rename(zone = 1) %>% mutate(zone = str_trim(str_extract(zone, "([:upper:]|[:space:]){2,}")))
+# zone <- zone$zone
+#
+#   indval <- indicspecies::multipatt(dis.matrix, zone,
+#     control = how(nperm = 9))
+
+```
 
 ```{r subzone_group cluster, warning=FALSE}
 dend <- dendro_hc %>% as.dendrogram 
@@ -235,6 +371,8 @@ true_species_cols <- colorspace::rainbow_hcl(n_clusters)[as.numeric(assocs[order
 # levels(clusters)
 ```
 
+## Dendrogram of cluster analysis
+
 ```{r subzonegroup dendro, warning=FALSE}
 #| label: fig-subzonegrp-dendro
 #| fig-cap: "Cluster analysis of zonal correlation units(.3 = subzone/groups)."
@@ -253,31 +391,6 @@ dend %>%
   color_labels(h = cut.ht, col = pals::trubetskoy()) %>%
   set("labels_cex", .5) %>%
   plot(horiz = TRUE)
-```
-
-## Dendrogram of cluster analysis
-
-xx \<- draw_dendro_split(unit.compare, cut.level=.4)
-
-```{r subzone cluster2, warning=FALSE}
-dend <- dendro_hc %>% as.dendrogram 
-cut.ht <- 0.15
-cluster_grps <- cutreeHybrid(dendro_hc, distM = dis.matrix, cutHeight = cut.ht,
-                           minClusterSize = 2, deepSplit = 2)
-# cluster_grps <- cutreeDynamicTree(dendro_hc, maxTreeHeight = .1, minModuleSize = 2)
-
-assocs <- cluster_grps$labelsassocs <- cluster_grps$labelsassocs <- cluster_grps$labels
-su_grps <- cbind(as.data.frame(assocs), as.data.frame(row.names(dis.matrix)))
-# we need to sort them to the order of the dendrogram:
-clusters <- assocs[order.dendrogram(dend)]
-clusters_numbers <- unique(clusters)# - (0 %in% clusters)
-n_clusters <- length(clusters_numbers)
-
-
-cols <- rainbow_hcl(n_clusters)
-true_species_cols <- rainbow_hcl(n_clusters)[as.numeric(assocs[order.dendrogram(dend)])]
-# clusters <- factor(clusters)
-# levels(clusters)
 ```
 
 ```{r subzone dendro2, warning=FALSE}
@@ -302,30 +415,18 @@ true_species_cols <- rainbow_hcl(n_clusters)[as.numeric(assocs[order.dendrogram(
 
 ## Cluster Analysis of Climate Variables
 
-```{r read in BGC climate data}
-# clim_vars <- readRDS("./climate_data/coastzonal.rds")
-# su.bgc <- su2 %>% mutate(bgc = sub("\\_.*", "", su2$SiteUnit)) %>% select(bgc) %>%  distinct %>% mutate(bgc = ifelse(bgc =="IDFww1", "IDFww",                                                                   ifelse(bgc == "CWHxm3", "CWHdm", bgc)))
-# clim_vars2 <- clim_vars %>% filter(BGC %in% su.bgc$bgc)
-# 
-# bgc.climate <- clim_vars2 %>% group_by(BGC) %>%  summarise(across(where(is.numeric), mean, na.rm = TRUE), n = n()) 
-# bgc.climate2 <- bgc.climate %>% mutate(across(where(is.numeric), scale, center = FALSE))  %>% select_if(~ ! any(is.na(.)))#%>% select(where(is.numeric))
-```
-
 ```{r climate dendro}
-# bgc.clim.choose <- bgc.climate2 %>% select(BGC, CMD, PAS, TD, DD5)%>% column_to_rownames("BGC") %>% as.matrix
-# 
-# 
-# require(ecodist)
-# clim.dist <- ecodist::bcdist(bgc.clim.choose) %>%  as.matrix %>% as.data.frame
-# 
-# ss_clst = agnes(clim.dist , diss = TRUE, method = "average")
-# 
-# dendro_clim <- as.hclust(ss_clst)
-# ### returns to cophonetic value - considered good if over 0.75
-# dend.dis <- as.dist(clim.dist) 
-# dend.co <- cophenetic(dendro_clim)
-# cophonentic <- cor(dend.dis, dend.co)
-# cophonentic ##
+grid.climr <- fread("./clean_data/climr_WNAv12_5kmgrid.csv") %>% filter(BGC %in% su$bgc) %>% select(BGC, CMD, MAT, MSP, DD5) %>% drop_na() %>% group_by(BGC) %>% summarize_all(mean)
+row.names(grid.climr) <- grid.climr$BGC
+grid.climr <- grid.climr %>% select(-BGC)
+climr.matrix <- as.matrix(grid.climr) 
+clim.dist <- proxy::dist(climr.matrix) %>%  as.matrix %>% as.data.frame
+clim_clst <- agnes(clim.dist,
+  diss = TRUE, stand = TRUE,
+  method = "average")
+dendro_hc <- as.hclust(clim_clst)
+plot(dendro_hc)
+
 ```
 
 ```{r climate dendro2}
