@@ -36,13 +36,13 @@ draw_dendro_split <- function(unit.compare, cut.level=NULL){
                 aes(x = x, y = y, label = label, hjust = 0), 
                 size = 3
       ) +
-      geom_hline(yintercept = .07, linetype = "dashed", color = "red")+
-      
-      
-      geom_hline(yintercept = cut.level, linetype = "dashed", color = "green")+
+      geom_hline(yintercept = .10, linetype = "dashed", color = "red")+
+      geom_hline(yintercept = .20, linetype = "dashed", color = "green")+
+      geom_hline(yintercept = cut.level, linetype = "dashed", color = "purple")+
       # add value label to hline
-      geom_text(aes(x = 0, y = .07, label = "7%", hjust = 0), angle = 90,color = "red", size = 3)+
-      geom_text(aes(x = 0, y = cut.level, label = paste0(cut.level,"%"), hjust = 0), angle = 90, color = "green", size = 3)+
+      geom_text(aes(x = 0, y = .07, label = "10%-Subassociation", hjust = 0), angle = 90,color = "red", size = 3)+
+      geom_text(aes(x = 0, y = .20, label = "20%-Association", hjust = 0), angle = 90,color = "green", size = 3)+
+      geom_text(aes(x = 0, y = cut.level, label = paste0(cut.level,"%"), hjust = 0), angle = 90, color = "purple", size = 3)+
       
       # add label to graph 
       # geom_text(data=coph_annotation, aes( x=x, y=y, label=label), 

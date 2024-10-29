@@ -39,6 +39,6 @@ create_dendro_all <- function(unit.compare, threshold.low = .1, cut.level = .2){
     theme(axis.text.y=element_blank(), axis.title.y = element_blank())+
     ggtitle(paste0("Cluster Dendrogram of Site Units") )
   print(yy)
-  
+  return(dendro_hc)
   
 }

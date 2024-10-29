@@ -1,4 +1,6 @@
 ##table graphic that shows plot count by edaphic position for each site series 
+### modify this script to group site series by BGC orderly layout.
+## see this link for some ideas https://stackoverflow.com/questions/65835639/arrange-gt-tables-side-by-side-or-in-a-grid-or-table-of-tables
 draw_ss_edatope <- function(plot.env, su, bgc.choose) {
   su2 <- su %>%
     filter(bgc == bgc) 
@@ -10,11 +12,12 @@ draw_ss_edatope <- function(plot.env, su, bgc.choose) {
   # join edatopic to su
   su.edatopic <- su2 %>%
     left_join(edatopic)
-  
+  remove <- c("+|-")
   for (bgc.choose in bgc.unique) {
     bgc_working <- su.edatopic %>%
       filter(bgc == bgc.choose) %>%
       dplyr::rename(rSMR = MoistureRegime, SNR = NutrientRegime) %>%
+      mutate(rSMR = gsub(remove, '', rSMR), SNR = gsub(remove, '', SNR)) %>%
       filter(!is.na(rSMR) & !is.na(SNR)) %>%
       select(-PlotNumber) %>%
       mutate(edatope = paste0(rSMR, SNR)) %>%

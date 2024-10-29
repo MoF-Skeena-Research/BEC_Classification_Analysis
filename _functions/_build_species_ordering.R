@@ -16,7 +16,7 @@ build_species_ordering <- function(vdat, vsum = vegSum, code.lump = lump, siteUn
     summarise(Cover = sum(Cover, na.rm = TRUE)) %>%
     ungroup() %>%
     data.frame()
-   veg_anal <- matrify(veg_anal)
+   veg_anal <- labdsv::matrify(veg_anal)
    ## capture conditions where no species in a plot are in the selected vsum species
    # veg.anal.plots <- rownames(veg_anal)%>% data.frame() %>% rename( PlotNumber= 1)
    # veg.anal.plots$present <- "exists"

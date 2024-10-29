@@ -10,7 +10,7 @@
 # minor = 1
 # use.ksi = TRUE; ksi = key.site.indicators; ksi.value = 1.2
 # reduce.lifeform = TRUE; reduced.lifeforms = reduced.lifeforms; reduction = .1
-#reduced.exceptions = NULL
+# reduced.exceptions = NULL
 
 do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 60,
                         noiseconstancy = 10,
@@ -20,6 +20,7 @@ do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 60,
                         reduction = NULL, reduced.exceptions = NULL,
                         domcov = 10, minor = 1) {
   ### ---Create vegetation summary
+  tic()
   su.choice <- su %>% select(SiteUnit)
   vegdat <- as.data.table(veg.dat)
   vegdat[su, SiteUnit := i.SiteUnit, on = "PlotNumber"] ## limit data to those listed in SiteUnit
@@ -153,21 +154,27 @@ do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 60,
   vegsum.pairs[, d.type.y := ifelse(Constancy.y < minconstancy, NA, paste0("", d.type.y))]
 
   ## calculate d points
-  vegsum.pairs[, const2.x := ifelse(Constancy.x >=60, (Constancy.x^(1 / 3))*(Constancy.x / 100), (Constancy.x^(1 / 3)*(Constancy.x / 200)))]
-  vegsum.pairs[, const2.y := ifelse(Constancy.y >=60, (Constancy.y^(1 / 3))*(Constancy.y / 100), (Constancy.y^(1 / 3)*(Constancy.y / 200)))]
-  
-  vegsum.pairs[, const2.x := ifelse(const2.x>4, 4, const2.x)]
-  vegsum.pairs[, const2.y := ifelse(const2.y>4, 4, const2.y)]
-  
-  vegsum.pairs[, const2.diff := const2.x - const2.y]
+  vegsum.pairs[, d.points.x := ifelse(((Constancy.x >=60) & (const.diff>30)), (const.diff ^(1 / 3)*(const.diff / 100)),
+              ifelse(((Constancy.x <60 & Constancy.x  >50) & (const.diff>30)), (const.diff ^(1 / 3)*(const.diff / 100)),0))]
 
-  ### adjust d points for constancy
+  vegsum.pairs[, d.points.y := ifelse(((Constancy.y >=60) & (const.diff < (-30))), (abs(const.diff) ^(1 / 3)*(abs(const.diff) / 100)),
+                                      ifelse(((Constancy.y <60 & Constancy.y  >50) & (const.diff < (-30))), (abs(const.diff) ^(1 / 3)*(abs(const.diff) / 100)),0))]
+  
+  # vegsum.pairs[, const2.x := ifelse(Constancy.x >=60, (Constancy.x^(1 / 3))*(Constancy.x / 100), (Constancy.x^(1 / 3)*(Constancy.x / 200)))]
+  # vegsum.pairs[, const2.y := ifelse(Constancy.y >=60, (Constancy.y^(1 / 3))*(Constancy.y / 100), (Constancy.y^(1 / 3)*(Constancy.y / 200)))]
+  # 
+  # vegsum.pairs[, const2.x := ifelse(const2.x>4, 4, const2.x)]
+  # vegsum.pairs[, const2.y := ifelse(const2.y>4, 4, const2.y)]
+  # 
+  # vegsum.pairs[, const2.diff := const2.x - const2.y]
+
+  ### adjust d points for constancy of minor species
   vegsum.pairs[, c("d.points.x", "d.points.y") := .(
-    ifelse((const.diff >=40 & MeanCov.x<1), (const2.diff / 2),
-      ifelse(const.diff >=40, const2.diff, NA_real_)
-    ),
-    ifelse((const.diff <= -40  & MeanCov.y <1), ((0 - const2.diff) / 2),
-      ifelse(const.diff <= -40,  (0 - const2.diff), NA_real_))
+    ifelse((MeanCov.x<1), (d.points.x / 2), d.points.x),
+      #ifelse(const.diff >=40, const2.diff, NA_real_)
+   # ),
+    ifelse((MeanCov.y <1), (d.points.y / 2), d.points.y)
+    #  ifelse(const.diff <= -40,  (0 - const2.diff), NA_real_))
   )]
   # vegsum.pairs[, "d.points.x" := .(
   #   ifelse(Constancy.x < 60, d.points.x * (Constancy.x / 100), d.points.x)
@@ -178,12 +185,12 @@ do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 60,
 
   ## remove non significant differences and limit to max 4 points
   vegsum.pairs[, "d.points.x" := .(
-    ifelse(d.points.x < 0.7, NA_real_,
+    ifelse(d.points.x < 0.6, NA_real_,
       ifelse(d.points.x > 4, 4, d.points.x)
     )
   )]
   vegsum.pairs[, "d.points.y" := .(
-    ifelse(d.points.y < 0.7, NA_real_,
+    ifelse(d.points.y < 0.6, NA_real_,
       ifelse(d.points.y > 4, 4, d.points.y)
     )
   )]
@@ -285,5 +292,6 @@ do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 60,
       Unit1, Unit2, BEC.sim.min, BEC.sim.mean, diff.ratio,
       unit.diag.sum.x, unit.diag.sum.y, everything()
     )
-  return(vegsum.pairs)
+ toc()
+   return(vegsum.pairs)
 }
