@@ -1,5 +1,5 @@
 ---
-title: "Build_Climate_Indicator_List"
+title: "Create Vegetation Analysis datasets"
 author: "Will MacKenzie"
 date: "2023-12-04"
 output: html_document
@@ -13,12 +13,13 @@ require(tidyverse)
 require(dplyr)
 require(DBI) #loads odbc as well
 source("./_functions/_convert_vpro_veg.R")
+data.path = "D:/OneDrive - Government of BC/GitHub_data"
 ```
 
 Reads in a Vpro database and converts it to a 4-column long table PlotNumber,Species, Cover, LifeForm
 
 ```{r set folders, include=FALSE}
-becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/BECMaster_fixing.accdb;")
+becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;")
 plot.veg <- dbReadTable(becmaster, "BECMaster_fixing_Veg")
 dbDisconnect(becmaster)
 
@@ -26,11 +27,12 @@ dbDisconnect(becmaster)
 sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
 taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
 dbDisconnect(sppmaster)
-taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X") %>% dplyr::select(Code, Lifeform) %>% distinct
+taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X"|Codetype == "D") %>% dplyr::select(Code, Lifeform) %>% distinct
 
 veg.dat <- create_veg_analysis_dataset (plot.veg, taxon.lifeform)
 saveRDS(veg.dat, "./clean_data/Analysis_BECMaster_Veg.rds")
-
+saveRDS(veg.dat, file.path(data.path, "BEC_veg_data/Analysis_BECMaster_Veg.rds"))
 veg.dat <- create_veg_reports_dataset (plot.veg, taxon.lifeform)
 saveRDS(veg.dat, "./clean_data/Reports_BECMaster_Veg.rds")
+saveRDS(veg.dat, file.path(data.path, "BEC_veg_data/Reports_BECMaster_Veg.rds"))
 ```
