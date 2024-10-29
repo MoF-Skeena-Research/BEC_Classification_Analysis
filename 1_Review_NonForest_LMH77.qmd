@@ -32,90 +32,6 @@ execute:
 
 This script is designed to review the site series within each BGC, primarily to identify where site series do not sufficiently differentiate and need to be reviewed. The script also identifies site series with too few plots or with low diagnostic potential for review and interpretation of the quantitative analysis. The script generates a table list of site unit pairs that exceed a threshold similarity and a dendrogram of the cluster analysis of site units for each BGC.
 
-# Historic BEC correlation approach
-
-The principles of BEC analysis is outlined in Pojar et al. (1987). The method is based on Braun-Blanquet table analysis but modified to equally value significant differences in species mean cover and species constancy of plant communities for differentiating classification units. In this method, constancy (percent of plots that a species is present in a site unit) is converted into five equal *presence classes* each of 20% width (0.1 - 20% = I, 02,1-40% = II, ...). Mean cover is divided into 10 *significance classes* following the Domin-Krajina cover scale. \[\[insert table\]\]. A species is considered *differential* if it has presence class III (40-60%) or greater and is two or more presence classes greater than in the compared site unit(s). A species is considered a *dominant differential* if it has a significance class greater or equal to 5 (10.1% mean cover) and is two or more significance classes greater than the in a site unit and not present in the other site unit(s).
-
-There are several challenges with this method:
-
-1.  The use of discrete classes to represent continuous data creates 'steps' that may create apparently non-equivalent comparative differences. For example, the 21% difference between 61%(presence IV) vs 40% (presence II) constancy is the equivalent to the 59% difference between 80% (presence IV) and 21% (presence II) constancy. Similarly, the comparison of 20.1% mean cover (significance class VI) versus 10.0% mean cover (significance class IV) is equivalent to 33% versus 5.1% mean cover.
-
-2.  The differential value does not reflect the degree of difference of a species between compared site units. For example, a species with 100% difference in constancy (100% versus 0%) has the same differential value as a 60% constancy to 20% comparison. Similarly for mean cover differences a 70% mean cover to 1% comparison is equivalent to 10.1% vs 5.0% mean cover.
-
-3.  The comparative approach is applied only within the same circumscribing (higher) unit requiring a top-down analysis (Orders and Alliances need to be decided before an Association comparison can be performed). Additionally the comparison is not pair-wise but between the number of site units that have been deemed to fall under a single higher level unit. This means that the upper hierarchical levels must be determined prior to the comparison and the diagnostic combination of species is relevant only to the units being compared.
-
-For the provincial correlation of regional classifications in the early 1990s, the general principles outlined in Pojar et al. (1987) were applied but the process was not systematic and units were combined by expert review and consensus (Meidinger pers. comm.). In Klinka et al. (1996), the classification of coastal units was also made through 'successive approximations' that are are not reproducible.
-
-# A new BEC correlation method
-
-The new method is designed to be an approximation of the Pojar et al. (1987) and Klinka et al. (1996) approaches that allow quanititative analysis. The approach constructs a new similarity metric that reflects BEC principles:
-
--   equal potential differential value of constancy and cover
-
--   rescale cover values to increase the differential value of differences at lower mean cover differences
-
--   principles for what is considered a "significant" difference in constancy or cover are maintained
-
-The methods differs from the Pojar protocol:
-
--   always a pair-wise comparison of reviewed and accepted site series as the working unit.
-
--   differences between species constancy and cover are not scaled before comparison
-
--   minimum constancy to be considered a member of the diagnostic combination of species for a units is 60% (with some accounting for 'near misses' down to 50%)
-
--   minimum constancy difference to be differential is 40% (this is effectively similar)
-
--   continuous cube root rescaling of cover to approximate Domin-Krajina scale
-
--   emphasis can be made be assigned to prominent indicator species with narrow ecological amplitude.
-
--   all site series are compared and subsequently combined from the bottom up rather than analysis within higher units created from top-down.
-
-Correlation begins with a review process that assesses site series for sufficient plots and internal consistency (diagnostic potential sum) to be considered for quantitative comparison. Proposed site series within a BGC are then compared to ensure that all separate with a minimum dissimilarity to define a subassociation. Site series that do not sufficiently separate are then reviewed for plot assignment and data quality and reanalyzed. If minimum differentiation is still not achieved site series phases are indicated.
-
-The pair-wise comparison compares the combined Diagnostic combination of species (DCS) of two units (pwDCS). Each species in this combined pwDCS has a potential differential value (pdv) for each unit. A shared diagnostic sum (SDS) represents the sum of minimum species pdv value across the units.
-
-A differential value is assigned to each species in the where there are significant differences in constancy (species differential value (sdv)) and/or cover (species dominant differential value (sddv). The unit differential sum (UDS) is the sum of differential values for each unit. The UDS/SDS is the diagnostic ratio for the unit and indicates the one-way similarity to the compared unit. The BEC similarity index (BEC.sim) is the minimum diagnostic ratio of the compared units. We use the minimum PDS value as the BEC.sim to capture cases where one of the assessed units is the central concept and has few/no differential species.
-
-The BEC.sim is a measure of the similarity of the diagnostic species composition of two units and can be used to determine the similarity of any two units in the BEC hierarchy. The BEC.sim is a value between 0 and 1 where 0 represents no shared species and 1 represents statistically identical DCS. We use this similarity index in a agglomerative cluster analysis with average linking to create a dendrogram of the site units within each BGC. Thesholds of similarity are set to identify site units that are too similar and should be merged or plot membership reassessed.
-
-## Some terminology for species:
-
--   *Differential (d)*: species has significantly higher constancy than in the compared unit. Minimum constancy difference is 40%.
-
--   *Dominant Differential (dd)*: species has at leasts 10% mean cover and is significantly higher mean cover than in the compared unit.
-
--   *Companion/Constant (c)*: species with high constancy but not differential.
-
--   *Constant dominant(cd)*: constant species have greater than 10% cover
-
--   *Minor companion (cm)*: constant species with less than 1% mean cover.
-
--   *Differential Potential (dp)*: The potential differential value of a species based on constancy. dp = constancy\^(1/3) \* (constancy/100) where constancy \>= 60% dp = constancy\^(1/3) \* (constancy/100) \* constancy-50/100 where constancy 50-59% The maximum dp is 4 and minimum value is 1.
-
--   *Dominant Differential Potential (ddp)*: The potential differential value of a species based on cover. ddp = cover\^(1/3) where mean cover \>= 10%. The maximum ddp is 4 and minimum value is 0.5. pds
-
--   *Potential Diagnostic Value (pdv)*: pdv = 1.25\* *(dp + ddp) The maximum pdv is 10.*
-
-## Some terminology for units
-
--   *Diagnostic Combination of Species (DCS)*: for a classification unit, the list of species that exceed the constancy threshold with associated mean cover values
-
--   *Potential Differential Sum (PDS)*: sum of all species pdv for the DCS of a unit
-
-## Some terminology for pair-wise comparison
-
--   *Species Differential Value (sdv)*: sdv = Constancy Unit1 ^1/3^ - Constancy Unit2 ^1/3^
-
--   *Species Dominant Differential Value (sddv)*: sddv = Mean Cover Unit1 ^1/3^ - Mean Cover Unit2 ^1/3^
-
--   *Shared Differential Sum (SDS)*: SDS = sum(min(pdv)) of all species in DCS of both units
-
--   *Unit Differential Sum(UDS)*: UDS = sum(sdv +sddv)
-
--   *BEC.sim*: BEC.sim= min(UDS1, UDS2))/SDS
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 require(tidyverse)
@@ -336,6 +252,7 @@ The dendrogram is an approximate representation of the similarity matrix. It is 
   create_dendro_all(unit.compare, threshold.low = .07, threshold.high = .18)
 #}
 ```
+
 ```{r veg guide summary table}
 VGS_table <- function(veg.sum.table, table.name = ""){
   veg.sum.gt <- gt::gt(veg.sum.table) |> gt::tab_options(table.font.size = 8)|> gt::tab_style(
@@ -350,7 +267,6 @@ VGS_table <- function(veg.sum.table, table.name = ""){
   return(veg.sum.gt)
 }
 ```
-
 
 ## Generate comparative veg summary report
 
@@ -368,4 +284,3 @@ openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name)
 openxlsx::writeData(vegsum.wbk, sheet = table.name, veg.sum.table)
 saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_draft_skunkcabbage_table.xlsx", overwrite = TRUE)
 ```
-
