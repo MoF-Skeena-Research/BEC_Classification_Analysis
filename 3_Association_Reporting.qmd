@@ -1,0 +1,169 @@
+---
+title: "Hierarchy Reporting"
+author: "William H MacKenzie"
+date: "08/11/2024"
+format: 
+  pdf: 
+    documentclass: scrartcl
+    papersize: letter
+editor: source
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+require(tidyverse)
+require(DBI)
+require(data.table)
+require(cluster)
+require(dendextend)
+require(dynamicTreeCut)
+require(gtable)
+require(colorspace)
+require(gtsummary)
+require(openxlsx)
+require(tictoc)
+require(labdsv)
+require(indicspecies)
+require(Polychrome)
+require(ggdendro)
+require(purrr)
+require(ggplotify)
+require(grid)
+set.seed(1279)
+source("./_functions/_bec_dist.R")
+source("./_functions/_bec_dist_matrix.R")
+source("./_functions/_lump_species2.R")
+source("./_functions/_create_su_vegdata.R")
+source("./_functions/_create_analysis_vegsum.R")
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+source("./_functions/_add_vars.R")
+source("./_functions/_do_pairwise.R")
+source("./_functions/_create_diagnostic_veg.R")
+source("./_functions/_return_similar_pairs.R")
+source("./_functions/_read_sppmaster.R")
+source("./_functions/_combined_su.R")
+source('./_functions/_create_dendro_all.R')
+source('./_functions/_create_dendro_bybgc.R')
+source('./_functions/_draw_dendro_split.R')
+source('./_functions/_create_veg_sum_all.R')
+source('./_functions/_build_species_ordering_hier.R')
+source("./_functions/_lump_species.R")
+source('./_functions/_format_veg_table2.R')
+source('./_functions/_encode_veg_sum.R')
+data.path = "D:/OneDrive - Government of BC/GitHub_data"
+```
+
+# This script will generate the material for and a formatted report of units from a hierarchical analysis.
+
+Read in vegetation data
+read in su tables
+read in becdb table with units and hierarchical levels
+
+For each hierarchical level chosen:
+  - mapped distribution of plots
+  - vegetation summary table for member site units
+  - actual edatopic grid unit count
+  - summary of climate variables
+  - table of related concepts
+#### Read in data
+
+Vegetation data is read in from saved .RDS file generated from the BECMaster cleaning scripts. Taxonomy is read-in from the species taxonomy database. A species lumping table is read-in from a Vpro database and applied to the vegetation data. The species taxonomy is joined to the vegetation data.
+
+```{r load data}
+veg.dat <- readRDS(file.path(data.path, "BEC_veg_data/Analysis_BECMaster_Veg.rds")) ### named veg.dat
+veg.dat2 <- veg.dat
+taxon.all <- read_sppmaster()
+taxon.lifeform <- taxon.all %>%
+  filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
+  dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
+  distinct()
+ tree_seedlings <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% mutate(Code = paste0(Code, "D")) %>% pull(Code)
+trees <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% pull(Code)
+veglump <- dbConnect(
+  odbc::odbc(),
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
+lump <- dbReadTable(veglump, "CorrelationZonal_Lump")
+dbDisconnect(veglump)
+veg.dat2 <- lump_species(vegdata = veg.dat2, lump, use.subtaxa = TRUE)
+
+bgc.units<- dbConnect(
+  odbc::odbc(),
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2024.accdb;")
+bgcv12 <- dbReadTable(bgc.units, "tblBGC_UnitsWorkingandArchive")
+bgcv13 <- dbReadTable(bgc.units, "tblBEC_SiteSeries_LMH77_forest")
+dbDisconnect(bgc.units)
+bgcv12 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% select(BGC_NoSpace, SiteClassificationStatus)
+
+```
+
+Project SU tables (e.g. BGC_SU for a LMH) are read-in from regional databases and combined into a project specific table. Then the zonal units are selected for the analysis.
+
+```{r read in SU data}
+db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
+su <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb"
+# su2 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Cariboo_LMH39_Sorts.accdb"
+# su3 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/KootenayBoundary_Sorts.accdb"
+# su4 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/OminecaPeace_SU_Tables.accdb"
+# su5 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Skeena_LMH26_Sorts.accdb"
+# su6 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/ThompsonOK_Sorts.accdb"
+# su7 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/LMH65_Boreal_Sorts.accdb"
+# su8 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/Cassiar_SUs.accdb"
+# su9 <- combined_su(db)
+# su <- rbind(su, su2, su3, su4, su5, su6, su7, su8, su9)
+#xx <- su %>% filter(PlotNumber == "K780448")
+su <- su %>%
+  filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|101.2|X|omit|unplaced|support', SiteUnit)) 
+su <- su %>% select(-SiteUnit.orig) %>% mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct() %>% mutate(zone = str_extract(bgc, "([A-Z]+)"))
+bgc.unique <- su %>% distinct(bgc) 
+no.su <- anti_join(bgcv12, bgc.unique, by = c("BGC_NoSpace" = "bgc")) %>% filter(!SiteClassificationStatus == "none")
+###write combined SU to database
+# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+# DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
+# dbWriteTable(master_su, "All_BC_zonals2_SU",  su, overwrite = TRUE, batch_rows = 1)
+# dbDisconnect(master_su)
+xx <- su %>% filter(SiteUnit == "IDFww1_101.2")
+su <- su %>%
+filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|MHwh', SiteUnit))###BGC specific|CWHms
+
+```
+
+```{r build veg guide summary and export to excel, echo = FALSE, warning=FALSE, message=FALSE}
+require(openxlsx)
+require(tictoc)
+library(stringr)
+data.path = "D:/OneDrive - Government of BC/GitHub_data"
+author <- "test.assoc1"
+assoc.list <- bgcv13 %>% filter(!is.na(Association_Code)) %>% group_by(Association_Code) %>% mutate(n=n()) %>% filter(n>2) %>% distinct(Association_Code) %>% pull(Association_Code)
+
+vegsum.wbk <- createWorkbook()
+for(assoc.choose in assoc.list){
+#assoc.choose = "assoc-13"
+assoc <- bgcv13 %>% filter(Association_Code %in% assoc.choose) %>% select(SS_Label, Association_Code) %>% mutate(SiteUnit = gsub(" ", "", SS_Label)) %>% mutate(SiteUnit = str_replace(SiteUnit, "/", "_"))
+su.assoc <- left_join(assoc, su, by = "SiteUnit") %>%  mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct() 
+veg.dat.assoc <- veg.dat2 %>% filter(PlotNumber %in% su.assoc$PlotNumber)
+# vegsum.wbk <- createWorkbook()
+# #bgc.choose = "CDFmmtab2"
+# #for(bgc.choose in bgc.list){
+vegSum <-
+  create_veg_sum_all(vdat = veg.dat.assoc, siteUnits = su.assoc, strata.by = "Lifeform")
+
+indic.order <- build_species_ordering_hier(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc, hier.level = "Association_Code")
+veg.sum.table <- format_veg_table2(vsum = vegSum, spp=taxon.lifeform)
+openxlsx::addWorksheet(vegsum.wbk, sheetName = assoc.choose)
+openxlsx::writeData(vegsum.wbk, sheet = assoc.choose, veg.sum.table) 
+}
+
+saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_assoc_tables_", author, ".xlsx"), overwrite = TRUE)
+
+```
+
+

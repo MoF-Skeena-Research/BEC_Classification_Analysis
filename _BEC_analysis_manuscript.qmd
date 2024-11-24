@@ -9,7 +9,7 @@ format:
     toc-title: Contents
     section-numbering: 1.1.1
     columns: 1
-editor: visual
+editor: source
 execute:
   echo: false
   error: false
@@ -220,7 +220,6 @@ axis.title.y = element_text(size=8, face="bold"))+
 
 ```
 
-
 ```{r cover differntial points, echo=FALSE}
 #| label: fig-cover-diff
 #| fig-cap: "Pairwise Differential Value: Cover"
@@ -303,7 +302,6 @@ axis.title.y = element_text(size=6, face="bold"))+
 # out1
 ```
 
-
 # Evaluate site series within each BGC
 
 ## Read in data
@@ -358,12 +356,12 @@ reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
 reduced.lifeforms <- c(9, 10, 11)
 ### select units to run
 su2 <- su
-
+## the min constancy is min for full value declines more rapidly towards 50%
 vegsum.pairs <- do_pairwise(veg.dat2,
   su = su2, minimportance = 0, minconstancy = 60,
   noiseconstancy = 10,
   minplots = 1,
-  covadj = .33, domcov = 10, minor = 1,
+  minor = 1,
   use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
   reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
   reduced.exceptions = reduced.exceptions

@@ -21,10 +21,13 @@ require(tictoc)
 ## Call climr and attach climate data to plot data
 
 ```{r}
-BGC_5km_grid <- fread("./clean_data/WNA_BGCv12_TrainingPts_5km.csv") %>% as_tibble()
-my_points <- BGC_5km_grid %>% select(xcoord, ycoord, WNA_DEM_4326_clipped, fid) %>%
-  rename(lon = xcoord,   lat = ycoord, 
-  elev = WNA_DEM_4326_clipped, id = fid) %>% na.omit() #remove NAs
+# BGC_5km_grid <- fread("./clean_data/WNA_BGCv12_TrainingPts_5km.csv") %>% as_tibble()
+# my_points <- BGC_5km_grid %>% select(xcoord, ycoord, WNA_DEM_4326_clipped, fid) %>%
+#   rename(lon = xcoord,   lat = ycoord, 
+#   elev = WNA_DEM_4326_clipped, id = fid) %>% na.omit() #remove NAs
+BGC_5km_grid <- fread("./clean_data/WNA_v13_50-200filtpts_15Nov.csv") %>% as_tibble()
+my_points <- BGC_5km_grid %>% select(lat, lon, elev,V1) %>%
+  rename(id = V1) %>% na.omit() #remove NAs
 
 tic()
 #cache_clear()
@@ -35,8 +38,30 @@ toc()
 clim_dat2 <- addVarsclimr(clim_dat)
 
 #merge back with plot data 
-grid.dat<-left_join(BGC_5km_grid, rename(clim_dat2, fid=id)) %>% mutate(zone = str_extract(BGC, "([A-Z]+)")) %>% select(zone, everything())
-fwrite(grid.dat, "./clean_data/climr_WNAv12_5kmgrid.csv")
+grid.dat<-left_join(BGC_5km_grid, rename(clim_dat2, V1=id)) %>% mutate(zone = str_extract(BGC, "([A-Z]+)")) %>% select(zone, everything())
+fwrite(grid.dat, "./clean_data/climr_WNAv13_trainingdat.csv")
+```
+
+```{r climate summaries}
+require(summarytools)
+require(DBI)
+var.list <- c("elev", "MAP", "MSP", "PAS", "MAT", "MWMT", "MCMT", "DDsub0", "DD5", "NFFD", "FFP", "EMT", "EXT", "CMD")
+
+climate.sum <- grid.dat %>% drop_na() %>% group_by(BGC) %>% summarise(across(all_of(var.list), list(mean = mean, sd = sd, min = min, max = max)))
+source("./_functions/_combined_su.R")
+db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
+su <- combined_su(db)
+su.nf <- su %>%
+  filter(grepl('_[[:alpha:]]', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+su <- su %>%
+  filter(!grepl('support|poor|low|[$]|add|nudum|_[[:alpha:]]|X|omit|support', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+#   filter(grepl('01', SiteUnit)) ###zonal specific
+su2 <- su %>%
+filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))
+LMH77 <- su2 %>% distinct(bgc) %>% pull(bgc)
+
+coast.clim <- climate.sum %>% filter(BGC %in% LMH77)
+fwrite(coast.clim, "./clean_data/climr_summary_LMH77.csv")
 ```
 
 

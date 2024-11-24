@@ -10,8 +10,13 @@ create_veg_sum <- function(vdat, siteUnits, minconstancy = 60, noiseconstancy = 
   vdat <- vdat[PlotNumber %in% siteUnits$PlotNumber, ]
   # vdat <- vdat %>% filter(bgc %in% BGC)
   vdat <- vdat[bgc %in% BGC, ]
+## remove trees in moss layer
+  vdat <-  vdat  %>% filter(!Species %in% tree_seedlings)
+  vdat <-  vdat  %>% filter(!(Species %in% trees & Layer == "Moss"))
 
-  vdat <- vdat[, if (.N > 1) .SD, by = .(SiteUnit, Species)]
+#veg.dat2 <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE)
+  
+  vdat <- vdat[, if (.N > 0) .SD, by = .(SiteUnit, Species)]
   vdat[, nplots := length(unique(PlotNumber)), by = .(SiteUnit)]
   if (strata.by == "Layer") {
     vdat <- vdat[, .(
@@ -30,8 +35,8 @@ create_veg_sum <- function(vdat, siteUnits, minconstancy = 60, noiseconstancy = 
   }
   vdat[, maxcons := max(Constancy), by = .(Species)]
   vdat[, maximportance := max(importance), by = .(Species)]
-  vdat <- vdat[maxcons > minconstancy, ]
-  vdat <- vdat[Constancy > noiseconstancy, ]
-  vdat <- vdat[importance > minimportance, ]
+  vdat <- vdat[maxcons >= minconstancy, ]
+  vdat <- vdat[Constancy >= noiseconstancy, ]
+  vdat <- vdat[importance >= minimportance, ]
 }
 

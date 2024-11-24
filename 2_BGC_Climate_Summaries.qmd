@@ -1,5 +1,5 @@
 ---
-title: "Zonal Correlation Analysis"
+title: "Climate of BGCs"
 author: "William H MacKenzie"
 date: "27/08/2024"
 format: 
@@ -29,6 +29,8 @@ require(ggdendro)
 require(purrr)
 require(ggplotify)
 require(grid)
+require(gtExtras)
+require(ggridges)
 set.seed(1279)
 source("./_functions/_bec_dist.R")
 source("./_functions/_bec_dist_matrix.R")
@@ -49,17 +51,7 @@ source('./_functions/_draw_dendro_split.R')
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
 ```
 
-# Correlation of BGC zonal vegetation
-
-Test of existing subzone variant groupings using BEC correlation process.
-
-Need climate indicators and proper weighting of indicators vs non-indicators.
-
-Works reasonably well in identifying lower groups but sometimes it seems like subzone group branches are mis-assigned to expected higher groupings. Generally the clustering matches the expected groupings when tree species and other key climate indicators are emphasized in the analysis.
-
-Levels of differentiation of variants (subassociation level), subzones (association level), and zones are pretty good when tree subtaxa are used. Units often link up well into subzone groups though sometime these groups are 'misplaced'. The MS and SBPS as transitional zones are often linked to related subzone groups and not as a cohesive whole as expected.
-
-Need to factor in USA 'zonal' ecosystems for cross-border correlation.
+# Climate of BGCs
 
 #### Read in data
 
@@ -94,25 +86,46 @@ coast.climr<- fread("./clean_data/climr_coastv13_2_5kmgrid.csv")  %>%  mutate(zo
 
 Project SU tables (e.g. BGC_SU for a LMH) are read-in from regional databases and combined into a project specific table. Then the zonal units are selected for the analysis.
 
-```{r read in SU data}
-db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
-su <- combined_su(db)
- ###zonal specific
-su <- su %>% select(-SiteUnit.orig) %>% mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct() %>% mutate(zone = str_extract(bgc, "([A-Z]+)"))
-bgc.unique <- su %>% distinct(bgc) 
-#su <- su %>% filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|MHwh', SiteUnit))###BGC specific|CWHms
-
-```
-
-
-
 ## Climate of zonal plots
 
 ```{r climate summaries}
-#grid.climr <- fread("./clean_data/climr_WNAv12_5kmgrid.csv") %>% as.data.table
-coast.climr<- fread("./clean_data/climr_coastv13_2_5kmgrid.csv")  %>%  mutate(zone = str_extract(BGC_2, "([A-Z]+)"))
-guide.vars <- coast.climr %>% select(BGC_2, MAP, MSP, PAS, MAT, MWMT, MCMT, DDsub0, DD5, FFP, NFFD, EXT, EMT, CMD.total ) %>% filter(BGC_2 %in% bgc.unique$bgc)
-guide.clim.sum <- guide.vars %>% group_by(BGC_2) %>% summarise_all(list( min=min, mean=mean, median=median, max=max, sd=sd, IQR = IQR), na.rm = TRUE) %>% mutate(n = n()) %>% dplyr::relocate(sort(names(.)))
+grid.climr <- fread("./clean_data/climr_WNAv12_5kmgrid.csv") %>% as.data.table
+bgcv13.update <- fread("./clean_data/BGCv13_spatial_update.csv") %>% as.data.table
+grid.climr[bgcv13.update, BGC := BGC_2, on = c("fid")]
+bgc.unique <- grid.climr %>% distinct(BGC) %>% 
+  filter(grepl("CWH|MH|CDF|IDFww", BGC)) %>% pull(BGC)
+# coast.climr<- fread("./clean_data/climr_coastv13_2_5kmgrid.csv")  %>%  mutate(zone = str_extract(BGC_2, "([A-Z]+)"))
+guide.vars <- grid.climr %>% select(BGC, MAP, MSP, PAS, MAT, MWMT, MCMT, DDsub0, DD5, FFP, NFFD, EXT, EMT, CMD.total ) %>% filter(BGC %in% bgc.unique)
+guide.clim.sum <- guide.vars %>% group_by(BGC) %>% summarise_all(list( min=min, mean=mean, median=median, max=max, sd=sd, IQR = IQR), na.rm = TRUE) %>% mutate(n = n()) %>% dplyr::relocate(sort(names(.)))
+
+### update BGC names
+guide.vars <- guide.vars %>%   
+  mutate(BGC = recode(BGC, "MHws" = "MHms", "MHwsp" = "MHmsp",
+             "CWHdm" =  "CWHdm3", "CWHxm1"="CWHdm1", 
+             "CWHxm2"= "CWHdm2","CWHms4"="CWHws3"
+  ))
+## remove US units
+guide.vars <- guide.vars %>% filter(!grepl("_", BGC))
+
+```
+
+```{r}
+ggplot(guide.vars, aes(x = MSP, y = BGC, fill = stat(x))) +
+  geom_density_ridges_gradient(
+    alpha = 0.8,
+    color = "black",
+    scale = 2,
+    rel_min_height = 0,
+     quantile_lines = TRUE,
+    vline_color = c("green"),
+    quantile_fun = median) +
+  labs(x = "Mean Summer Precipitation", y = "BGC")+
+  theme_minimal()+
+  xlim(0, 1000)
+ggsave("./graphics/MSP_density.jpg", width = 10, height = 10)
+```
+
+```{r climate summaries}
 ggplot(guide.vars, aes(y=BGC_2, x=CMD.total, colour = BGC_2))+
   geom_boxplot()+
   theme(legend.position = 'left')+ ggtitle("CMD.total for zonal plots")
@@ -120,17 +133,17 @@ guide.vars %>%
 #    dplyr::group_by(BGC_2) %>%
   gt_plt_summary()
 
-gt_summary()
+#gt_summary()
 guide.vars.long <- melt(guide.vars, id.vars=c("BGC_2"))
 
 ggplot(guide.vars.long, aes(x=factor(BGC_2),y=variable,fill=factor(BGC_2)))+
   geom_boxplot() + labs(title="CMP") + facet_wrap(~BGC_2, ncol=length(bgc.unique$bgc))
-p2
-  ggplot(aes(x = factor(Tool), y = value, fill = factor(Tool)))+
+
+ggplot(aes(x = factor(Tool), y = value, fill = factor(Tool)))+
   geom_boxplot()+
   facet_wrap(~MS)
 
-require(gtExtras)
+
 guide.vars %>%
     dplyr::group_by(BGC_2) %>%
     # must end up with list of data for each row in the input dataframe
@@ -155,7 +168,6 @@ ci_table <- guide.vars.long %>%
   gt_plt_conf_int(list_data, ci = 0.9)
 
 ```
-
 
 ```{r climate summaries}
 grid.test <- grid.climr   %>% filter(zone %in% c("CWH","IDF", "ICH")) %>% mutate(zone = ifelse(BGC %in% c("IDFww", "IDFww1", "IDFmw2", "ICHxm1", "ICHxw") , "NewICH", zone)) %>% 

@@ -9,6 +9,9 @@ create_veg_sum_all <- function(vdat, siteUnits, minconstancy = 60, noiseconstanc
   vdat <- vdat[PlotNumber %in% siteUnits$PlotNumber, ]
   # vdat <- vdat %>% filter(bgc %in% BGC)
  # vdat <- vdat[assocs %in% Assoc, ]
+  ## remove trees in moss layer
+  vdat <-  vdat  %>% filter(!Species %in% tree_seedlings)
+  #vdat <-  vdat  %>% filter(!(Species %in% trees & Layer == "Moss"))
   
   vdat <- vdat[, if (.N > 1) .SD, by = .(SiteUnit, Species)]
   vdat[, nplots := length(unique(PlotNumber)), by = .(SiteUnit)]

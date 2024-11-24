@@ -1,6 +1,9 @@
-bec_dist_matrix <- function(vegsum.pairs) {
+bec_dist_matrix <- function(vegsum.pairs, distance = "BEC.sim.min") {
+  
+ distance1 <- vegsum.pairs %>% dplyr::select({{distance}})
+ #colnames(dis.matrix1) <- "distance"
   dis.matrix1 <- as.data.frame(vegsum.pairs) |>
-   dplyr::mutate(diss = 1 - BEC.sim.min) |>
+  dplyr::mutate(diss = (1 - distance1)) |>
     #dplyr::mutate(diss = 1 - BEC.sim.mean) |>
     dplyr::mutate(Unit1 = as.character(Unit1)) |>
     dplyr::select(Unit1, Unit2, diss) |>

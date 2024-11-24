@@ -9,7 +9,7 @@ format:
     toc-title: Contents
     section-numbering: 1.1.1
     columns: 1
-editor: visual
+editor: source
 execute:
   echo: false
   error: false
@@ -127,7 +127,7 @@ su <- su %>%
   bgc.unique <- unique(su$bgc)
 ss.unique <- su %>% select(SiteUnit, bgc) %>% distinct
 
- becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/GitHub/BECMaster_Cleaning/updated_vpro/BECMaster_fixing.accdb;")
+ becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;")
 plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
 dbDisconnect(becmaster)
 

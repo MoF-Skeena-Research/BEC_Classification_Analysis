@@ -19,7 +19,7 @@ require(doParallel)
 require(vip)
 source("./_functions/_TabletoTree.R")
 source("./_functions/_TreetoTable.R")
-cloud_dir <- "F:/OneDrive - Personal/OneDrive/BEC_Classification_Paper/"
+cloud_dir <- "D:/OneDrive/OneDrive/BEC_Classification_Paper/"
 #cloud_dir <- "F:/OneDrive - Government of BC/CCISSv12/"
 ```
 
@@ -59,14 +59,14 @@ May wish to assign a temporary notree pseudo species to all units that have no t
 
 ```{r import data}
 ### Vegetation From BECMaster cleaning script Long form Plot|Species|Cover (across all layers)
-load("./clean_data/Analysis_BECMaster_Veg.RData") 
+readRDS("./clean_data/Analysis_BECMaster_Veg.rds") 
 
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
 DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-su <- dbReadTable(master_su, "All_Coast_Forest_su")
+su <- dbReadTable(master_su, "All_Coast_Forest_2024v5_SU")
 dbDisconnect(master_su)
 
-sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=F:/OneDrive - Personal/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
+sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
 taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
 dbDisconnect(sppmaster)
 taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X") %>% dplyr::select(Code, Lifeform) %>% distinct

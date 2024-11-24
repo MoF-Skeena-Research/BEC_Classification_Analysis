@@ -17,27 +17,27 @@ source("./_functions/_TabletoTree.R")
 #### Import becdb
 ```{r set folders, include=FALSE}
 require(DBI) #loads odbc as well
- becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECdb_Working/BECdb_ver12_2021_reduced.accdb;")
+ becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2024.accdb;")
 
-BGCs <- dbReadTable(becdb, "tblBGC_Units_v12") %>% select(BGC_label, BGC_NoSpace, BGC_Zone)
+BGCs <- dbReadTable(becdb, "tblBGC_Units_v12") %>% select(BGC_Label, BGC_NoSpace, BGC_Zone)
 SiteSeries<- dbReadTable(becdb, "tblBEC_SiteSeries_v12_unique") %>% filter(Status == "Current") %>% select(BGC_NoSpace, SS_NoSpace, SS_Label)
 dbDisconnect(becdb)
 BGCs_noSS <- anti_join(BGCs , SiteSeries)
 
-becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECdb_Working/BECdb_ver12_2021_reduced.accdb;")
-dbWriteTable(becdb, "BGCs_NoSS",  BGCs_noSS, overwrite = TRUE, batch_rows = 1)
-dbDisconnect(becdb)
+# becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECdb_Working/BECdb_ver12_2021_reduced.accdb;")
+# dbWriteTable(becdb, "BGCs_NoSS",  BGCs_noSS, overwrite = TRUE, batch_rows = 1)
+# dbDisconnect(becdb)
 ```
 
 #### Import all BECMaster tables in /raw_data folder
 ```{r set folders, include=FALSE}
 require(DBI) #loads odbc as well
- becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/GitHub/BECMaster_Cleaning/updated_vpro/BECMaster_fixing.accdb;")
+ becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;")
 
-ENV <- dbReadTable(becmaster, "BECMaster_fixing_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
+plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
 # ADMIN<- dbReadTable(becmaster, "BECMaster_fixing_Admin")
 # VEG <- dbReadTable(becmaster, "BECMaster_fixing_Veg")
-env.fields <- colnames(ENV)
+env.fields <- colnames(plot.env)
 odbc::odbcListColumns(becmaster, table = "BECMaster_fixing_ENV")
 dbDisconnect(becmaster)
 
@@ -45,20 +45,20 @@ dbDisconnect(becmaster)
 
 ### New Columbia Guide
 ```{r}
-correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
-DBQ=D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb;")
-all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
-dbDisconnect(correlation)
-SU <- do.call(rbind.data.frame, all_su)
-SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
-  arrange(desc(PlotNumber))
-ss.unique <- SU %>% select(SiteUnit) %>% distinct
-SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
-
-master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
-DBQ=D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb;")
-dbWriteTable(master_su, "All_Columbia_FG_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
-dbDisconnect(master_su)
+# correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+# DBQ=D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb;")
+# all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
+# dbDisconnect(correlation)
+# SU <- do.call(rbind.data.frame, all_su)
+# SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
+#   arrange(desc(PlotNumber))
+# ss.unique <- SU %>% select(SiteUnit) %>% distinct
+# SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
+# 
+# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+# DBQ=D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb;")
+# dbWriteTable(master_su, "All_Columbia_FG_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+# dbDisconnect(master_su)
 
 ```
 
@@ -80,7 +80,7 @@ SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
 ## *** The field length of plotnumber is changed to 255 in the exported database table. This causes a fail in veg summary reporting from the hierarchy. need to change the Plot Number field length back to 7 **************
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/CoastGuide_Hierarchy.accdb;")
-dbWriteTable(master_su, "All_Coast_Forest_2024v5_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+dbWriteTable(master_su, "All_Coast_Forest_2024v8_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
 dbDisconnect(master_su)
 
 #%>% mutate(PlotNumber = paste0("'",PlotNumber))
@@ -94,8 +94,8 @@ fwrite(SU_siteseries, "./clean_tabs/CoastGuide_All_BGC_Forest_SS.csv")
 SU_coast <- SU_siteseries
 
 ###Check that there is plot data for all
-missingplots <- anti_join(SU_coast, ENV)
-plots <- right_join(SU_coast, ENV)
+missingplots <- anti_join(SU_coast, plot.env)
+plots <- right_join(SU_coast, plot.env)
 ### Check for duplicate plot usage
 usemorethanone <- SU_coast %>% dplyr::group_by(PlotNumber) %>% dplyr::mutate(dups = n()) %>% filter(dups >1) %>% ungroup() %>% arrange(PlotNumber)
 fwrite(usemorethanone, "./review_outputs/Coast_Plots_Used_Morethan_Once.csv")
@@ -159,8 +159,8 @@ dbDisconnect(master_su)
 
 SU_SIFR <- SU_siteseries
 ###Check that there is plot data for all
-missingplots <- anti_join(SU_SIFR, ENV)
-plots <- right_join(SU_SIFR, ENV)
+missingplots <- anti_join(SU_SIFR, plot.env)
+plots <- right_join(SU_SIFR, plot.env)
 ### Check for duplicate plot usage
 usemorethanone <- SU_SIFR %>% dplyr::group_by(PlotNumber) %>% dplyr::mutate(dups = n()) %>% filter(dups >1) %>% ungroup() %>% arrange(PlotNumber)
 fwrite(usemorethanone, "./outputs/SIFR_Plots_Used_Morethan_Once.csv")
@@ -217,8 +217,8 @@ dbDisconnect(master_su)
 
 SU_NIFR <- SU_siteseries
 ###Check that there is plot data for all
-missingplots <- anti_join(SU_NIFR, ENV)
-plots <- right_join(SU_NIFR, ENV)
+missingplots <- anti_join(SU_NIFR, plot.env)
+plots <- right_join(SU_NIFR, plot.env)
 ### Check for duplicate plot usage
 usemorethanone <- SU_NIFR %>% dplyr::group_by(PlotNumber) %>% dplyr::mutate(dups = n()) %>% filter(dups >1) %>% ungroup() %>% arrange(PlotNumber)
 fwrite(usemorethanone, "./outputs/NIFR_Plots_Used_Morethan_Once.csv")
@@ -282,8 +282,8 @@ dbDisconnect(all_su)
 # 
 # SU <- SU_siteseries
 # ###Check that there is plot data for all
-# missingplots <- anti_join(SU, ENV)
-# plots <- right_join(SU, ENV)
+# missingplots <- anti_join(SU, plot.env)
+# plots <- right_join(SU, plot.env)
 # ### Check for duplicate plot usage
 # usemorethanone <- SU %>% dplyr::group_by(PlotNumber) %>% dplyr::mutate(dups = n()) %>% filter(dups >1) %>% ungroup() %>% arrange(PlotNumber)
 # fwrite(usemorethanone, "./outputs/SIFR_Plots_Used_Morethan_Once.csv")
