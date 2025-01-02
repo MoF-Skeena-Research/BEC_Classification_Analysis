@@ -1,10 +1,10 @@
 ---
-title: "Review of LMH 77 Site Series by BGC"
+title: "Review of LMH 77 Wetlands"
 author: "William H MacKenzie"
 date: "20/09/2024"
 format:
   typst:
-    toc: false
+    toc: true
     toc-depth: 2
     toc-title: Contents
     section-numbering: 1.1.1
@@ -31,6 +31,10 @@ execute:
 ---
 
 This script is designed to review the site series within each BGC, primarily to identify where site series do not sufficiently differentiate and need to be reviewed. The script also identifies site series with too few plots or with low diagnostic potential for review and interpretation of the quantitative analysis. The script generates a table list of site unit pairs that exceed a threshold similarity and a dendrogram of the cluster analysis of site units for each BGC.
+
+# Historic BEC correlation approach
+
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -67,8 +71,7 @@ source("./_functions/_create_diagnostic_veg.R")
 source("./_functions/_return_similar_pairs.R")
 source("./_functions/_read_sppmaster.R")
 source("./_functions/_combined_su.R")
-source("./_functions/_create_veg_sum.R")
-source("./_functions/_create_veg_sum.R")
+source("./_functions/_create_veg_sum_all.R")
 #source('./_functions/_create_veg_sum2.R')
 source('./_functions/_build_species_ordering.R')
 source('./_functions/_format_veg_table.R')
@@ -78,7 +81,7 @@ source('./_functions/_create_dendro.R')
 source('./_functions/_create_dendro_all.R')
 source('./_functions/_create_dendro_bybgc.R')
 source('./_functions/_draw_ss_edatope.R')
-data.path = "D:/OneDrive - Government of BC/GitHub_data"
+source('./_functions/_create_VGS_table.R')
 ```
 
 # Evaluate site series within each BGC
@@ -89,49 +92,46 @@ Vegetation data is read in from saved .RDS file generated from the BECMaster cle
 
 ```{r load data, echo=FALSE, message=FALSE}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
-#taxon.all <- read_sppmaster()
-taxon.all <- read_sppmaster(database = "C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb")
-
+taxon.all <- read_sppmaster()
 taxon.lifeform <- taxon.all %>%
   filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
   dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
   distinct()
- tree_seedlings <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% mutate(Code = paste0(Code, "D")) %>% pull(Code)
-trees <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% pull(Code)
 veglump <- dbConnect(
   odbc::odbc(),
   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
 lump <- dbReadTable(veglump, "CorrelationII_Lump")
 dbDisconnect(veglump)
 veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
-db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
-su <- combined_su(db)
-su.nf <- su %>%
-  filter(grepl('_[[:alpha:]]', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
-su <- su %>%
-  filter(!grepl('support|poor|low|[$]|add|nudum|_[[:alpha:]]|X|omit|support', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
-#   filter(grepl('01', SiteUnit)) ###zonal specific
-su2 <- su %>%
-filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))
-author = "All"
-###BGC specific|CWHms
-##AB units
-# su2 <- su2 %>%
-# filter(bgc %in% c('CWHvh1', 'CWHvh2', 'CWHvm1', 'CWHvm2', 'CWHvm3', 'CWHvm4', 'CWHwm'))
-# author = "ABanner"
-# ### BG units
-# su2 <- su2 %>%
-# filter(bgc %in%c("CWHds1", "CWHms1", "CWHms2", "CWHms3", "MHmm1", "MHmm2", "MHws", "MHvh"))
-# author = "BGreen"
-### DM units
-#  su2 <- su2 %>%
-#  filter(bgc %in% c("CDFmm", "CWHds2", "CWHmm1", "CWHmm2", "CWHws1", "CWHws2",
-# "CWHws3", "CWHxm1", "CWHxm2", "CWHxm3", "IDFww1"))
-# author = "DMeidinger_test"
+db <- "D:/BC_Correlation2_Vpro_2023/Coast_NonForest_SUnew.accdb"
 
- su2 <- su %>% filter(bgc == "CWHxs")
-  bgc.unique <- unique(su2$bgc)
-ss.unique <- su2 %>% select(SiteUnit, bgc) %>% distinct
+master_su <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=", db,";"))
+su <- dbReadTable(master_su, "Coast_wetlands_v0_SU")
+dbDisconnect(master_su)
+  SU <- su %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
+    arrange(desc(PlotNumber)) %>% mutate(bgc = gsub(" ", "", bgc, fixed = TRUE)) 
+  ss.unique <- SU %>% select(SiteUnit) %>% distinct
+  su <- SU %>% dplyr::select(PlotNumber, SiteUnit, bgc)
+  su$SiteUnit.orig <- su$SiteUnit
+  su$SiteUnit <- sub(".*/", "", su$SiteUnit)
+  # su <- su %>% mutate(SiteUnit = gsub("/", "_", su$SiteUnit)) 
+  # su <- su %>% mutate(SiteUnit = gsub(" ", "", su$SiteUnit, fixed = TRUE)) 
+#su <- combined_su(db)
+# su <- su %>%
+#   filter(grepl('_[[:alpha:]]', SiteUnit))
+
+#su$SiteUnit <- gsub(".*_","",su$SiteUnit) ## extracts only the site association code
+
+su <- su %>%
+  filter(!grepl('poor|low|-S|add|nudum|browsed|X|!|support|Unplaced|remove|unplaced', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+#   filter(grepl('01', SiteUnit)) ###zonal specific
+# su <- su %>%
+# filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
+# su <- su %>%
+# filter(bgc %in% c('CWHvh1', 'CWHvh2', 'CWHvm1', 'CWHvm2', 'CWHvm3', 'CWHvm4', 'CWHwm'))###BGC specific|CWHms 
+#filter(bgc %in% c('CWHmm1'))
+  bgc.unique <- unique(su$bgc)
+ss.unique <- su %>% select(SiteUnit, bgc) %>% distinct
 
  becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;")
 plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
@@ -145,29 +145,27 @@ dbDisconnect(becmaster)
 
 2.  Identify site series that have low diagnostic potential (review units for membership consistency).
 
-3. Where unit differentiation is questionable, rerun with key indicators as TRUE. 
-
 ```{r build pair.wise similarity matrix, echo=FALSE}
 
-key.site.indicators <- c("PICESIT", "POPUTRI", "LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG", "NEPHCRI", "CALTLEP", "CALTBIF")#,  "TIARELLA", "DRYOEXP" )
+key.site.indicators <- c("PICESIT", "POPUTRI", "LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG")#,  "TIARELLA", "DRYOEXP" )
 reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
 # reduced.lifeforms = c(1,2)
 reduced.lifeforms <- c(9, 10, 11)
 ### select units to run
+su2 <- su
 
 vegsum.pairs <- do_pairwise(veg.dat2,
-  su = su2, minimportance = 0, minconstancy = 60,  ### change this to 50 reduce up to 60
+  su = su2, minimportance = 0, minconstancy = 60,
   noiseconstancy = 10,
   minplots = 1,
-  minor = 1,
+ minor = 1,
   use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
-  reduce.lifeform = FALSE, reduced.lifeforms = reduced.lifeforms, reduction = .5,
-
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
   reduced.exceptions = reduced.exceptions
 )
 
 xx <- vegsum.pairs %>%
-  filter(Unit1 == "CWHds1_101a", Unit2 == "CWHds1_101b")
+  filter(Unit1 == "CWHvm1_103", Unit2 == "CWHvm1_103->111.2")
 
 unit.compare <- vegsum.pairs %>%
   select(Unit1, Unit2, BEC.sim.min, diff.ratio.x, diff.ratio.y, nplots.x, nplots.y,
@@ -177,11 +175,9 @@ unit.compare <- vegsum.pairs %>%
 unit.compare$bgc1 <- stringr::word(unit.compare$Unit1, 1, sep = "\\_")
 unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
 
-yy <- vegsum.pairs %>% 
-
-  select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, shared.diag, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, diff.ratio,BEC.sim.mean, BEC.sim.min, BEC.sim.max) %>% 
-  filter(Unit1 == "CWHws1_110", Unit2 == "CWHws1_111")
-fwrite(yy, "example_pairwise.csv")
+# yy <- vegsum.pairs %>% 
+#   select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, shared.diag, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, diff.ratio,diff.ratio.mean, BEC.sim) %>% 
+#   filter(Unit1 == "CWHvm1_111.1", Unit2 == "CWHvm1_101->111.1")
 
 ```
 
@@ -192,7 +188,7 @@ fwrite(yy, "example_pairwise.csv")
 #| warning: false
 #| tbl-align: "left"
 
-compared <- unit.compare %>% filter(bgc1 == bgc2)
+compared <- unit.compare #%>% filter(bgc1 == bgc2)
 ss_too.few1 <- compared %>%
   select(Unit1, nplots.x) %>% 
   filter(nplots.x < 5, nplots.x>0) %>% 
@@ -234,13 +230,13 @@ gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.fon
 
 ```{r site units that are too similar, echo=FALSE}
 #| label: tab-sites-similar
-#| tbl-cap: paste0("Site Series pairs with poor differentiation (BEC.sim >= .90)")
+#| tbl-cap: paste0("Site Series pairs with poor differentiation (BEC.sim >= .93)")
 #| tbl-cap-location: top
 #| warning: false
 #| tbl-align: "left"
 ss_similar <- compared %>%
   select(Unit1, Unit2, BEC.sim) %>%
-  dplyr::filter(BEC.sim >= .90) %>% mutate(Units = paste0(Unit1, " vs ", Unit2)) %>%
+  dplyr::filter(BEC.sim >= .93) %>% mutate(Units = paste0(Unit1, " vs ", Unit2)) %>%
   select(-Unit2, -Unit1) %>% 
   rename("Similarity" = BEC.sim, "Site Units" = Units) %>%
   distinct() 
@@ -258,134 +254,74 @@ The dendrogram is an approximate representation of the similarity matrix. It is 
 
 ```{r cluster analysis, echo=FALSE}
 #bgc.unique <- c("CDFmm", "CWHvm3")
-singles <- for (bgc.choose in bgc.unique){
-  create_dendro_bybgc(bgc.choose, unit.compare, threshold.low = .10, threshold.high = .20)
-}
-
-# singles.poor <- as.data.frame(singles) %>% filter(grepl('nplot|lowdiag', SiteUnit))
-# singles.good <- as.data.frame(singles) %>% filter(!grepl('nplot|lowdiag', SiteUnit))
-# 
-# gt::gt(singles.good) %>%
-#   gt::tab_header(
-#     title = paste0(md("Units ungrouped at cut.level = "), cut.level),
-#     subtitle = md("*Units with sufficient plots and diagnostics*")
-#   )  %>%
-#   tab_options(
-#     table.font.size = px(10)
-#   )
-# gt::gt(singles.poor) %>%
-#   gt::tab_header(
-#     title = paste0(md("Units ungrouped at cut.level = "), cut.level),
-#     subtitle = md("*Units with deficient plots and diagnostics*")
-#   )  %>%
-#   tab_options(
-#     table.font.size = px(10)
-#   )
-
+#for (bgc.choose in bgc.unique){
+  create_dendro_all(unit.compare, threshold.low = .07)
+#}
 ```
 
-## Count of plot edaphic positions by site unit
 
-```{r build edatopic table, echo=FALSE}
+## Generate comparative veg summary report
 
-#bgc.choose <- "CWHvm1"
-draw_ss_edatope(plot.env, su2, bgc.choose = bgc.unique)
-```
-
-## Generate formatted table summary report for BGC
-
-```{r association sum table, echo=FALSE}
-# bgc.list <- unique(su$bgc)
-# for(bgc.choose in bgc.list){
-# vegdata <- readRDS('./clean_data/Reports_BECMaster_Veg.rds')
-# tree_seedlings <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% mutate(Code = paste0(Code, "D")) %>% pull(Code)
-# trees <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% pull(Code)
-# vegdata <- vegdata  %>% filter(!Species %in% tree_seedlings)
-# vegdata <- vegdata  %>% filter(!(Species %in% trees & Layer == "Moss"))
-# 
-# veg.dat2 <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE)
-# BGC <- "MHmm1"
-# for(bgc.choose in bgc.unique){
-#   vegSum <-
-#   create_veg_sum(vdat = veg.dat2, siteUnits = su , BGC = bgc.choose, strata.by = "Layer")
-# ##determine order of species by unit
-# indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su, BGC = bgc.choose)
-# veg.sum.table <- format_veg_table(vsum = vegSum, spp = taxon.lifeform)
-# 
-# veg.sum.gt <- gt::gt(veg.sum.table) |> gt::tab_options(table.font.size = 8)|> gt::tab_style(
-#     style = gt::cell_text(font = gt::google_font(name = "wingdings")),
-#     locations = gt::cells_body(columns = 4:(ncol(veg.sum.table))-1, rows = 2:nrow(veg.sum.table))) |>  gt::tab_style(
-#     style = gt::cell_text(weight = "bold"),
-#     locations = gt::cells_body(rows =1)) |>
-#   gt::tab_header(
-#     title = paste0(bgc.choose),
-#     subtitle = paste("Summary Vegetation Table")
-#   )
-#    #veg.sum.gt2 <- gt::as_latex(veg.sum.gt)
-#  #veg.sum.gt2
-# print(veg.sum.gt)
-# }
-# }
-```
-
-## Export draft summary tables to Excel
-
-```{r build veg guide summary and export to excel, echo = FALSE, warning=FALSE, message=FALSE}
-require(openxlsx)
-require(tictoc)
-library(stringr)
-data.path = "D:/OneDrive - Government of BC/GitHub_data"
-author = "DMeidinger_new"
-bgc.list = c("CDFmm", "CWHds2", "CWHmm1", "CWHmm2", "CWHws1", "CWHws2",
-"CWHws3", "CWHdm1", "CWHdm2", "CWHdm3", "IDFww1")
-tab.split = c('CDFmm_101', 'CDFmm_110', 'CDFmm_111','CDFmm_112',
-                 'CWHdm2_110', 'CWHdm2_111','CWHdm2_112.1','CWHdm2_112.2', 'CWHdm2_113')
-
-
-## Bobs
-author = "BGreen_new"
-bgc.list = c("CWHds1", "CWHms1", "CWHms2", "CWHms3", "MHmm1",
-"MHmm2", "MHms", "MHvh")
-
-# 
-# author = "ABanner_new"
-# bgc.list = c("CWHvh1", "CWHvh2", "CWHvm1", "CWHvm2", "CWHvm3","CWHvm4", "CWHwm")
-# tab.split = c('CWHvh1_111', 'CWHvh1_112', 'CWHvh1_120.1', 'CWHvh1_120.2', 'CWHvh1_121', 'CWHvh2_111',
-#               'CWHvh2_112', 'CWHvh2_113', 'CWHvh2_120.1', 'CWHvh2_120.2',
-#               'CWHvm1_111.1', 'CWHvm1_111.2', 'CWHvm1_112.1', 'CWHvm1_112.2', 'CWHvm1_113', 'CWHvm1_114',
-#               'CWHvm2_111.1', 'CWHvm2_111.2', 'CWHvm2_112.1', 'CWHvm2_112.2', 'CWHvm2_113', 'CWHvm2_114', 'CWHvm2_115',
-#               'CWHvm3_111.1', 'CWHvm3_111.2', 'CWHvm3_112.1', 'CWHvm3_112.2', 'CWHvm3_113', 'CWHvm3_114')
-# 
-# author = "HKlassen"
-# bgc.list = c("CWHxs")
-
-su3 <- su %>% 
-  mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", ""))  %>% 
-  filter(bgc %in% bgc.list) %>%
-  mutate(bgc = ifelse(SiteUnit %in% tab.split, paste0(bgc, "tab2"), bgc)) %>% 
-  mutate(SiteUnit = ifelse(SiteUnit %in% tab.split, str_replace_all(SiteUnit, "_", "tab2_"), SiteUnit))%>%
-  arrange(bgc)
-
-bgc.list <- unique(su3$bgc)
-
-vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
-veg.dat2 <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE)
-
-
-#bgc.choose = "CWHvh1"
-vegsum.wbk <- createWorkbook()
-tic()
-bgc.choose = "CWHxs"
-for(bgc.choose in bgc.list){
-vegSum <- 
-  create_veg_sum(vdat = veg.dat2, siteUnits = su3 , BGC = bgc.choose, minconstancy = 50, noiseconstancy = 25, minimportance = 0, strata.by = "Layer")
+```{r report table}
+# su2 <- su %>% mutate(bgc = str_extract(SiteUnit, "[^_]+"))
+#unit.list <- unique(su$SiteUnit)
+ unit.choose <- c("Wf50", "Wf51", "Wf52", "Wf52.1", "Wf52.2", "Wf53", "Ws50.1", "Ws50.2")
+su.choose <- su %>% filter(SiteUnit %in% unit.choose)
+table.name1 <- "Fens"
+vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
 ##determine order of species by unit
-indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits =su3, BGC = bgc.choose)
-veg.sum.table <- format_veg_table(vsum = vegSum, spp=taxon.lifeform,cons.1 = 70, cons.2 = 50)
-openxlsx::addWorksheet(vegsum.wbk, sheetName = bgc.choose)
-openxlsx::writeData(vegsum.wbk, sheet = bgc.choose, veg.sum.table) 
-}
-toc()
-saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_veg_tables_", author, ".xlsx"), overwrite = TRUE)
+indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
+veg.sum.table1 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+create_VGS_table(veg.sum.table1, table.name = table.name1)
 
+
+unit.choose <- c("Wm04", "Wm05", "Wm06", "Wm09", "Wm50.1", "Wm50.2","Wm51", "Wm52") 
+ su.choose <- su %>% filter(SiteUnit %in% unit.choose)
+table.name2 <- "Marshes"
+vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
+##determine order of species by unit
+indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
+veg.sum.table2 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+create_VGS_table(veg.sum.table2, table.name = table.name2)
+
+
+unit.choose <- c("Ww01", "Ww02", "Ww03", "Ww04", "Ww05", "Ww06") 
+ su.choose <- su %>% filter(SiteUnit %in% unit.choose)
+table.name3 <- "Shallow waters"
+vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
+##determine order of species by unit
+indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
+veg.sum.table3 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+create_VGS_table(veg.sum.table3, table.name = table.name3)
+ 
+#  unit.choose <- c() 
+#  su.choose <- su %>% filter(SiteUnit %in% unit.choose)
+# table.name2 <- "Swamps"
+# vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0)
+# ##determine order of species by unit
+# indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
+# veg.sum.table2 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+# create_VGS_table(veg.sum.table2, table.name = table.name2)
+
+vegsum.wbk <- createWorkbook()
+openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name1)
+openxlsx::writeData(vegsum.wbk, sheet = table.name1, veg.sum.table1)
+openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name2)
+openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
+openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name3)
+openxlsx::writeData(vegsum.wbk, sheet = table.name3, veg.sum.table3)
+saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_draft_wetland_tables.xlsx", overwrite = TRUE)
+
+```
+
+```{r table of plots site unit by BGC}
+#| label: tab-sites-bgc
+#| tbl-cap: "Count of Site Units by BGC"
+#| tbl-cap-location: top
+#| warning: false
+#| tbl-align: "left"
+# ss_x_bgc <- su %>% select(SiteUnit, bgc) %>% group_by(SiteUnit, bgc) %>% summarise(n = n()) %>% pivot_wider(names_from = SiteUnit, values_from = n, values_fill = 0) %>% ungroup() %>%  mutate_if(is.numeric, as.character) %>% arrange(bgc)
+# ss_x_bgc[ss_x_bgc == 0] <- "-"
+# # low.diff <- gt::as_gtable((gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) |> gt::cols_width(Site.Units ~ gt::px(250))), plot = TRUE, text_grob = gridtext::richtext_grob)
+# gt::gt(ss_x_bgc) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) 
 ```

@@ -80,5 +80,5 @@ build_species_ordering_all <- function(vdat, vsum = vegSum, code.lump = lump, si
     filter(indic == max_indic) %>%
     ungroup() %>%
     left_join(taxon.lifeform, by = c(spp = "Code")) %>%
-    arrange(desc(indic))
+    arrange(desc(indic)) %>% arrange(siteunit)
 }

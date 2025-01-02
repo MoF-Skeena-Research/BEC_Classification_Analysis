@@ -81,6 +81,7 @@ source('./_functions/_create_dendro.R')
 source('./_functions/_create_dendro_all.R')
 source('./_functions/_create_dendro_bybgc.R')
 source('./_functions/_draw_ss_edatope.R')
+source('./_functions/_create_VGS_table.R')
 ```
 
 # Evaluate site series within each BGC
@@ -105,7 +106,7 @@ veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
 db <- "D:/BC_Correlation2_Vpro_2023/Coast_NonForest_SUnew.accdb"
 
 master_su <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=", db,";"))
-su <- dbReadTable(master_su, "Coast_Skunkcabbage_Final_SU")
+su <- dbReadTable(master_su, "Coast_Estuary_v1_SU")
 dbDisconnect(master_su)
   SU <- su %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
     arrange(desc(PlotNumber)) %>% mutate(bgc = gsub(" ", "", bgc, fixed = TRUE)) 
@@ -122,7 +123,7 @@ dbDisconnect(master_su)
 #su$SiteUnit <- gsub(".*_","",su$SiteUnit) ## extracts only the site association code
 
 su <- su %>%
-  filter(!grepl('poor|low|-S|add|nudum|browsed', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+  filter(!grepl('poor|low|-S|add|nudum|browsed|X|!|support|Unplaced', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
 #   filter(grepl('01', SiteUnit)) ###zonal specific
 # su <- su %>%
 # filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
@@ -166,13 +167,10 @@ vegsum.pairs <- do_pairwise(veg.dat2,
 xx <- vegsum.pairs %>%
   filter(Unit1 == "CWHvm1_103", Unit2 == "CWHvm1_103->111.2")
 
-unit.compare <- vegsum.pairs %>%
-  select(Unit1, Unit2, BEC.sim.min, diff.ratio.x, diff.ratio.y, nplots.x, nplots.y,
-         unit.diag.sum.x, unit.diag.sum.y) %>% filter(nplots.x>0) %>%
+unit.compare <- vegsum.pairs %>%filter(nplots.x>0) %>%
+  select(Unit1, Unit2, BEC.sim.min, nplots.x, nplots.y, unit.diag.sum.x, unit.diag.sum.y) %>% 
   mutate(BEC.sim = round(BEC.sim.min, 2)) %>% 
  distinct()
-unit.compare$bgc1 <- stringr::word(unit.compare$Unit1, 1, sep = "\\_")
-unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
 
 # yy <- vegsum.pairs %>% 
 #   select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, shared.diag, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, diff.ratio,diff.ratio.mean, BEC.sim) %>% 
@@ -187,7 +185,7 @@ unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
 #| warning: false
 #| tbl-align: "left"
 
-compared <- unit.compare %>% filter(bgc1 == bgc2)
+compared <- unit.compare %>% distinct
 ss_too.few1 <- compared %>%
   select(Unit1, nplots.x) %>% 
   filter(nplots.x < 5, nplots.x>0) %>% 
@@ -258,38 +256,26 @@ The dendrogram is an approximate representation of the similarity matrix. It is 
 #}
 ```
 
-```{r veg guide summary table}
-VGS_table <- function(veg.sum.table, table.name = ""){
-  veg.sum.gt <- gt::gt(veg.sum.table) |> gt::tab_options(table.font.size = 8)|> gt::tab_style(
-    style = gt::cell_text(font = gt::google_font(name = "wingdings")),
-    locations = gt::cells_body(columns = 4:(ncol(veg.sum.table))-1, rows = 2:nrow(veg.sum.table))) |>  gt::tab_style(
-    style = gt::cell_text(weight = "bold"),
-    locations = gt::cells_body(rows =1)) |>
-  gt::tab_header(
-    title = paste0(table.name),
-    subtitle = paste("Summary Vegetation Table")
-  )
-  return(veg.sum.gt)
-}
-```
 
 ## Generate comparative veg summary report
 
 ```{r report table}
 # su2 <- su %>% mutate(bgc = str_extract(SiteUnit, "[^_]+"))
-# bgc.choose <- c("CWHxm1", "CWHvh1", "MHmm1")
-table.name1 <- "Skunkcabbage1"
- unit.choose <- c("Ws51", "Ws52", "Ws53", "Ws56.1", "Ws56.2", "Ws56.3",  "Ws57")
+unit.list <- unique(su$SiteUnit)
+
+unit.choose <- c("Em01","Em02","Em03","Em04","Em05","Em06", "Em07")
 su.choose <- su %>% filter(SiteUnit %in% unit.choose)
+table.name1 <- "Estuary1"
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
 ##determine order of species by unit
-indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
+#indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
 veg.sum.table1 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 create_VGS_table(veg.sum.table1, table.name = table.name1)
 
-table.name2 <- "Skunkcabbage2"
- unit.choose <- c("Ws54.1", "Ws54.2", "Ws55.1", "Ws55.2", "Ws59")
+
+ unit.choose <- c("Ed01", "Ed02", "Ed03", "Ed04 Heramax", "Es01", "Es02") 
  su.choose <- su %>% filter(SiteUnit %in% unit.choose)
+table.name2 <- "Estuary2"
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
 ##determine order of species by unit
 indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
@@ -297,7 +283,7 @@ veg.sum.table2 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 create_VGS_table(veg.sum.table2, table.name = table.name2)
  
                   
-#  unit.choose <- c("Bb13 Rumefue", "Bbd01 Poa_mac", "Bb_Festrub", "Bb_Calysol","Bb_Grinsti","Br Festrub","HwSs-Gaulsha","HwSs-Kindpra")  
+#  unit.choose <- c("Fl50","Heramax","Malufus","SCHOAME","Wm02.2", "Es01.2","Es03" )
 # su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 # table.name3 <- "Beach3"
 # vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0)
@@ -313,7 +299,7 @@ openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name2)
 openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
 # openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name3)
 # openxlsx::writeData(vegsum.wbk, sheet = table.name3, veg.sum.table3)
-saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_Skunkcabbage_table.xlsx", overwrite = TRUE)
+saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_draft_estuary_table.xlsx", overwrite = TRUE)
 
 ```
 
@@ -323,8 +309,8 @@ saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_Skunkcabbage_table.xlsx", overwr
 #| tbl-cap-location: top
 #| warning: false
 #| tbl-align: "left"
-ss_x_bgc <- su %>% select(SiteUnit, bgc) %>% group_by(SiteUnit, bgc) %>% summarise(n = n()) %>% pivot_wider(names_from = SiteUnit, values_from = n, values_fill = 0) %>% ungroup() %>%  mutate_if(is.numeric, as.character) %>% arrange(bgc)
-ss_x_bgc[ss_x_bgc == 0] <- "-"
-# low.diff <- gt::as_gtable((gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) |> gt::cols_width(Site.Units ~ gt::px(250))), plot = TRUE, text_grob = gridtext::richtext_grob)
-gt::gt(ss_x_bgc) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) 
+# ss_x_bgc <- su %>% select(SiteUnit, bgc) %>% group_by(SiteUnit, bgc) %>% summarise(n = n()) %>% pivot_wider(names_from = SiteUnit, values_from = n, values_fill = 0) %>% ungroup() %>%  mutate_if(is.numeric, as.character) %>% arrange(bgc)
+# ss_x_bgc[ss_x_bgc == 0] <- "-"
+# # low.diff <- gt::as_gtable((gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) |> gt::cols_width(Site.Units ~ gt::px(250))), plot = TRUE, text_grob = gridtext::richtext_grob)
+# gt::gt(ss_x_bgc) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) 
 ```

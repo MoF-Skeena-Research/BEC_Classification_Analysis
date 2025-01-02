@@ -123,8 +123,10 @@ su9 <- combined_su(db)
 su <- rbind(su, su2, su3, su4, su5, su6, su7, su8, su9)
 #xx <- su %>% filter(PlotNumber == "K780448")
 su <- su %>%
-  filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|01.2|X', SiteUnit)) %>% #|101b|101.2
-  filter(grepl('01', SiteUnit)) ###zonal specific
+  filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|01.2|X|support', SiteUnit))
+fwrite(su, "./clean_data/combined_SU.csv")
+#|101b|101.2
+su <- su %>%   filter(grepl('01', SiteUnit)) ###zonal specific
 su <- su %>% select(-SiteUnit.orig) %>% mutate(SiteUnit = str_replace(SiteUnit, "b$|a$|c$", "")) %>% distinct() %>% mutate(zone = str_extract(bgc, "([A-Z]+)"))
 bgc.unique <- su %>% distinct(bgc) 
 no.su <- anti_join(bgcv13, bgc.unique, by = c("BGC_NoSpace" = "bgc")) %>% filter(!SiteClassificationStatus == "none")

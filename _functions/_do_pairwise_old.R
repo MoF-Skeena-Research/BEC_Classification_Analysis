@@ -1,25 +1,18 @@
 ## pair-wise comparison of vegetation summary data
 
-# veg.dat = veg.dat2
-# su = su2 
+# su = su2
 # minimportance = 0
-# minconstancy = 50
+# minconstancy = 60
 # noiseconstancy = 10
-#  minplots = 1
+# minplots = 5
 # minor = 1
-# use.ksi = FALSE
-# ksi = key.site.indicators
-# ksi.value = 1.5
-# reduce.lifeform = TRUE
-# reduced.lifeforms = reduced.lifeforms 
-# reduction = .1
-# reduced.exceptions = reduced.exceptions
-# mindiff = .1
-# mindd = 0.35
+# use.ksi = TRUE; ksi = key.site.indicators; ksi.value = 1.2
+# reduce.lifeform = TRUE; reduced.lifeforms = reduced.lifeforms; reduction = .1
+# reduced.exceptions = NULL
 
-do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 50,
+do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 60,
                         noiseconstancy = 10,
-                        minplots = 5, mindiff = .1, mindd = 0.35,
+                        minplots = 5, 
                         use.ksi = FALSE, ksi = NULL, ksi.value = 1.5,
                         reduce.lifeform = FALSE, reduced.lifeforms = NULL,
                         reduction = 1, reduced.exceptions = NULL,
@@ -67,41 +60,34 @@ do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 50,
       )
     ))
   ### Calculate differential potential
- ##reduce value for constancy within 10% of minimum
-   vegsum <- vegsum %>%
-    mutate(d.potential = ifelse(Constancy >= minconstancy & Constancy < minconstancy+10,
-              (Constancy^(1 / 3)) * (Constancy / 100) * ((Constancy - (minconstancy-1)) / 10),##mincons-1 so that 50 recieves some value
-                  ifelse(Constancy >= (minconstancy+10), (Constancy^(1 / 3) * (Constancy / 100)), 0))) 
-        #ifelse(constant_type %in% c("c", "cd"), (Constancy^(1 / 3) * (Constancy / 100)),
+  vegsum <- vegsum %>%
+    mutate(d.potential = ifelse(Constancy > 50 & Constancy < minconstancy,
+              (Constancy^(1 / 3)) * (Constancy / 100) * ((Constancy - 50) / 10),
+                  ifelse(Constancy >= minconstancy & MeanCov > minor, (Constancy^(1 / 3) * (Constancy / 100)), 
+                         ifelse(Constancy >= minconstancy & MeanCov <= minor, (Constancy^(1 / 3) * (Constancy / 100)*0.5),0)
+      #ifelse(constant_type %in% c("c", "cd"), (Constancy^(1 / 3) * (Constancy / 100)),
         #ifelse(constant_type %in% c("cm"), (Constancy^(1 / 3) * (Constancy / 100) * 0.5), 0)
+      )
+    ))
 
-  vegsum <- vegsum %>% mutate(d.potential = ifelse(d.potential < 0, 0,
+  vegsum <- vegsum %>% mutate(d.potential = ifelse(d.potential < .6, 0,
     ifelse(d.potential > 4, 4, d.potential)
   ))
 
   ### Calculate dominant differential potential
-  ### for cover between 5-10 * value by mean cover/10
   vegsum <- vegsum %>% 
-    mutate(dd.potential = ifelse(MeanCov >= 10 & (Constancy >= minconstancy), (MeanCov^(1 / 3)),
-    ifelse((MeanCov >= 5 & MeanCov < 10 & (Constancy >= minconstancy)), (MeanCov^(1 / 3) * ((MeanCov) / 10)), 0)
+    mutate(dd.potential = ifelse(MeanCov >= 10, (MeanCov^(1 / 3)),
+    ifelse((MeanCov >= 5 & MeanCov < 10), (MeanCov^(1 / 3) * ((10 - MeanCov) / 10)), 0)
   ))
   vegsum <- vegsum %>% mutate(dd.potential = ifelse(dd.potential > 4, 4,
-    ifelse(dd.potential < mindd, 0, dd.potential)
+    ifelse(dd.potential < 0.6, 0, dd.potential)
   ))
-## If species is both diff and domdiff increases max potential from 8 to 10 by *1.25
+
   vegsum <- vegsum %>%
     mutate(diagnostic.potential = ifelse((d.potential > 0 & dd.potential > 0),
       ((d.potential + dd.potential) * 1.25),
       (d.potential + dd.potential)
     ))
-  
-  ## reduce potential value of species with minor cover
-  vegsum <- vegsum %>%
-    mutate(diagnostic.potential = ifelse(MeanCov <= minor, diagnostic.potential * (MeanCov/(minor)),diagnostic.potential))
-  ## set to zero if less than mindiff
-  vegsum <- vegsum %>%
-    mutate(diagnostic.potential = ifelse(diagnostic.potential <= mindiff, 0, diagnostic.potential))  
-  
   setDT(vegsum)
   vegsum <- merge(vegsum, taxon.lifeform, by.x = c("Species"), by.y = c("Code"))
   # Adjust points for reduced.lifeforms (moss layer)
@@ -125,8 +111,7 @@ do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 50,
     dplyr::group_by(SiteUnit) %>%
     mutate(n_constants = sum(!is.na(constant_type)))
 
-#vegsum <- vegsum %>% dplyr::filter(SiteUnit %in% c("CWHdm3_101", "CWHdm3_103"))
-  
+
   ### ________________DO PAIR-WISE Comparison_______
 
   ## build pairs
@@ -158,27 +143,26 @@ do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 50,
   ), by = .(Unit1, Unit2, Species)]
   # Differential
   ## assigns differential type based on cut-off ranges
-  # const_cut <- c(30, 50, 70, 101)
-  # const_cut2 <- c(-101, -70, -50, -30)
-  # const_labels <- c("d3", "d2", "d1")
-  # const_labels2 <- c("d1", "d2", "d3")
-  # vegsum.temp <- vegsum.pairs
-  # vegsum.pairs <- vegsum.temp
-  # vegsum.pairs[, d.type.x := cut(const.diff, breaks = const_cut, labels = const_labels)]
-  # vegsum.pairs[, d.type.y := cut(const.diff, breaks = const_cut2, labels = const_labels2)]
-  # 
-  # ## if minimum constancy is not met sets to NA
-  # vegsum.pairs[, d.type.x := ifelse(Constancy.x < minconstancy, NA, paste0("", d.type.x))]
-  # vegsum.pairs[, d.type.y := ifelse(Constancy.y < minconstancy, NA, paste0("", d.type.y))]
+  const_cut <- c(37, 60, 80, 101)
+  const_cut2 <- c(-101, -80, -60, -37)
+  const_labels <- c("d3", "d2", "d1")
+  const_labels2 <- c("d1", "d2", "d3")
+  vegsum.temp <- vegsum.pairs
+  vegsum.pairs <- vegsum.temp
+  vegsum.pairs[, d.type.x := cut(const.diff, breaks = const_cut, labels = const_labels)]
+  vegsum.pairs[, d.type.y := cut(const.diff, breaks = const_cut2, labels = const_labels2)]
+
+  ## if minimum constancy is not met sets to NA
+  vegsum.pairs[, d.type.x := ifelse(Constancy.x < minconstancy, NA, paste0("", d.type.x))]
+  vegsum.pairs[, d.type.y := ifelse(Constancy.y < minconstancy, NA, paste0("", d.type.y))]
 
   ## calculate d points
-  vegsum.pairs[, d.points.x := ifelse(((Constancy.x >= minconstancy+10) & (const.diff >= 20)), (const.diff ^(1 / 3)*(const.diff / 100)),
-              ifelse(((Constancy.x <minconstancy+10) & (Constancy.x >= (minconstancy)) & (const.diff>=20)), ((const.diff ^(1 / 3)*(const.diff / 100)*((abs(10-((minconstancy+10)-Constancy.x)))))/10),0))]
+  vegsum.pairs[, d.points.x := ifelse(((Constancy.x >= minconstancy) & (const.diff > 30)), (const.diff ^(1 / 3)*(const.diff / 100)),
+              ifelse(((Constancy.x <minconstancy) & (Constancy.x >(minconstancy-10)) & (const.diff>30)), ((const.diff ^(1 / 3)*(const.diff / 100)*((abs(10-(60.01-Constancy.x)))))/10),0))]
 
-  vegsum.pairs[, d.points.y := ifelse(((Constancy.y >= minconstancy+10) & (const.diff <= (-20))), (abs(const.diff)^(1 / 3) * (abs(const.diff) / 100)),
-                                    ifelse(((Constancy.y < minconstancy+10) & (Constancy.y >= (minconstancy)) & (const.diff <= (-20))), ((((abs(const.diff)) ^(1 / 3)) * (abs(const.diff))/ 100) * ((abs(10-((minconstancy+10)- Constancy.y)))/10)),0))]
-
-   # vegsum.pairs[, const2.x := ifelse(Constancy.x >=60, (Constancy.x^(1 / 3))*(Constancy.x / 100), (Constancy.x^(1 / 3)*(Constancy.x / 200)))]
+  vegsum.pairs[, d.points.y := ifelse(((Constancy.y >= minconstancy) & (const.diff < (-30))), (abs(const.diff)^(1 / 3) * (abs(const.diff) / 100)),
+                                    ifelse(((Constancy.y < minconstancy) & (Constancy.y >(minconstancy-10)) & (const.diff < (-30))), ((((abs(const.diff)) ^(1 / 3)) * (abs(const.diff))/ 100) * ((abs(10-(60.01- Constancy.y)))/10)),0))]
+  # vegsum.pairs[, const2.x := ifelse(Constancy.x >=60, (Constancy.x^(1 / 3))*(Constancy.x / 100), (Constancy.x^(1 / 3)*(Constancy.x / 200)))]
   # vegsum.pairs[, const2.y := ifelse(Constancy.y >=60, (Constancy.y^(1 / 3))*(Constancy.y / 100), (Constancy.y^(1 / 3)*(Constancy.y / 200)))]
   # 
   # vegsum.pairs[, const2.x := ifelse(const2.x>4, 4, const2.x)]
@@ -188,20 +172,12 @@ do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 50,
 
   ### adjust d points for constancy of minor species
   vegsum.pairs[, c("d.points.x", "d.points.y") := .(
-    ifelse((MeanCov.x <= minor), (d.points.x * (MeanCov.x/minor)), d.points.x),
+    ifelse((MeanCov.x < minor), (d.points.x / 2), d.points.x),
       #ifelse(const.diff >=40, const2.diff, NA_real_)
    # ),
-    ifelse((MeanCov.y <= minor), (d.points.y * (MeanCov.y/minor)), d.points.y)
+    ifelse((MeanCov.y < minor), (d.points.y / 2), d.points.y)
     #  ifelse(const.diff <= -40,  (0 - const2.diff), NA_real_))
   )]
-  
-  vegsum.pairs[, c("d.points.x", "d.points.y") := .(
-    ifelse((const.diff >=20 & const.diff <= 30), d.points.x * ((const.diff-19.9)/20), d.points.x),
-    ifelse((const.diff <= (-20) & const.diff >= (-30)), (d.points.y * ((abs(const.diff)-19.9)/20)), d.points.y)
-    #  ifelse(const.diff <= -40,  (0 - const2.diff), NA_real_))
-  )]
-  
-  #xx <- vegsum.pairs %>% dplyr::filter(Unit1 %in% c("CWHds1_101a"), Unit2 %in% c("CWHds1_101b"))
   # vegsum.pairs[, "d.points.x" := .(
   #   ifelse(Constancy.x < 60, d.points.x * (Constancy.x / 100), d.points.x)
   # )]
@@ -211,12 +187,12 @@ do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 50,
 
   ## remove non significant differences and limit to max 4 points
   vegsum.pairs[, "d.points.x" := .(
-    ifelse(d.points.x < mindiff, NA_real_,
+    ifelse(d.points.x < 0.6, NA_real_,
       ifelse(d.points.x > 4, 4, d.points.x)
     )
   )]
   vegsum.pairs[, "d.points.y" := .(
-    ifelse(d.points.y < mindiff, NA_real_,
+    ifelse(d.points.y < 0.6, NA_real_,
       ifelse(d.points.y > 4, 4, d.points.y)
     )
   )]
@@ -238,30 +214,30 @@ do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 50,
 
   # Eliminate dd points that fall below or above thresholds
   vegsum.pairs[, `:=`(
-    dd.points.x = fifelse(dd.points.x <= mindd, 0, dd.points.x),
-    dd.points.y = fifelse(dd.points.y <= mindd, 0, dd.points.y)
+    dd.points.x = fifelse(dd.points.x < 0.6, 0, dd.points.x),
+    dd.points.y = fifelse(dd.points.y < 0.6, 0, dd.points.y)
   )][, `:=`(
     dd.points.x = fifelse(dd.points.x > 4, 4, dd.points.x),
     dd.points.y = fifelse(dd.points.y > 4, 4, dd.points.y)
   )]
 
   ## assign dd type
-  # vegsum.pairs[, `:=`(
-  #   dd.type.x = ifelse((dd.points.x >= 3) & (constant_type.x == "cd"), "dd1",
-  #     ifelse((dd.points.x>= 2 & dd.points.x < 3) & (constant_type.x == "cd"), "dd2",
-  #       ifelse((dd.points.x >= 1 & dd.points.x < 2) & (constant_type.x == "cd"), "dd3",
-  #         ifelse((dd.points.x > mindiff & dd.points.x < 1) & (constant_type.x == "cd"), "dd4", NA)
-  #       )
-  #     )
-  #   ),
-  #   dd.type.y = ifelse((dd.points.y >= 3) & (constant_type.y == "cd"), "dd1",
-  #                      ifelse((dd.points.y>= 2 & dd.points.y < 3) & (constant_type.y == "cd"), "dd2",
-  #                             ifelse((dd.points.y >= 1 & dd.points.y < 2) & (constant_type.y == "cd"), "dd3",
-  #                                    ifelse((dd.points.y > mindiff & dd.points.y < 1) & (constant_type.y == "cd"), "dd4", NA)
-  #       )
-  #     )
-  #   )
-  # )]
+  vegsum.pairs[, `:=`(
+    dd.type.x = ifelse((dd.points.x >= 3) & (constant_type.x == "cd"), "dd1",
+      ifelse((dd.points.x>= 2 & dd.points.x < 3) & (constant_type.x == "cd"), "dd2",
+        ifelse((dd.points.x >= 1 & dd.points.x < 2) & (constant_type.x == "cd"), "dd3",
+          ifelse((dd.points.x >= 0.6 & dd.points.x < 1) & (constant_type.x == "cd"), "dd4", NA)
+        )
+      )
+    ),
+    dd.type.y = ifelse((dd.points.y >= 3) & (constant_type.y == "cd"), "dd1",
+                       ifelse((dd.points.y>= 2 & dd.points.y < 3) & (constant_type.y == "cd"), "dd2",
+                              ifelse((dd.points.y >= 1 & dd.points.y < 2) & (constant_type.y == "cd"), "dd3",
+                                     ifelse((dd.points.y >= 0.6 & dd.points.y < 1) & (constant_type.y == "cd"), "dd4", NA)
+        )
+      )
+    )
+  )]
 
   # Adjust points for reduced.lifeforms (moss layer)
   if (isTRUE(reduce.lifeform)) {
@@ -280,20 +256,21 @@ do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 50,
     diff.pts.x = sum(d.points.x, dd.points.x, na.rm = TRUE),
     diff.pts.y = sum(d.points.y, dd.points.y, na.rm = TRUE)
   ), by = .(Unit1, Unit2, Species)]
-  ## adjust points for being d as well as dd  
+
+  ## adjust points for being d as well as dd
   vegsum.pairs[, `:=`(
-    diff.pts.x = ifelse((!is.na(d.points.x) & !is.na(dd.points.x) & d.points.x > mindiff & dd.points.x > mindiff), (diff.pts.x * 1.25), diff.pts.x),
-    diff.pts.y = ifelse((!is.na(d.points.y) & !is.na(dd.points.y) & d.points.y > mindiff & dd.points.y > mindiff), (diff.pts.y * 1.25), diff.pts.y)
+    diff.pts.x = ifelse((!is.na(d.type.x) & !is.na(dd.type.x)), (diff.pts.x * 1.25), diff.pts.x),
+    diff.pts.y = ifelse((!is.na(d.type.y) & !is.na(dd.type.y)), (diff.pts.y * 1.25), diff.pts.y)
   ), by = .(Unit1, Unit2, Species)]
 
   ## adjust points for key indicators
   if (isTRUE(use.ksi)) {
     vegsum.pairs[, `:=`(
-      diff.pts.x = ifelse(!is.na(Species) & Species %in% ksi, (diff.pts.x * ksi.value), diff.pts.x),
-      diff.pts.y = ifelse(!is.na(Species) & Species %in% ksi, (diff.pts.y * ksi.value), diff.pts.y)
+      diff.pts.x = ifelse(Species %in% ksi, (diff.pts.x * ksi.value), diff.pts.x),
+      diff.pts.y = ifelse(Species %in% ksi, (diff.pts.y * ksi.value), diff.pts.y)
     ), by = .(Unit1, Unit2, Species)]
   }
-  
+
   # Sums by pair
   vegsum.pairs[, `:=`(
     sum.shared.diag = sum(shared.diag),
@@ -322,7 +299,6 @@ do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 50,
       Unit1, Unit2, BEC.sim.min, BEC.sim.mean, BEC.sim.max, diff.ratio,
       unit.diag.sum.x, unit.diag.sum.y, everything()
     )
-  #xx <- vegsum.pairs %>% dplyr::filter(Unit1 %in% c("CWHds1_101a"), Unit2 %in% c("CWHds1_101b"))
  toc()
    return(vegsum.pairs)
 }
