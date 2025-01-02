@@ -89,7 +89,7 @@ Vegetation data is read in from saved .RDS file generated from the BECMaster cle
 
 ```{r load data, echo=FALSE, message=FALSE}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
-taxon.all <- read_sppmaster()
+taxon.all <- read_sppmaster(database = "C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb")
 taxon.lifeform <- taxon.all %>%
   filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
   dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
@@ -140,7 +140,7 @@ vegsum.pairs <- do_pairwise(veg.dat2,
   minplots = 1,
   minor = 1,
   use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
-  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  reduce.lifeform = FALSE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
   reduced.exceptions = reduced.exceptions
 )
 
@@ -307,39 +307,40 @@ draw_ss_edatope(plot.env, su2, bgc.choose = bgc.unique)
 ## Export draft summary tables to Excel
 
 ```{r build veg guide summary and export to excel, echo = FALSE, warning=FALSE, message=FALSE}
-require(openxlsx)
-require(tictoc)
-library(stringr)
-data.path = "D:/OneDrive - Government of BC/GitHub_data"
-author = "DMacKillop"
-
-su3 <- su %>% 
-  mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) # %>% 
-  #filter(bgc %in% bgc.list) %>%
-  # mutate(bgc = ifelse(SiteUnit %in% tab.split, paste0(bgc, "tab2"), bgc)) %>% 
-  # mutate(SiteUnit = ifelse(SiteUnit %in% tab.split, str_replace_all(SiteUnit, "_", "tab2_"), SiteUnit))%>%
-  # arrange(bgc)
-
-bgc.list <- unique(su3$bgc)
-
-vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
-veg.dat2 <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE)
-
-
-#bgc.choose = "CWHvh1"
-vegsum.wbk <- createWorkbook()
-tic()
-#bgc.choose = "CWHmm1"
-for(bgc.choose in bgc.list){
-vegSum <- 
-  create_veg_sum(vdat = veg.dat2, siteUnits = su3 , BGC = bgc.choose, minconstancy = 50, noiseconstancy = 25, minimportance = 0, strata.by = "Layer")
-##determine order of species by unit
-indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits =su3, BGC = bgc.choose)
-veg.sum.table <- format_veg_table(vsum = vegSum, spp=taxon.lifeform,cons.1 = 70, cons.2 = 50)
-openxlsx::addWorksheet(vegsum.wbk, sheetName = bgc.choose)
-openxlsx::writeData(vegsum.wbk, sheet = bgc.choose, veg.sum.table) 
-}
-toc()
-saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/ColumbiaFG_draft_veg_tables_", author, ".xlsx"), overwrite = TRUE)
+# require(openxlsx)
+# require(tictoc)
+# library(stringr)
+# data.path = "D:/OneDrive - Government of BC/GitHub_data"
+# author = "DMacKillop"
+# 
+# su3 <- su %>% 
+#   mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) # %>% 
+#   #filter(bgc %in% bgc.list) %>%
+#   # mutate(bgc = ifelse(SiteUnit %in% tab.split, paste0(bgc, "tab2"), bgc)) %>% 
+#   # mutate(SiteUnit = ifelse(SiteUnit %in% tab.split, str_replace_all(SiteUnit, "_", "tab2_"), SiteUnit))%>%
+#   # arrange(bgc)
+# 
+# bgc.list <- unique(su3$bgc)
+# 
+# #vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
+# vegdata <- readRDS("./clean_data/Reports_BECMaster_Veg.rds") ### named veg.d
+# veg.dat2 <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE)
+# 
+# 
+# #bgc.choose = "CWHvh1"
+# vegsum.wbk <- createWorkbook()
+# tic()
+# #bgc.choose = "CWHmm1"
+# for(bgc.choose in bgc.list){
+# vegSum <- 
+#   create_veg_sum(vdat = veg.dat2, siteUnits = su3 , BGC = bgc.choose, minconstancy = 50, noiseconstancy = 25, minimportance = 0, strata.by = "Layer")
+# ##determine order of species by unit
+# indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits =su3, BGC = bgc.choose)
+# veg.sum.table <- format_veg_table(vsum = vegSum, spp=taxon.lifeform,cons.1 = 70, cons.2 = 50)
+# openxlsx::addWorksheet(vegsum.wbk, sheetName = bgc.choose)
+# openxlsx::writeData(vegsum.wbk, sheet = bgc.choose, veg.sum.table) 
+# }
+# toc()
+# saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/ColumbiaFG_draft_veg_tables_", author, ".xlsx"), overwrite = TRUE)
 
 ```

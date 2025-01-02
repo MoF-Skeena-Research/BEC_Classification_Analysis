@@ -4,7 +4,7 @@ author: "William H MacKenzie"
 date: "20/09/2024"
 format:
   typst:
-    toc: true
+    toc: false
     toc-depth: 2
     toc-title: Contents
     section-numbering: 1.1.1
@@ -89,7 +89,9 @@ Vegetation data is read in from saved .RDS file generated from the BECMaster cle
 
 ```{r load data, echo=FALSE, message=FALSE}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
-taxon.all <- read_sppmaster()
+#taxon.all <- read_sppmaster()
+taxon.all <- read_sppmaster(database = "C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb")
+
 taxon.lifeform <- taxon.all %>%
   filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
   dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
@@ -122,10 +124,10 @@ author = "All"
 # filter(bgc %in%c("CWHds1", "CWHms1", "CWHms2", "CWHms3", "MHmm1", "MHmm2", "MHws", "MHvh"))
 # author = "BGreen"
 ### DM units
- su2 <- su2 %>%
- filter(bgc %in% c("CDFmm", "CWHds2", "CWHmm1", "CWHmm2", "CWHws1", "CWHws2",
-"CWHws3", "CWHxm1", "CWHxm2", "CWHxm3", "IDFww1"))
-author = "DMeidinger_test"
+#  su2 <- su2 %>%
+#  filter(bgc %in% c("CDFmm", "CWHds2", "CWHmm1", "CWHmm2", "CWHws1", "CWHws2",
+# "CWHws3", "CWHxm1", "CWHxm2", "CWHxm3", "IDFww1"))
+# author = "DMeidinger_test"
 
 # su <- su %>% filter(bgc == "MHvh")
   bgc.unique <- unique(su2$bgc)
@@ -152,12 +154,12 @@ reduced.lifeforms <- c(9, 10, 11)
 ### select units to run
 
 vegsum.pairs <- do_pairwise(veg.dat2,
-  su = su2, minimportance = 0, minconstancy = 60,
+  su = su2, minimportance = 0, minconstancy = 60,  ### change this to 50 reduce up to 60
   noiseconstancy = 10,
   minplots = 1,
   minor = 1,
   use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
-  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  reduce.lifeform = FALSE, reduced.lifeforms = reduced.lifeforms, reduction = .5,
   reduced.exceptions = reduced.exceptions
 )
 
@@ -173,9 +175,9 @@ unit.compare$bgc1 <- stringr::word(unit.compare$Unit1, 1, sep = "\\_")
 unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
 
 yy <- vegsum.pairs %>% 
-  select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, shared.diag, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, diff.ratio,BEC.sim.mean, BEC.sim.min) %>% 
-  filter(Unit1 == "MHvh_110", Unit2 == "MHvh_101")
-
+  select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, shared.diag, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, diff.ratio,BEC.sim.mean, BEC.sim.min, BEC.sim.max) %>% 
+  filter(Unit1 == "CWHws1_110", Unit2 == "CWHws1_111")
+fwrite(yy, "example_pairwise.csv")
 ```
 
 ```{r site series with too few plots, echo=FALSE}
@@ -252,7 +254,7 @@ The dendrogram is an approximate representation of the similarity matrix. It is 
 ```{r cluster analysis, echo=FALSE}
 #bgc.unique <- c("CDFmm", "CWHvm3")
 singles <- for (bgc.choose in bgc.unique){
-  create_dendro_bybgc(bgc.choose, unit.compare, threshold.low = .07, threshold.high = .18)
+  create_dendro_bybgc(bgc.choose, unit.compare, threshold.low = .10, threshold.high = .20)
 }
 
 # singles.poor <- as.data.frame(singles) %>% filter(grepl('nplot|lowdiag', SiteUnit))

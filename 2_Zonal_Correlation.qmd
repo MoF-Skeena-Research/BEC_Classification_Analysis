@@ -251,6 +251,7 @@ add_cluster_membership <- function(unit.compare, cut.level = .7){
 groups <- add_cluster_membership(vegsum.pairs, cut.level = .5)
 
 ```
+
 ## Export summary table to excel
 
 ```{r build veg guide summary and export to excel, echo = FALSE, warning=FALSE, message=FALSE}
