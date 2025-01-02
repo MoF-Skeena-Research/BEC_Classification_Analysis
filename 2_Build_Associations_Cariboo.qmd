@@ -57,6 +57,8 @@ source('./_functions/_create_dendro_bybgc.R')
 source('./_functions/_draw_dendro_split.R')
 source('./_functions/_cluster_groups.R')
 source('./_functions/_TabletoTree.R')
+source('./_functions/_create_veg_sum_all.R')
+source('./_functions/_build_species_ordering_hier.R')
 ```
 
 #### Read in data
@@ -100,26 +102,20 @@ bgcv13 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% select(BGC_NoSpace, SiteC
 ```
 
 ```{r interior site units}
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Cariboo_LMH39_Sorts.accdb"
-su <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb"
-su2 <- combined_su(db)
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Cariboo_LMH39_Sorts.accdb"
-# su3 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/KootenayBoundary_Sorts.accdb"
-su4 <- combined_su(db)
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Skeena_LMH26_Sorts.accdb"
-su5 <- combined_su(db)
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/ThompsonOK_Sorts.accdb"
-# su6 <- combined_su(db)
-
-su <- rbind(su, su2, su4, su5)
-
+require(DBI) #loads odbc as well
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
+su <- dbReadTable(master_su, "All_BGC12DEC2024_SU")
+dbDisconnect(master_su)
 su <- su %>%
   filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|unplaced', SiteUnit))  %>% arrange(SiteUnit)
+  su$SiteUnit.orig <- su$SiteUnit
+  su <- su %>% mutate(SiteUnit = gsub("/", "_", su$SiteUnit)) 
+  su <- su %>% mutate(SiteUnit = gsub(" ", "", su$SiteUnit, fixed = TRUE)) 
 #   filter(grepl('01', SiteUnit)) ###zonal specific
-su2 <- su %>% select(-SiteUnit.orig) %>%
-  filter(grepl('SBS|IDF|MS', bgc))
+su <- su %>% select(-SiteUnit.orig) %>%
+  filter(grepl('ESSF', bgc))
+  #filter(grepl('SBS|IDF|MS', bgc))
 # su <- su %>% select(-SiteUnit.orig) %>% mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct() %>% mutate(zone = str_extract(bgc, "([A-Z]+)"))
 # bgc.unique <- su %>% distinct(bgc)
 # no.su <- anti_join(bgcv13, bgc.unique, by = c("BGC_NoSpace" = "bgc")) %>% filter(!SiteClassificationStatus == "none")
@@ -154,31 +150,34 @@ Some units with few plots or low diagnostics fall out as singles in the first pa
 ```{r build pair.wise similarity matrix, echo=FALSE}
 
 #key.site.indicators <- c("LYSIAME",   "ELLIPYR","ATHYFIL", "RUBUSPE",   "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG")#,  "TIARELLA", "DRYOEXP" )
-key.site.indicators <- c("POPUTRI", "OPLOHOR", "GYMNDRY", "VALESIT", 
+key.site.indicators <- c("POPUTRI", "OPLOHOR", "GYMNDRY", "VALESIT", "THALOCC", "CASSMER", "LUETPEC", "EMPENIG", "LYSIAME",  "ATHYFIL", "VERAVIR", 
                          "ACERGLA", "GEOCLIV", "CALARUB",## 
                          "RHODALB","EQUIARV", ## ESSF
-                        "TSUGHET", "THUJPLI" ) 
+                        "TSUGHET", "THUJPLI", "TSUGMER" ) 
 reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
 # reduced.lifeforms = c(1,2)
 reduced.lifeforms <- c(9, 10, 11)
 ### select units to run
-#su2 <- su
+su2 <- su
 tic()
 vegsum.pairs <- do_pairwise(veg.dat2,
-  su = su2, minimportance = 0.1, minconstancy = 60,
+  su = su2, minimportance = 0, minconstancy = 50,
   noiseconstancy = 10,
-  minplots = 5,  minor = 1,
+  minplots = 1,  minor = 1,
   use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
   reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
   reduced.exceptions = reduced.exceptions
 )
 toc()
 # xx <- vegsum.pairs %>%
-#   filter(Unit1 == "CWHws2_112a", Unit2 == "CWHws2_112b")
-# 
-# unit.compare <- vegsum.pairs %>%
-#   select(Unit1, Unit2, BEC.sim.min, BEC.sim.mean , BEC.sim.max, diff.ratio.x, diff.ratio.y, diff.ratio, nplots.x, nplots.y, unit.diag.sum.x, unit.diag.sum.y) %>% filter(nplots.x>0) %>% mutate(metric.diff = BEC.sim.max - BEC.sim.min) %>%
-#  distinct()
+#   filter(startsWith (Unit1, "ESSFwc3"), BEC.sim.min >.80)
+# xx2 <- vegsum.pairs %>%
+#   filter(startsWith (Unit2, "ESSFwc3"), BEC.sim.min >.80)
+# # , Unit2 == "CWHws2_112b")
+# vegsum.pairs <- rbind(xx, xx2)
+unit.compare <- vegsum.pairs %>%
+  select(Unit1, Unit2, BEC.sim.min, BEC.sim.mean , BEC.sim.max, diff.ratio.x, diff.ratio.y, diff.ratio, nplots.x, nplots.y, unit.diag.sum.x, unit.diag.sum.y) %>% filter(nplots.x>0) %>% mutate(metric.diff = BEC.sim.max - BEC.sim.min) %>%
+ distinct()
 # unit.compare$bgc1 <- stringr::word(unit.compare$Unit1, 1, sep = "\\_")
 # unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
 # 
@@ -220,7 +219,7 @@ gt::gt(ss_too.few) %>% gt::fmt_number(decimals = 0)|> gt::tab_options(table.font
 #| fig-align: "left"
 ss_low.diag <- compared %>%
   select(Unit1, unit.diag.sum.x)  %>% 
-  filter(unit.diag.sum.x < 30) %>% 
+  filter(unit.diag.sum.x < 20) %>% 
   rename("Diagnostic Potential" = unit.diag.sum.x, "Site Unit" = Unit1) %>%
   distinct()
 # low.diag.pot <- gt::as_gtable(gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10), plot = TRUE)
@@ -252,7 +251,7 @@ dendro_hc <- create_dendro_all(unit.compare)
 
 ```{r split dendrogram, echo=FALSE}
 unit.few <- unit.compare %>% filter(nplots.x < 10)  %>% select(Unit1, nplots.x) %>% distinct
-unit.simple <- unit.compare %>% filter(unit.diag.sum.x < 30)  %>% select(Unit1, unit.diag.sum.x) %>% distinct
+unit.simple <- unit.compare %>% filter(unit.diag.sum.x < 40)  %>% select(Unit1, unit.diag.sum.x) %>% distinct
 xx <- unit.compare %>% filter(Unit1 %in% unit.few$SiteUnit)
 unit.compare2 <- unit.compare %>%  mutate(Unit1.new = ifelse(Unit1 %in% unit.few$Unit1, paste0(Unit1,"-nplot"), Unit1))
 unit.compare2 <- unit.compare2 %>%  mutate(Unit2.new = ifelse(Unit2 %in% unit.few$Unit1, paste0(Unit2,"-nplot"), Unit2))      
@@ -261,25 +260,29 @@ unit.compare2 <- unit.compare2 %>%  mutate(Unit2.new = ifelse(Unit2.new %in% uni
 unit.compare2 <- unit.compare2 %>% mutate(Unit1 = Unit1.new, Unit2 = Unit2.new) %>% 
   select(Unit1, Unit2, BEC.sim.min) 
 
-xx <- draw_dendro_split(unit.compare2, cut.level=.3)
+xx <- draw_dendro_split(unit.compare2, cut.level=.4)
 singles.poor <- as.data.frame(xx) %>% filter(grepl('nplot|lowdiag', SiteUnit))
 singles.good <- as.data.frame(xx) %>% filter(!grepl('nplot|lowdiag', SiteUnit))
 ```
 
+
+
+
+
 ```{r pull associations from dendrogram at cut.level}
 
 assocs <- cluster_groups(unit.compare, cut.level = 0.2, minclus = 0, group.label = "Association")
-assocs <- full_join(assocs, merge ) %>% filter(!SiteUnit %in% mergedUnit) %>% 
-  mutate(Association = ifelse(!is.na(mergedUnit), mergedUnit, Association)) %>% 
-  mutate(mergedUnit = ifelse(is.na(mergedUnit), SiteUnit, mergedUnit)) %>% mutate(Association = paste0("assoc-", Association))
+assocs <- assocs %>% mutate(mergedUnit = NA) %>% filter(!SiteUnit %in% mergedUnit) %>%
+  mutate(Association = ifelse(!is.na(mergedUnit), mergedUnit, Association)) %>%
+  mutate(mergedUnit = ifelse(is.na(mergedUnit), SiteUnit, mergedUnit)) %>% mutate(Association = paste0("assoc-", Association)) %>% select(-SiteUnit)
 alliances <- cluster_groups(unit.compare, cut.level = 0.4, minclus = 0, group.label = "Alliance")
-alliances  <- left_join(assocs, alliances ,  by = c("mergedUnit"="SiteUnit"), keep = TRUE) %>% select(Alliance, Association, SiteUnit.x, mergedUnit)%>% mutate(Alliance = paste0("all-", Alliance))
+alliances  <- left_join(assocs, alliances,  by = c("mergedUnit"="SiteUnit"), keep = TRUE) %>% select(Alliance, Association, mergedUnit)%>% mutate(Alliance = paste0("all-", Alliance))
 orders <- cluster_groups(unit.compare, cut.level = 0.8, minclus = 0, group.label = "Order")
-orders  <- left_join(alliances, orders,  by = c("mergedUnit"="SiteUnit"), keep = TRUE) %>% select(-SiteUnit, Order, Alliance, Association, SiteUnit.x, mergedUnit)%>% mutate(Order = paste0("order-", Order))
+orders  <- left_join(alliances, orders,  by = c("mergedUnit"="SiteUnit"), keep = TRUE) %>% select(-SiteUnit, Order, Alliance, Association, mergedUnit)%>% mutate(Order = paste0("order-", Order))
 classes <- cluster_groups(unit.compare, cut.level = .99, minclus = 0, group.label = "Class")
-classes  <- left_join(orders,classes,  by = c("mergedUnit"="SiteUnit"), keep = TRUE) %>% select(SiteUnit.x, Association, Alliance, Order, Class)%>% mutate(Class = paste0("class-", Class))
-su.temp <- su %>% select(PlotNumber, SiteUnit.orig, SiteUnit)
-su3 <- left_join(su.temp, su, by = "PlotNumber")
+classes  <- left_join(orders,classes,  by = c("mergedUnit"="SiteUnit"), keep = TRUE) %>% select(mergedUnit, Association, Alliance, Order, Class)%>% mutate(Class = paste0("class-", Class))
+su.temp <- su %>% select(PlotNumber,  SiteUnit)
+su3 <- left_join(su.temp, su, by = c("PlotNumber", "SiteUnit"))
 
 #, by = c("SiteUnit" = "SiteUnit.y")) %>% select(PlotNumber, SiteUnit, Association, Alliance, Order, Class)
 #singles <- assocs %>% filter(Association == 0)
@@ -292,7 +295,9 @@ su3 <- left_join(su.temp, su, by = "PlotNumber")
 #   filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|unplaced', SiteUnit))
 # su.coast <- su.coast %>% mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct()
 # su.coast <- su.coast %>% filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))
-coast.units.su <- left_join(classes, su3,  by = c("SiteUnit.x" = "SiteUnit.x")) %>% select(PlotNumber, SiteUnit.x, SiteUnit.orig.x, Association, Alliance, Order, Class, bgc) %>% rename(SiteUnit = SiteUnit.orig.x)
+coast.units.su <- left_join(classes, su3,  by = c("mergedUnit" = "SiteUnit")) 
+
+coast.units.su <- coast.units.su %>% dplyr::select(PlotNumber, mergedUnit, Association, Alliance, Order, Class, bgc) %>% rename(SiteUnit = mergedUnit)
 # interior.units <- orders %>% filter(!Association == 0) %>%
 #    filter(!SiteUnit.y %in% coast.units$SiteUnit) %>%
 #   filter(Association %in% coast.units$Association)%>%
@@ -300,8 +305,45 @@ coast.units.su <- left_join(classes, su3,  by = c("SiteUnit.x" = "SiteUnit.x")) 
 #   select(PlotNumber, SiteUnit, Association, Alliance, Order)
 #coast.units.su <- rbind(coast.units, interior.units)
 coast.units <- coast.units.su %>% select(-PlotNumber) %>% distinct
-fwrite(coast.units.su, "./clean_data/Association_Units_v1.csv")
+fwrite(coast.units.su, "./clean_data/ESSFwc3Association_Units_v2.csv")
                                                                                                                          #left_join(su.coast, orders, by = c("SiteUnit" = "SiteUnit.y")) %>% select(PlotNumber, SiteUnit, Association, Alliance, Order)
+```
+
+```{r build veg guide summary and export to excel, echo = FALSE, warning=FALSE, message=FALSE}
+require(openxlsx)
+require(tictoc)
+library(stringr)
+
+ tree_seedlings <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% mutate(Code = paste0(Code, "D")) %>% pull(Code)
+trees <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% pull(Code)
+data.path = "D:/OneDrive - Government of BC/GitHub_data"
+author <- "test.assoc2"
+assoc.list <- coast.units %>% filter(!is.na(Association)) %>% group_by(Association) %>% mutate(n=n()) %>% filter(n>=2) %>% distinct(Association) %>% pull(Association)
+
+vegsum.wbk <- createWorkbook()
+for(assoc.choose in assoc.list){
+#assoc.choose = "assoc-2"
+assoc <- coast.units.su %>% filter(Association %in% assoc.choose) %>% select(SiteUnit, Association) %>% mutate(SiteUnit = gsub(" ", "", SiteUnit)) %>% mutate(SiteUnit = str_replace(SiteUnit, "/", "_"))
+su.assoc <- left_join(assoc, su2, by = "SiteUnit") %>%  mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct()
+veg.dat.assoc <- veg.dat2 %>% filter(PlotNumber %in% su.assoc$PlotNumber)
+# vegsum.wbk <- createWorkbook()
+# #bgc.choose = "CDFmmtab2"
+# #for(bgc.choose in bgc.list){
+vegSum <-
+  create_veg_sum_all(vdat = veg.dat.assoc, siteUnits = su.assoc, strata.by = "Lifeform")
+vsum_units <-vegSum %>% select(SiteUnit) %>% distinct %>% pull(SiteUnit)
+su_units <- su.assoc %>% select(SiteUnit) %>% distinct %>% pull(SiteUnit)
+
+
+indic.order <- build_species_ordering_hier(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc, hier.level = "Association")
+veg.sum.table <- format_veg_table2(vsum = vegSum, spp=taxon.lifeform)
+openxlsx::addWorksheet(vegsum.wbk, sheetName = assoc.choose)
+openxlsx::writeData(vegsum.wbk, sheet = assoc.choose, veg.sum.table)
+}
+
+saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/ESSF_draft_assoc_tables_v4_", author, ".xlsx"), overwrite = TRUE)
+
+
 ```
 
 Convert to a hierarchy structure

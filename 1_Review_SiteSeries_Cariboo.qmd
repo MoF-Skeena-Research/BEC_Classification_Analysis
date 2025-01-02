@@ -101,16 +101,18 @@ veglump <- dbConnect(
 lump <- dbReadTable(veglump, "CorrelationII_Lump")
 dbDisconnect(veglump)
 veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Cariboo_LMH39_Sorts.accdb"
+db <- "D:/BC_Correlation2_Vpro_2023/Cariboo_SUs.accdb"
 su <- combined_su(db)
 su.nf <- su %>%
   filter(grepl('_[[:alpha:]]', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
 su <- su %>%
   filter(!grepl('poor|low|-S|add|nudum|_[[:alpha:]]|X', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
 #   filter(grepl('01', SiteUnit)) ###zonal specific
-su2 <- su %>%
-filter(bgc %in% c('IDFdw'))
+su2 <- su 
+#su2 <- su %>% filter(bgc %in% c('IDFdw'))
 author = "KIverson"
+
+xx <- left_join(su2, veg.dat2) %>% filter(SiteUnit == "ESSFwc3_110")
 ###BGC specific|CWHms
 ##AB units
 # su2 <- su2 %>%
@@ -150,8 +152,8 @@ reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
 reduced.lifeforms <- c(9, 10, 11)
 ### select units to run
 
-vegsum.pairs <- do_pairwise(veg.dat2,
-  su = su2, minimportance = 0, minconstancy = 60,
+vegsum.pairs <- do_pairwise(veg.dat = veg.dat2,
+  su = su2, minimportance = 0, minconstancy = 50,
   noiseconstancy = 10,
   minplots = 1,
   minor = 1,
@@ -274,13 +276,13 @@ trees <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% pull(Code)
 vegdata <- vegdata  %>% filter(!Species %in% tree_seedlings)
 vegdata <- vegdata  %>% filter(!(Species %in% trees & Layer == "Moss"))
 
-veg.dat2 <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE)
+veg.dat.lump <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE)
 BGC <- "MHmm1"
 for(bgc.choose in bgc.unique){
   vegSum <-
-  create_veg_sum(vdat = veg.dat2, siteUnits = su , BGC = bgc.choose, strata.by = "Layer")
+  create_veg_sum(vdat = veg.dat.lump, siteUnits = su , BGC = bgc.choose, strata.by = "Layer")
 ##determine order of species by unit
-indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su, BGC = bgc.choose)
+indic.order <- build_species_ordering(vdat = veg.dat.lump, vsum = vegSum, code.lump=lump, siteUnits = su, BGC = bgc.choose)
 veg.sum.table <- format_veg_table(vsum = vegSum, spp = taxon.lifeform)
 
 veg.sum.gt <- gt::gt(veg.sum.table) |> gt::tab_options(table.font.size = 8)|> gt::tab_style(
@@ -326,10 +328,10 @@ tic()
 #bgc.choose = "MHmm1"
 for(bgc.choose in bgc.list){
 vegSum <- 
-  create_veg_sum(vdat = veg.dat2, siteUnits = su2 , BGC = bgc.choose, strata.by = "Layer")
+  create_veg_sum(vdat = veg.dat2, siteUnits = su2 , BGC = bgc.choose, minconstancy = 50, noiseconstancy = 25, strata.by = "Layer")
 ##determine order of species by unit
 indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits =su, BGC = bgc.choose)
-veg.sum.table <- format_veg_table(vsum = vegSum, spp=taxon.lifeform)
+veg.sum.table <- format_veg_table(vsum = vegSum, spp=taxon.lifeform, cons.1 = 70, cons.2 = 50)
 openxlsx::addWorksheet(vegsum.wbk, sheetName = bgc.choose)
 openxlsx::writeData(vegsum.wbk, sheet = bgc.choose, veg.sum.table) 
 }

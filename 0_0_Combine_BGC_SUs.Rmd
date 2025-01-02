@@ -42,23 +42,67 @@ odbc::odbcListColumns(becmaster, table = "BECMaster_fixing_ENV")
 dbDisconnect(becmaster)
 
 ```
+### Combine all current SU tables into a single AllBGC SU table
+CaribooNew
+CassiarNew
+Coastnew
+ColumbiaNew
+KB
+OK
+Skeena
+Boreal
+Omineca
+
+
+
+```{r combine all current and working SU in allBGC}
+  require(DBI) #loads odbc as well
+buildSU <- function(db){
+  correlation <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=",db , ";"))
+  all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
+  dbDisconnect(correlation)
+  SU <- do.call(rbind.data.frame, all_su)
+  SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>%
+  filter(!grepl('poor|low|[$]|add|nudum|_[[:alpha:]]|X|omit|unplaced', SiteUnit)) %>% 
+  arrange(desc(PlotNumber))
+  SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
+  return(SU)
+}
+CariboonewSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/Cariboo_SUs.accdb")
+CassiarnewSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/Cassiar_SUs.accdb")
+CoastnewSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb")
+ColumbianewSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb")
+KBSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/KootenayBoundary_Sorts.accdb")
+OKSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/ThompsonOK_Sorts.accdb")
+SkeenaSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/Skeena_LMH26_Sorts.accdb")
+BorealSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/LMH65_Boreal_Sorts.accdb")
+OminecaSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/OminecaPeace_SU_Tables.accdb")
+AllBGC_SU <- rbind(CariboonewSU, CassiarnewSU, CoastnewSU,  KBSU, OKSU, SkeenaSU, BorealSU, OminecaSU)
+##need to build a check for duplicates in here
+AllBGC_SU <- AllBGC_SU %>% distinct(PlotNumber, .keep_all = TRUE) %>% arrange(desc(PlotNumber))
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
+dbWriteTable(master_su, "All_BGC12DEC2024_SU",  AllBGC_SU, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+dbDisconnect(master_su)
+```
+
 
 ### New Columbia Guide
 ```{r}
-# correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
-# DBQ=D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb;")
-# all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
-# dbDisconnect(correlation)
-# SU <- do.call(rbind.data.frame, all_su)
-# SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
-#   arrange(desc(PlotNumber))
-# ss.unique <- SU %>% select(SiteUnit) %>% distinct
-# SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
-# 
-# master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
-# DBQ=D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb;")
-# dbWriteTable(master_su, "All_Columbia_FG_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
-# dbDisconnect(master_su)
+correlation <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+DBQ=D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb;")
+all_su <- lapply(setNames(nm = (dbListTables(correlation)%>% str_subset("_SU"))), dbReadTable, conn = correlation)
+dbDisconnect(correlation)
+SU <- do.call(rbind.data.frame, all_su)
+SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>%
+  arrange(desc(PlotNumber))
+ss.unique <- SU %>% select(SiteUnit) %>% distinct
+SU2 <- SU %>% dplyr::select(PlotNumber, SiteUnit)
+
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+DBQ=D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb;")
+dbWriteTable(master_su, "All_Columbia_FG_SU",  SU2, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+dbDisconnect(master_su)
 
 ```
 
@@ -138,7 +182,7 @@ SU_draft <- SU_draft %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% di
 SU_draft2 <- SU_draft %>% dplyr::select(PlotNumber, SiteUnit)
 
 
-SU <- rbind(SU,SU_draft)
+SU <- rbind(SU,SU_draft) %>% distinct(PlotNumber, .keep_all = TRUE) %>% arrange(desc(PlotNumber))
 
 #%>% mutate(PlotNumber = paste0("'",PlotNumber))
 #fwrite(SU, "./clean_tabs/CoastGuide_All_BGC_Forest_SU.csv")

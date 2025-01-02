@@ -122,12 +122,12 @@ author = "All"
 # filter(bgc %in%c("CWHds1", "CWHms1", "CWHms2", "CWHms3", "MHmm1", "MHmm2", "MHws", "MHvh"))
 # author = "BGreen"
 ### DM units
- su2 <- su2 %>%
- filter(bgc %in% c("CDFmm", "CWHds2", "CWHmm1", "CWHmm2", "CWHws1", "CWHws2",
-"CWHws3", "CWHxm1", "CWHxm2", "CWHxm3", "IDFww1"))
-author = "DMeidinger_test"
+#  su2 <- su2 %>%
+#  filter(bgc %in% c("CDFmm", "CWHds2", "CWHmm1", "CWHmm2", "CWHws1", "CWHws2",
+# "CWHws3", "CWHxm1", "CWHxm2", "CWHxm3", "IDFww1"))
+# author = "DMeidinger_test"
 
-# su <- su %>% filter(bgc == "MHvh")
+ su2 <- su %>% filter(bgc == "CWHxs")
   bgc.unique <- unique(su2$bgc)
 ss.unique <- su2 %>% select(SiteUnit, bgc) %>% distinct
 
@@ -143,6 +143,8 @@ dbDisconnect(becmaster)
 
 2.  Identify site series that have low diagnostic potential (review units for membership consistency).
 
+3. Where unit differentiation is questionable, rerun with key indicators as TRUE. 
+
 ```{r build pair.wise similarity matrix, echo=FALSE}
 
 key.site.indicators <- c("PICESIT", "POPUTRI", "LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG", "NEPHCRI", "CALTLEP", "CALTBIF")#,  "TIARELLA", "DRYOEXP" )
@@ -151,12 +153,12 @@ reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
 reduced.lifeforms <- c(9, 10, 11)
 ### select units to run
 
-vegsum.pairs <- do_pairwise(veg.dat2,
-  su = su2, minimportance = 0, minconstancy = 60,
+vegsum.pairs <- do_pairwise(veg.dat = veg.dat2,
+  su = su2, minimportance = 0, minconstancy = 50,
   noiseconstancy = 10,
   minplots = 1,
   minor = 1,
-  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
+  use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 1.5,
   reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
   reduced.exceptions = reduced.exceptions
 )
@@ -174,7 +176,7 @@ unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
 
 yy <- vegsum.pairs %>% 
   select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, shared.diag, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, diff.ratio,BEC.sim.mean, BEC.sim.min) %>% 
-  filter(Unit1 == "MHvh_110", Unit2 == "MHvh_101")
+  filter(Unit1 == "CWHdm3_103", Unit2 == "CWHdm3_101")
 
 ```
 
@@ -227,13 +229,13 @@ gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.fon
 
 ```{r site units that are too similar, echo=FALSE}
 #| label: tab-sites-similar
-#| tbl-cap: paste0("Site Series pairs with poor differentiation (BEC.sim >= .93)")
+#| tbl-cap: paste0("Site Series pairs with poor differentiation (BEC.sim >= .90)")
 #| tbl-cap-location: top
 #| warning: false
 #| tbl-align: "left"
 ss_similar <- compared %>%
   select(Unit1, Unit2, BEC.sim) %>%
-  dplyr::filter(BEC.sim >= .93) %>% mutate(Units = paste0(Unit1, " vs ", Unit2)) %>%
+  dplyr::filter(BEC.sim >= .90) %>% mutate(Units = paste0(Unit1, " vs ", Unit2)) %>%
   select(-Unit2, -Unit1) %>% 
   rename("Similarity" = BEC.sim, "Site Units" = Units) %>%
   distinct() 
@@ -252,7 +254,7 @@ The dendrogram is an approximate representation of the similarity matrix. It is 
 ```{r cluster analysis, echo=FALSE}
 #bgc.unique <- c("CDFmm", "CWHvm3")
 singles <- for (bgc.choose in bgc.unique){
-  create_dendro_bybgc(bgc.choose, unit.compare, threshold.low = .07, threshold.high = .18)
+  create_dendro_bybgc(bgc.choose, unit.compare, threshold.low = .10, threshold.high = .20)
 }
 
 # singles.poor <- as.data.frame(singles) %>% filter(grepl('nplot|lowdiag', SiteUnit))
@@ -330,27 +332,27 @@ library(stringr)
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
 author = "DMeidinger_new"
 bgc.list = c("CDFmm", "CWHds2", "CWHmm1", "CWHmm2", "CWHws1", "CWHws2",
-"CWHws3", "CWHxm1", "CWHxm2", "CWHxm3", "IDFww1")
+"CWHws3", "CWHdm1", "CWHdm2", "CWHdm3", "IDFww1")
 tab.split = c('CDFmm_101', 'CDFmm_110', 'CDFmm_111','CDFmm_112',
-                 'CWHxm2_110', 'CWHxm2_111','CWHxm2_112.1','CWHxm2_112.2', 'CWHxm2_113')
+                 'CWHdm2_110', 'CWHdm2_111','CWHdm2_112.1','CWHdm2_112.2', 'CWHdm2_113')
 
 
 ## Bobs
 author = "BGreen_new"
 bgc.list = c("CWHds1", "CWHms1", "CWHms2", "CWHms3", "MHmm1",
-"MHmm2", "MHws", "MHvh")
+"MHmm2", "MHms", "MHvh")
 
-
-author = "ABanner_new"
-bgc.list = c("CWHvh1", "CWHvh2", "CWHvm1", "CWHvm2", "CWHvm3","CWHvm4", "CWHwm")
-tab.split = c('CWHvh1_111', 'CWHvh1_112', 'CWHvh1_120.1', 'CWHvh1_120.2', 'CWHvh1_121', 'CWHvh2_111',
-              'CWHvh2_112', 'CWHvh2_113', 'CWHvh2_120.1', 'CWHvh2_120.2',
-              'CWHvm1_111.1', 'CWHvm1_111.2', 'CWHvm1_112.1', 'CWHvm1_112.2', 'CWHvm1_113', 'CWHvm1_114',
-              'CWHvm2_111.1', 'CWHvm2_111.2', 'CWHvm2_112.1', 'CWHvm2_112.2', 'CWHvm2_113', 'CWHvm2_114', 'CWHvm2_115',
-              'CWHvm3_111.1', 'CWHvm3_111.2', 'CWHvm3_112.1', 'CWHvm3_112.2', 'CWHvm3_113', 'CWHvm3_114')
-
-author = "HKlassen"
-bgc.list = c("CWHxs")
+# 
+# author = "ABanner_new"
+# bgc.list = c("CWHvh1", "CWHvh2", "CWHvm1", "CWHvm2", "CWHvm3","CWHvm4", "CWHwm")
+# tab.split = c('CWHvh1_111', 'CWHvh1_112', 'CWHvh1_120.1', 'CWHvh1_120.2', 'CWHvh1_121', 'CWHvh2_111',
+#               'CWHvh2_112', 'CWHvh2_113', 'CWHvh2_120.1', 'CWHvh2_120.2',
+#               'CWHvm1_111.1', 'CWHvm1_111.2', 'CWHvm1_112.1', 'CWHvm1_112.2', 'CWHvm1_113', 'CWHvm1_114',
+#               'CWHvm2_111.1', 'CWHvm2_111.2', 'CWHvm2_112.1', 'CWHvm2_112.2', 'CWHvm2_113', 'CWHvm2_114', 'CWHvm2_115',
+#               'CWHvm3_111.1', 'CWHvm3_111.2', 'CWHvm3_112.1', 'CWHvm3_112.2', 'CWHvm3_113', 'CWHvm3_114')
+# 
+# author = "HKlassen"
+# bgc.list = c("CWHxs")
 
 su3 <- su %>% 
   mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", ""))  %>% 

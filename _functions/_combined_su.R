@@ -6,8 +6,8 @@ combined_su <- function(db){
                                     str_subset("_SU"))), dbReadTable, conn = correlation)
   dbDisconnect(correlation)
   SU <- do.call(rbind.data.frame, all_su)
-  SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
-    arrange(desc(PlotNumber)) %>% mutate(bgc = gsub(" ", "", bgc, fixed = TRUE)) 
+ SU <- SU %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>%
+   arrange(desc(PlotNumber)) %>% mutate(bgc = gsub(" ", "", bgc, fixed = TRUE))
   ss.unique <- SU %>% select(SiteUnit) %>% distinct
   su <- SU %>% dplyr::select(PlotNumber, SiteUnit, bgc)
   su$SiteUnit.orig <- su$SiteUnit

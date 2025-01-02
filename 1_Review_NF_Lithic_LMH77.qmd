@@ -1,0 +1,293 @@
+---
+title: "Review of LMH 77 Skunkcabbage Forests"
+author: "William H MacKenzie"
+date: "20/09/2024"
+format:
+  typst:
+    toc: true
+    toc-depth: 2
+    toc-title: Contents
+    section-numbering: 1.1.1
+    columns: 1
+editor: source
+execute:
+  echo: false
+  error: false
+  warning: false
+  message: false
+  fig.width: 6
+  fig.height: 4
+  fig.align: 'left'
+  fig.cap: true
+  fig.pos: H
+  out.width: '100%'
+  dev: pdf
+  fig.ext: pdf
+  cache: false
+  fig.retina: 2
+  dpi: 600
+  fig.asp: 1.5
+  fig.path: "./figures/"
+---
+
+This script is designed to review the site series within each BGC, primarily to identify where site series do not sufficiently differentiate and need to be reviewed. The script also identifies site series with too few plots or with low diagnostic potential for review and interpretation of the quantitative analysis. The script generates a table list of site unit pairs that exceed a threshold similarity and a dendrogram of the cluster analysis of site units for each BGC.
+
+# Historic BEC correlation approach
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(DBI)
+require(data.table)
+require(cluster)
+require(dendextend)
+require(dynamicTreeCut)
+require(gtable)
+require(gtsummary)
+require(colorspace)
+require(openxlsx)
+require(tictoc)
+require(labdsv)
+require(indicspecies)
+require(Polychrome)
+require(ggdendro)
+require(purrr)
+require(ggplotify)
+require(grid)
+set.seed(1279)
+source("./_functions/_bec_dist.R")
+source("./_functions/_bec_dist_matrix.R")
+source("./_functions/_lump_species.R")
+source("./_functions/_lump_species2.R")
+source("./_functions/_create_su_vegdata.R")
+source("./_functions/_create_analysis_vegsum.R")
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+source("./_functions/_add_vars.R")
+source("./_functions/_do_pairwise.R")
+source("./_functions/_create_diagnostic_veg.R")
+source("./_functions/_return_similar_pairs.R")
+source("./_functions/_read_sppmaster.R")
+source("./_functions/_combined_su.R")
+source("./_functions/_create_veg_sum_all.R")
+#source('./_functions/_create_veg_sum2.R')
+source('./_functions/_build_species_ordering.R')
+source('./_functions/_format_veg_table.R')
+source('./_functions/_format_veg_table2.R')
+source('./_functions/_encode_veg_sum.R')
+source('./_functions/_create_dendro.R')
+source('./_functions/_create_dendro_all.R')
+source('./_functions/_create_dendro_bybgc.R')
+source('./_functions/_draw_ss_edatope.R')
+source('./_functions/_create_VGS_table.R')
+```
+
+# Evaluate site series within each BGC
+
+## Read in data
+
+Vegetation data is read in from saved .RDS file generated from the BECMaster cleaning scripts. A compiled SU table is build from all BGC \_SU tables stored in the coast guide Vpro database. Taxonomy is read in from the species taxonomy database. A species lumping code table is read in from the Correlation2_Spp_lump.accdb database and the vegetation data is lumped using the lump_species function.
+
+```{r load data, echo=FALSE, message=FALSE}
+veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
+taxon.all <- read_sppmaster()
+taxon.lifeform <- taxon.all %>%
+  filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
+  dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
+  distinct()
+veglump <- dbConnect(
+  odbc::odbc(),
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
+lump <- dbReadTable(veglump, "CorrelationII_Lump")
+dbDisconnect(veglump)
+veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
+db <- "D:/BC_Correlation2_Vpro_2023/Coast_NonForest_SUnew.accdb"
+
+master_su <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=", db,";"))
+su <- dbReadTable(master_su, "Coast_Lithic_v0_SU")
+dbDisconnect(master_su)
+  SU <- su %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
+    arrange(desc(PlotNumber)) %>% mutate(bgc = gsub(" ", "", bgc, fixed = TRUE)) 
+  ss.unique <- SU %>% select(SiteUnit) %>% distinct
+  su <- SU %>% dplyr::select(PlotNumber, SiteUnit, bgc)
+  su$SiteUnit.orig <- su$SiteUnit
+  su$SiteUnit <- sub(".*/", "", su$SiteUnit)
+  # su <- su %>% mutate(SiteUnit = gsub("/", "_", su$SiteUnit)) 
+  # su <- su %>% mutate(SiteUnit = gsub(" ", "", su$SiteUnit, fixed = TRUE)) 
+#su <- combined_su(db)
+# su <- su %>%
+#   filter(grepl('_[[:alpha:]]', SiteUnit))
+
+#su$SiteUnit <- gsub(".*_","",su$SiteUnit) ## extracts only the site association code
+
+su <- su %>%
+  filter(!grepl('poor|low|-S|add|nudum|browsed|X|!|support|Unplaced', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+#   filter(grepl('01', SiteUnit)) ###zonal specific
+# su <- su %>%
+# filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
+# su <- su %>%
+# filter(bgc %in% c('CWHvh1', 'CWHvh2', 'CWHvm1', 'CWHvm2', 'CWHvm3', 'CWHvm4', 'CWHwm'))###BGC specific|CWHms 
+#filter(bgc %in% c('CWHmm1'))
+  bgc.unique <- unique(su$bgc)
+ss.unique <- su %>% select(SiteUnit, bgc) %>% distinct
+
+ becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;")
+plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
+dbDisconnect(becmaster)
+
+```
+
+## Examine site series within each BGC
+
+1.  Identify site series that have fewer than 5 plots (difficult to quantitatively analyse)
+
+2.  Identify site series that have low diagnostic potential (review units for membership consistency).
+
+```{r build pair.wise similarity matrix, echo=FALSE}
+
+key.site.indicators <- c("PICESIT", "POPUTRI", "LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG")#,  "TIARELLA", "DRYOEXP" )
+reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
+# reduced.lifeforms = c(1,2)
+reduced.lifeforms <- c(9, 10, 11)
+### select units to run
+su2 <- su
+
+vegsum.pairs <- do_pairwise(veg.dat2,
+  su = su2, minimportance = 0, minconstancy = 60,
+  noiseconstancy = 10,
+  minplots = 1,
+ minor = 1,
+  use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce.lifeform = FALSE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  reduced.exceptions = reduced.exceptions
+)
+
+xx <- vegsum.pairs %>%
+  filter(Unit1 == "CWHvm1_103", Unit2 == "CWHvm1_103->111.2")
+
+unit.compare <- vegsum.pairs %>%filter(nplots.x>0) %>%
+  select(Unit1, Unit2, BEC.sim.min, nplots.x, nplots.y, unit.diag.sum.x, unit.diag.sum.y) %>% 
+  mutate(BEC.sim = round(BEC.sim.min, 2)) %>% 
+ distinct()
+
+# yy <- vegsum.pairs %>% 
+#   select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, shared.diag, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, diff.ratio,diff.ratio.mean, BEC.sim) %>% 
+#   filter(Unit1 == "CWHvm1_111.1", Unit2 == "CWHvm1_101->111.1")
+
+```
+
+```{r site series with too few plots, echo=FALSE}
+#| label: tab-too-few-plots
+#| tbl-cap: "Site Units with Fewer than 5 Plots"
+#| tbl-cap-location: top
+#| warning: false
+#| tbl-align: "left"
+
+compared <- unit.compare %>% distinct
+ss_too.few1 <- compared %>%
+  select(Unit1, nplots.x) %>% 
+  filter(nplots.x < 5, nplots.x>0) %>% 
+  rename("Number of Plots" = nplots.x, "Site Unit" = Unit1) %>% 
+  distinct()
+ss_too.few2 <- compared %>%
+  select(Unit2, nplots.y) %>% 
+  filter(nplots.y < 5, nplots.y>0) %>% 
+  rename("Number of Plots" = nplots.y, "Site Unit" = Unit2) %>% 
+  distinct()
+ss_too.few <- rbind(ss_too.few1, ss_too.few2) %>% distinct() %>% arrange(`Site Unit`)
+# low.num <- gt::as_gtable(gt::gt(ss_too.few) %>% gt::fmt_number(decimals = 0)|> gt::tab_options(table.font.size = 10), plot = TRUE)
+
+gt::gt(ss_too.few) %>% gt::fmt_number(decimals = 0)|> gt::tab_options(table.font.size = 10)
+```
+
+```{r site series with low diagnostic potential, echo=FALSE}
+#| label: tab-low-diagnostic
+#| tbl-cap: "Site Units with Low Diagnostic Potential"
+#| tbl-cap-location: top
+#| warning: false
+#| tbl-align: "left"
+ss_low.diag1 <- compared %>%
+  select(Unit1, unit.diag.sum.x)  %>%  distinct() %>%
+  filter(unit.diag.sum.x < 30, unit.diag.sum.x >0) %>% 
+  rename("Diagnostic Potential" = unit.diag.sum.x, "Site Unit" = Unit1) %>%
+  distinct()
+ss_low.diag2 <- compared %>%
+  select(Unit2, unit.diag.sum.y)  %>% 
+  filter(unit.diag.sum.y <30, unit.diag.sum.y >0) %>% 
+  rename("Diagnostic Potential" = unit.diag.sum.y, "Site Unit" = Unit2) %>%
+  distinct()
+ss_low.diag <- rbind(ss_low.diag1, ss_low.diag2) %>% distinct()
+# low.diag.pot <- gt::as_gtable(gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10), plot = TRUE)
+gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10)
+# require(gridExtra)
+# grid.arrange(low.num, low.diag.pot, ncol = 2)
+```
+
+```{r site units that are too similar, echo=FALSE}
+#| label: tab-sites-similar
+#| tbl-cap: paste0("Site Series pairs with poor differentiation (BEC.sim >= .93)")
+#| tbl-cap-location: top
+#| warning: false
+#| tbl-align: "left"
+ss_similar <- compared %>%
+  select(Unit1, Unit2, BEC.sim) %>%
+  dplyr::filter(BEC.sim >= .93) %>% mutate(Units = paste0(Unit1, " vs ", Unit2)) %>%
+  select(-Unit2, -Unit1) %>% 
+  rename("Similarity" = BEC.sim, "Site Units" = Units) %>%
+  distinct() 
+# low.diff <- gt::as_gtable((gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) |> gt::cols_width(Site.Units ~ gt::px(250))), plot = TRUE, text_grob = gridtext::richtext_grob)
+gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) 
+```
+
+# Compare site series within each BGCs
+
+This section is to identify site series that do not differentiate adequately and require review.
+
+## Dendrogram of cluster analysis by BGC
+
+The dendrogram is an approximate representation of the similarity matrix. It is constructed using agglomerative hierarchical clustering which merges site units from the bottom up. The red line represents the minimal dissimilarity required to separate units into different site series. Any splits to the right of the red line should be considered for merging into the same site series (possibly as phases). Current threshold is set at 7% but assessment is required. Splits that occur between the green association threshold and the red minimum threshold will likely be merged at the subassociation level in the hierarchy. The green line represents the dissimilarity threshold for an association. Site unit 'leaves' to the right of this threshold will fall under the same association in the hierarchy. Current threshold is set at 17% but assessment is required.
+
+```{r cluster analysis, echo=FALSE}
+#bgc.unique <- c("CDFmm", "CWHvm3")
+#for (bgc.choose in bgc.unique){
+  create_dendro_all(unit.compare, threshold.low = .07)
+#}
+```
+
+
+## Generate comparative veg summary report
+
+```{r report table}
+ unit.choose <- c("Ro50", "Ro51", "Ro52", "Ro53", "Ro53", "Ro54", "Ro55")
+su.choose <- su %>% filter(SiteUnit %in% unit.choose)
+table.name1 = "Lithic_Ro"
+vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
+##determine order of species by unit
+indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
+veg.sum.table1 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+create_VGS_table(veg.sum.table1, table.name = table.name1)
+
+vegsum.wbk <- createWorkbook()
+openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name1)
+openxlsx::writeData(vegsum.wbk, sheet = table.name1, veg.sum.table1)
+# openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name2)
+# openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
+# openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name3)
+# openxlsx::writeData(vegsum.wbk, sheet = table.name3, veg.sum.table3)
+saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_draft_lithic_table.xlsx", overwrite = TRUE)
+
+```
+
+```{r table of plots site unit by BGC}
+#| label: tab-sites-bgc
+#| tbl-cap: "Count of Site Units by BGC"
+#| tbl-cap-location: top
+#| warning: false
+#| tbl-align: "left"
+# ss_x_bgc <- su %>% select(SiteUnit, bgc) %>% group_by(SiteUnit, bgc) %>% summarise(n = n()) %>% pivot_wider(names_from = SiteUnit, values_from = n, values_fill = 0) %>% ungroup() %>%  mutate_if(is.numeric, as.character) %>% arrange(bgc)
+# ss_x_bgc[ss_x_bgc == 0] <- "-"
+# # low.diff <- gt::as_gtable((gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) |> gt::cols_width(Site.Units ~ gt::px(250))), plot = TRUE, text_grob = gridtext::richtext_grob)
+# gt::gt(ss_x_bgc) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) 
+```

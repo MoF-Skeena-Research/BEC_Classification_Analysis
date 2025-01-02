@@ -1,5 +1,5 @@
 ## summarizes veg dat using su table
-create_veg_sum <- function(vdat, siteUnits, minconstancy = 60, noiseconstancy = 10, minimportance = 0, strata.by = "Layer", BGC) {
+create_veg_sum <- function(vdat, siteUnits, minconstancy = 50, noiseconstancy = 10, minimportance = 0, strata.by = "Layer") {
   if (strata.by == "Layer") {
     vdat <- lump_species2(vdat, lump = lump)
   } else if (strata.by == "Lifeform") {
@@ -7,12 +7,13 @@ create_veg_sum <- function(vdat, siteUnits, minconstancy = 60, noiseconstancy = 
   }
 
   vdat <- merge(vdat, siteUnits, by = "PlotNumber")
+  setDT(vdat)
   vdat <- vdat[PlotNumber %in% siteUnits$PlotNumber, ]
   # vdat <- vdat %>% filter(bgc %in% BGC)
-  vdat <- vdat[bgc %in% BGC, ]
+  #vdat <- vdat[bgc %in% BGC, ]
 ## remove trees in moss layer
-  vdat <-  vdat  %>% filter(!Species %in% tree_seedlings)
-  vdat <-  vdat  %>% filter(!(Species %in% trees & Layer == "Moss"))
+  # vdat <-  vdat  %>% filter(!Species %in% tree_seedlings)
+  # vdat <-  vdat  %>% filter(!(Species %in% trees & Layer == "Moss"))
 
 #veg.dat2 <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE)
   

@@ -40,7 +40,85 @@ clim_dat2 <- addVarsclimr(clim_dat)
 #merge back with plot data 
 grid.dat<-left_join(BGC_5km_grid, rename(clim_dat2, V1=id)) %>% mutate(zone = str_extract(BGC, "([A-Z]+)")) %>% select(zone, everything())
 fwrite(grid.dat, "./clean_data/climr_WNAv13_trainingdat.csv")
+
+
 ```
+
+
+```{r}
+grid.samp <- grid.dat  %>% slice_sample(by = BGC, n=10) 
+grid.samp2 <- grid.samp %>% select(lat, lon, elev,V1) %>% rename(id = V1) 
+grid.samp <- grid.samp  %>% select(V1, BGC) %>% rename(id = V1)# %>% na.omit()
+ds_out <- downscale(
+  xyz = grid.samp2,
+  which_refmap = "auto",
+  #obs_periods = "2001_2020",
+  gcm_periods = c("2041_2060", "2081_2100"),
+  gcms = "ACCESS-ESM1-5",
+  ssps = "ssp245",
+  max_run = 2,
+  return_refperiod = TRUE, ## to return the 1961-1990 normals period
+  vars = c("MSP", "Tave_sm", "CMD", "Tmin_wt")
+)
+
+bgc.info <- fread("./clean_data/WNA_BGCs_Info_v13_1.csv")
+grid.samp3 <-left_join(grid.samp, ds_out) %>% mutate(zone = str_extract(BGC, "([A-Z]+)")) %>%
+  left_join(bgc.info) %>% filter(is.na(RUN) | RUN == "ensembleMean")
+
+outprov <- grid.samp3 %>% filter(DataSet %in% c("USA", "AB")) %>% filter(PERIOD == "1961_1990")
+grid.samp3 <- grid.samp3 %>% filter(!DataSet %in% c("USA", "AB"))
+grid.samp4 <- rbind(grid.samp3, outprov) %>% select(BGC, PERIOD, MSP, Tave_sm, CMD, Tmin_wt)
+
+fwrite(grid.samp4, "./clean_data/climate_space_test.csv")
+list_gcms()
+
+
+
+# Load the data from the CSV file
+```
+
+
+```{r}
+library(ggplot2)
+library(readr)
+library(ggforce)
+data <- read_csv("./clean_data/climate_space_test.csv")
+
+# Create a scatter plot with different symbols and colors for different PERIODs
+data$PERIOD <- factor(data$PERIOD, levels = c("1961_1990", "2041_2060", "2081_2100"))
+data <- data[order(data$PERIOD == "1961_1990", decreasing = FALSE), ]
+ggplot(data, aes(x = CMD, y = Tave_sm, color = PERIOD, shape = PERIOD)) +
+  geom_point(size = 3) +
+  geom_mark_hull(aes(fill = PERIOD), alpha = 0.2) +
+  labs(title = "Scatter plot of MSP vs Tave_sm with different symbols and colors for different PERIODs",
+       x = "CMD",
+       y = "Tave_sm") +
+  theme_minimal() +
+  theme(legend.title = element_text(size = 10),
+        legend.text = element_text(size = 8))
+
+
+ggplot(data, aes(x = MSP, y = Tave_sm, color = PERIOD, shape = PERIOD)) +
+  geom_point(size = 3) +
+  geom_mark_hull(aes(fill = PERIOD), alpha = 0.2) +
+  labs(title = "Scatter plot of MSP vs Tave_sm with different symbols and colors for different PERIODs",
+       x = "MSP",
+       y = "Tave_sm") +
+  theme_minimal() +
+  theme(legend.title = element_text(size = 10),
+        legend.text = element_text(size = 8))
+
+ggplot(data, aes(x = Tmin_wt, y = Tave_sm, color = PERIOD, shape = PERIOD)) +
+  geom_point(size = 3) +
+  geom_mark_hull(aes(fill = PERIOD), alpha = 0.2) +
+  labs(title = "Scatter plot of MSP vs Tave_sm with different symbols and colors for different PERIODs",
+       x = "Tmin_wt",
+       y = "Tave_sm") +
+  theme_minimal() +
+  theme(legend.title = element_text(size = 10),
+        legend.text = element_text(size = 8))
+```
+
 
 ```{r climate summaries}
 require(summarytools)

@@ -57,6 +57,7 @@ source('./_functions/_create_dendro_bybgc.R')
 source('./_functions/_draw_dendro_split.R')
 source('./_functions/_cluster_groups.R')
 source('./_functions/_TabletoTree.R')
+source('./_functions/_build_species_ordering_hier.R')
 ```
 
 #### Read in data
@@ -78,8 +79,8 @@ veglump <- dbConnect(
 lump <- dbReadTable(veglump, "CorrelationII_Lump")
 dbDisconnect(veglump)
 veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
-#db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
-db <- "D:/BC_Correlation2_Vpro_2023/Coast_Association_Exercise.accdb"
+db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
+#db <- "D:/BC_Correlation2_Vpro_2023/Coast_Association_Exercise.accdb"
 su <- combined_su(db)
 su <- su %>%
   filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|unplaced|support', SiteUnit))  %>% arrange(SiteUnit)
@@ -152,7 +153,7 @@ setDT(su2)[merge, SiteUnit := mergedUnit, on = "SiteUnit"]
 
 ```{r build pair.wise similarity matrix, echo=FALSE}
 
-key.site.indicators <- c("PICESIT", "POPUTRI", "LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG")#,  "TIARELLA", "DRYOEXP" )
+key.site.indicators <- c("POPUTRI", "LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG")#,  "TIARELLA", "DRYOEXP" "PICESIT", )
 reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
 # reduced.lifeforms = c(1,2)
 reduced.lifeforms <- c(9, 10, 11)
@@ -336,32 +337,32 @@ fwrite(coast.units, "./clean_data/Coast_Hierarchical_Clusters_v1_clean.csv")
 #### Export vegetation summary tables of site units by prospective associations
 
 ```{r build veg guide summary and export to excel, echo = FALSE, warning=FALSE, message=FALSE}
-# require(openxlsx)
-# require(tictoc)
-# library(stringr)
-# data.path = "D:/OneDrive - Government of BC/GitHub_data"
-# author <- "test.assoc2"
-# assoc.list <- coast.units %>% filter(!is.na(Association.clst)) %>% group_by(Association.clst) %>% mutate(n=n()) %>% filter(n>2) %>% distinct(Association.clst) %>% pull(Association.clst)
-# 
+require(openxlsx)
+require(tictoc)
+library(stringr)
+data.path = "D:/OneDrive - Government of BC/GitHub_data"
+author <- "test.assoc2"
+assoc.list <- coast.units %>% filter(!is.na(Association.clst)) %>% group_by(Association.clst) %>% mutate(n=n()) %>% filter(n>2) %>% distinct(Association.clst) %>% pull(Association.clst)
+
+vegsum.wbk <- createWorkbook()
+for(assoc.choose in assoc.list){
+#assoc.choose = "assoc-13"
+assoc <- coast.units.su %>% filter(Association.clst %in% assoc.choose) %>% select(SiteUnit, Association.clst) %>% mutate(SiteUnit = gsub(" ", "", SiteUnit)) %>% mutate(SiteUnit = str_replace(SiteUnit, "/", "_"))
+su.assoc <- left_join(assoc, su, by = "SiteUnit") %>%  mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct()
+veg.dat.assoc <- veg.dat2 %>% filter(PlotNumber %in% su.assoc$PlotNumber)
 # vegsum.wbk <- createWorkbook()
-# for(assoc.choose in assoc.list){
-# #assoc.choose = "assoc-13"
-# assoc <- coast.units.su %>% filter(Association.clst %in% assoc.choose) %>% select(SiteUnit, Association.clst) %>% mutate(SiteUnit = gsub(" ", "", SiteUnit)) %>% mutate(SiteUnit = str_replace(SiteUnit, "/", "_"))
-# su.assoc <- left_join(assoc, su, by = "SiteUnit") %>%  mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct() 
-# veg.dat.assoc <- veg.dat2 %>% filter(PlotNumber %in% su.assoc$PlotNumber)
-# # vegsum.wbk <- createWorkbook()
-# # #bgc.choose = "CDFmmtab2"
-# # #for(bgc.choose in bgc.list){
-# vegSum <-
-#   create_veg_sum_all(vdat = veg.dat.assoc, siteUnits = su.assoc, strata.by = "Lifeform")
-# 
-# indic.order <- build_species_ordering_hier(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc, hier.level = "Association.clst")
-# veg.sum.table <- format_veg_table2(vsum = vegSum, spp=taxon.lifeform)
-# openxlsx::addWorksheet(vegsum.wbk, sheetName = assoc.choose)
-# openxlsx::writeData(vegsum.wbk, sheet = assoc.choose, veg.sum.table) 
-# }
-# 
-# saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_assoc_tables_", author, ".xlsx"), overwrite = TRUE)
+# #bgc.choose = "CDFmmtab2"
+# #for(bgc.choose in bgc.list){
+vegSum <-
+  create_veg_sum_all(vdat = veg.dat.assoc, siteUnits = su.assoc, strata.by = "Lifeform")
+
+indic.order <- build_species_ordering_hier(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc, hier.level = "Association.clst")
+veg.sum.table <- format_veg_table2(vsum = vegSum, spp=taxon.lifeform)
+openxlsx::addWorksheet(vegsum.wbk, sheetName = assoc.choose)
+openxlsx::writeData(vegsum.wbk, sheet = assoc.choose, veg.sum.table)
+}
+
+saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_assoc_tables_v3_", author, ".xlsx"), overwrite = TRUE)
 
 ```
 
