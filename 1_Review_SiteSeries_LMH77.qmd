@@ -4,7 +4,7 @@ author: "William H MacKenzie"
 date: "20/09/2024"
 format:
   typst:
-    toc: true
+    toc: false
     toc-depth: 2
     toc-title: Contents
     section-numbering: 1.1.1
@@ -89,7 +89,9 @@ Vegetation data is read in from saved .RDS file generated from the BECMaster cle
 
 ```{r load data, echo=FALSE, message=FALSE}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
-taxon.all <- read_sppmaster()
+#taxon.all <- read_sppmaster()
+taxon.all <- read_sppmaster(database = "C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb")
+
 taxon.lifeform <- taxon.all %>%
   filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
   dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
@@ -153,13 +155,14 @@ reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
 reduced.lifeforms <- c(9, 10, 11)
 ### select units to run
 
-vegsum.pairs <- do_pairwise(veg.dat = veg.dat2,
-  su = su2, minimportance = 0, minconstancy = 50,
+vegsum.pairs <- do_pairwise(veg.dat2,
+  su = su2, minimportance = 0, minconstancy = 60,  ### change this to 50 reduce up to 60
   noiseconstancy = 10,
   minplots = 1,
   minor = 1,
-  use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 1.5,
-  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce.lifeform = FALSE, reduced.lifeforms = reduced.lifeforms, reduction = .5,
+
   reduced.exceptions = reduced.exceptions
 )
 
@@ -175,8 +178,10 @@ unit.compare$bgc1 <- stringr::word(unit.compare$Unit1, 1, sep = "\\_")
 unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
 
 yy <- vegsum.pairs %>% 
-  select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, shared.diag, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, diff.ratio,BEC.sim.mean, BEC.sim.min) %>% 
-  filter(Unit1 == "CWHdm3_103", Unit2 == "CWHdm3_101")
+
+  select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, shared.diag, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, diff.ratio,BEC.sim.mean, BEC.sim.min, BEC.sim.max) %>% 
+  filter(Unit1 == "CWHws1_110", Unit2 == "CWHws1_111")
+fwrite(yy, "example_pairwise.csv")
 
 ```
 
