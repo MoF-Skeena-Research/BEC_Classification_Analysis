@@ -1,5 +1,5 @@
 ---
-title: "Review of LMH 77 Skunkcabbage Forests"
+title: "Review of LMH 77 Beachlands"
 author: "William H MacKenzie"
 date: "20/09/2024"
 format:
@@ -265,7 +265,7 @@ The dendrogram is an approximate representation of the similarity matrix. It is 
 ```{r report table}
 # su2 <- su %>% mutate(bgc = str_extract(SiteUnit, "[^_]+"))
 #unit.list <- unique(su$SiteUnit)
- unit.choose <- c("Bb01", "Bb01.2", "Bb02.1", "Bb02.2", "Bb02.3", "Bb02.4", "Bb03", "Bb04")
+ unit.choose <- c("Bb01.1", "Bb01.2", "Bb02.1", "Bb02.2", "Bb02.3", "Bb02.4", "Bb03", "Bb04")
 su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 table.name1 <- "Beach1"
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
@@ -275,7 +275,7 @@ veg.sum.table1 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 create_VGS_table(veg.sum.table1, table.name = table.name1)
 
 
- unit.choose <- c("Bb05", "Bb06", "Bb07", "Bb08.1", "Bb08.2", "Bb09", "Bb10", "Bb11") 
+ unit.choose <- c("Bb05", "Bb06", "Bb07.1", "Bb07.2", "Bb08", "Bb09", "Bb10", "Bb11") 
  su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 table.name2 <- "Beach2"
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)

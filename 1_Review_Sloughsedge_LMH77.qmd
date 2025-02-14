@@ -337,6 +337,7 @@ The dendrogram is an approximate representation of the similarity matrix. It is 
   create_dendro_all(unit.compare, threshold.low = .07, threshold.high = .18)
 #}
 ```
+
 ## Generate comparative veg summary report
 
 ```{r report table}
@@ -365,4 +366,3 @@ ss_x_bgc[ss_x_bgc == 0] <- "-"
 # low.diff <- gt::as_gtable((gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) |> gt::cols_width(Site.Units ~ gt::px(250))), plot = TRUE, text_grob = gridtext::richtext_grob)
 gt::gt(ss_x_bgc) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) 
 ```
-

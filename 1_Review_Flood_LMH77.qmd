@@ -1,5 +1,5 @@
 ---
-title: "Review of LMH 77 Bogs"
+title: "Review of LMH 77 Flood Forests"
 author: "William H MacKenzie"
 date: "20/09/2024"
 format:
@@ -87,7 +87,7 @@ source('./_functions/_draw_ss_edatope.R')
 
 ## Read in data
 
-Vegetation data is read in from saved .RDS file generated from the BECMaster cleaning scripts. A compiled SU table is build from all BGC \_SU tables stored in the coast guide Vpro database. Taxonomy is read in from the species taxonomy database. A species lumping code table is read in from the Correlation2_Spp_lump.accdb database and the vegetation data is lumped using the lump_species function.
+Vegetation data is read in from saved .RDS file generated from the BECMaster cleaning scripts. A compiled SU table is build from all BGC SU tables stored in the coast guide Vpro database. Taxonomy is read in from the species taxonomy database. A species lumping code table is read in from the Correlation2_Spp_lump.accdb database and the vegetation data is lumped using the lump_species function.
 
 ```{r load data, echo=FALSE, message=FALSE}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
@@ -105,7 +105,7 @@ veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
 db <- "D:/BC_Correlation2_Vpro_2023/Coast_NonForest_SUnew.accdb"
 
 master_su <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=", db,";"))
-su <- dbReadTable(master_su, "Coast_Bogs_FinalAB_SU")
+su <- dbReadTable(master_su, "Coast_Flood_Final_SU")
 dbDisconnect(master_su)
   SU <- su %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
     arrange(desc(PlotNumber)) %>% mutate(bgc = gsub(" ", "", bgc, fixed = TRUE)) 
@@ -122,7 +122,7 @@ dbDisconnect(master_su)
 #su$SiteUnit <- gsub(".*_","",su$SiteUnit) ## extracts only the site association code
 
 su <- su %>%
-  filter(!grepl('poor|low|-S|add|nudum|browsed|unplaced|support|X', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+  filter(!grepl('poor|low|-S|add|nudum|browsed|support|[?]|[$]', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
 #   filter(grepl('01', SiteUnit)) ###zonal specific
 # su <- su %>%
 # filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
@@ -187,7 +187,7 @@ unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
 #| warning: false
 #| tbl-align: "left"
 
-compared <- unit.compare %>% filter(bgc1 == bgc2)
+compared <- unit.compare
 ss_too.few1 <- compared %>%
   select(Unit1, nplots.x) %>% 
   filter(nplots.x < 5, nplots.x>0) %>% 
@@ -279,7 +279,7 @@ create_VGS_table <- function(veg.sum.table, table.name = ""){
 # su2 <- su %>% mutate(bgc = str_extract(SiteUnit, "[^_]+"))
 # bgc.choose <- c("CWHxm1", "CWHvh1", "MHmm1")
 unit.choose <- su %>% pull(SiteUnit)
-table.name1 <- "Bogs1"
+table.name1 <- "Flood1"
 # unit.choose <- c("Ws51", "Ws52", "Ws53", "Ws56.1", "Ws56.2", "Ws56.3",  "Ws57")
 su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
@@ -288,33 +288,11 @@ indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.l
 veg.sum.table1 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 create_VGS_table(veg.sum.table1, table.name = table.name1)
 
-# table.name2 <- "Skunkcabbage2"
-#  unit.choose <- c("Ws54.1", "Ws54.2", "Ws55.1", "Ws55.2", "Ws59")
-#  su.choose <- su %>% filter(SiteUnit %in% unit.choose)
-# vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
-# ##determine order of species by unit
-# indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
-# veg.sum.table2 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
-# create_VGS_table(veg.sum.table2, table.name = table.name2)
- 
-                  
-#  unit.choose <- c("Bb13 Rumefue", "Bbd01 Poa_mac", "Bb_Festrub", "Bb_Calysol","Bb_Grinsti","Br Festrub","HwSs-Gaulsha","HwSs-Kindpra")  
-# su.choose <- su %>% filter(SiteUnit %in% unit.choose)
-# table.name3 <- "Beach3"
-# vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0)
-# ##determine order of species by unit
-# indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
-# veg.sum.table3 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
-# create_VGS_table(veg.sum.table3, table.name = table.name3)
 
 vegsum.wbk <- createWorkbook()
 openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name1)
 openxlsx::writeData(vegsum.wbk, sheet = table.name1, veg.sum.table1)
-# openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name2)
-# openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
-# openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name3)
-# openxlsx::writeData(vegsum.wbk, sheet = table.name3, veg.sum.table3)
-saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_Bogs_table.xlsx", overwrite = TRUE)
+saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_Flood_Associations.xlsx", overwrite = TRUE)
 
 ```
 

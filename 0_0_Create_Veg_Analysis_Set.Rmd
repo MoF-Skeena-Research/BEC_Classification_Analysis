@@ -24,8 +24,8 @@ plot.veg <- dbReadTable(becmaster, "BECMaster_fixing_Veg")
 dbDisconnect(becmaster)
 
 
-# sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
-sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
+sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
+# sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
 taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
 dbDisconnect(sppmaster)
 taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X"|Codetype == "D") %>% dplyr::select(Code, Lifeform) %>% distinct

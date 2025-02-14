@@ -100,7 +100,7 @@ taxon.lifeform <- taxon.all %>%
 veglump <- dbConnect(
   odbc::odbc(),
   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
-lump <- dbReadTable(veglump, "CorrelationII_Lump")
+lump <- dbReadTable(veglump, "WetlandsII_Lump")
 dbDisconnect(veglump)
 veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
 db <- "D:/BC_Correlation2_Vpro_2023/Coast_NonForest_SUnew.accdb"
@@ -265,22 +265,22 @@ The dendrogram is an approximate representation of the similarity matrix. It is 
 ```{r report table}
 # su2 <- su %>% mutate(bgc = str_extract(SiteUnit, "[^_]+"))
 #unit.list <- unique(su$SiteUnit)
- unit.choose <- c("Wf50", "Wf51", "Wf52", "Wf52.1", "Wf52.2", "Wf53", "Ws50.1", "Ws50.2")
+ unit.choose <- c("Wf50", "Wf51", "Wf52", "Wf52.1", "Wf52.2",  "Wf53", "Ws50.1", "Ws50.2")
 su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 table.name1 <- "Fens"
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
 ##determine order of species by unit
-indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
+# indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
 veg.sum.table1 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 create_VGS_table(veg.sum.table1, table.name = table.name1)
 
 
-unit.choose <- c("Wm04", "Wm05", "Wm06", "Wm09", "Wm50.1", "Wm50.2","Wm51", "Wm52") 
+unit.choose <- c("Wm04", "Wm05", "Wm06", "Wm09", "Wm50.1", "Wm50.2", "Wm50.3", "Wm51", "Wm52", "Wm53") 
  su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 table.name2 <- "Marshes"
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
 ##determine order of species by unit
-indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
+# indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
 veg.sum.table2 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 create_VGS_table(veg.sum.table2, table.name = table.name2)
 
@@ -310,7 +310,7 @@ openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name2)
 openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
 openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name3)
 openxlsx::writeData(vegsum.wbk, sheet = table.name3, veg.sum.table3)
-saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_draft_wetland_tables.xlsx", overwrite = TRUE)
+saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_draft_fenmarsh_tables.xlsx", overwrite = TRUE)
 
 ```
 

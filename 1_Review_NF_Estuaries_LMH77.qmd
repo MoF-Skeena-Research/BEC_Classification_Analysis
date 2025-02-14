@@ -1,5 +1,5 @@
 ---
-title: "Review of LMH 77 Skunkcabbage Forests"
+title: "Review of LMH 77 Estuary"
 author: "William H MacKenzie"
 date: "20/09/2024"
 format:
@@ -273,7 +273,7 @@ veg.sum.table1 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 create_VGS_table(veg.sum.table1, table.name = table.name1)
 
 
- unit.choose <- c("Ed01", "Ed02", "Ed03", "Ed04 Heramax", "Es01", "Es02") 
+ unit.choose <- c("Ed01", "Ed02", "Ed03", "Ed04", "Es01", "Es02") 
  su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 table.name2 <- "Estuary2"
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)

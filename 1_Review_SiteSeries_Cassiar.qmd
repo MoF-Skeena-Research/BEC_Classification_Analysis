@@ -63,6 +63,7 @@ source('./_functions/_create_dendro.R')
 source('./_functions/_create_dendro_all.R')
 source('./_functions/_create_dendro_bybgc.R')
 source('./_functions/_draw_ss_edatope.R')
+source('./_functions/_create_VGS_table.R')
 ```
 
 #### Read in data
@@ -296,6 +297,7 @@ vegSum <-
 ##determine order of species by unit
 indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su, BGC = bgc.choose)
 veg.sum.table <- format_veg_table(vsum = vegSum, spp=taxon.lifeform)
+create_VGS_table(veg.sum.table, table.name = bgc.choose)
 openxlsx::addWorksheet(vegsum.wbk, sheetName = bgc.choose)
 openxlsx::writeData(vegsum.wbk, sheet = bgc.choose, veg.sum.table) 
 }

@@ -1,5 +1,5 @@
 ---
-title: "Review of LMH 77 Site Series by BGC"
+title: "Review of LMH 77 Avalanches"
 author: "William H MacKenzie"
 date: "20/09/2024"
 format:
@@ -77,6 +77,7 @@ source('./_functions/_create_dendro.R')
 source('./_functions/_create_dendro_all.R')
 source('./_functions/_create_dendro_bybgc.R')
 source('./_functions/_draw_ss_edatope.R')
+source('./_functions/_create_VGS_table.R')
 ```
 
 # Evaluate site series within each BGC
@@ -155,7 +156,7 @@ vegsum.pairs <- do_pairwise(veg.dat2,
   noiseconstancy = 10,
   minplots = 1,
   minor = 1,
-  use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 1.5,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
   reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
   reduced.exceptions = reduced.exceptions
 )
@@ -254,7 +255,7 @@ data.path = "D:/OneDrive - Government of BC/GitHub_data"
 author <- "WHMacKenzie"
 assoc.choose = "Avalanche1"
 table.name1 = "Avalanche"
-unit.choose <- c("Vh50", "Vh51", "Vs50.1", "Vs50.2", "Vt50")
+unit.choose <- c("Vh50", "Vs50.1", "Vs50.2", "Vt_MHmm")
 su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 
 #for(assoc.choose in assoc.list){
@@ -273,8 +274,8 @@ su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 
 
 vegSum <-
-  create_veg_sum_all(vdat = veg.dat.assoc, siteUnits = su.choose, strata.by = "Lifeform", minconstancy = 50, noiseconstancy = 25)
-indic.order <- build_species_ordering_all(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc)
+  create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, strata.by = "Lifeform", minconstancy = 50, noiseconstancy = 25)
+indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
 veg.sum.table <- format_veg_table2(vsum = vegSum, spp=taxon.lifeform)
 create_VGS_table(veg.sum.table, table.name = table.name1)
 vegsum.wbk <- createWorkbook()

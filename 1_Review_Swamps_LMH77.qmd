@@ -1,5 +1,5 @@
 ---
-title: "Review of LMH 77 Bogs"
+title: "Review of LMH 77 Skunkcabbage Forests"
 author: "William H MacKenzie"
 date: "20/09/2024"
 format:
@@ -105,7 +105,7 @@ veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
 db <- "D:/BC_Correlation2_Vpro_2023/Coast_NonForest_SUnew.accdb"
 
 master_su <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=", db,";"))
-su <- dbReadTable(master_su, "Coast_Bogs_FinalAB_SU")
+su <- dbReadTable(master_su, "Coast_Swamps_Final_SU")
 dbDisconnect(master_su)
   SU <- su %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
     arrange(desc(PlotNumber)) %>% mutate(bgc = gsub(" ", "", bgc, fixed = TRUE)) 
@@ -122,7 +122,7 @@ dbDisconnect(master_su)
 #su$SiteUnit <- gsub(".*_","",su$SiteUnit) ## extracts only the site association code
 
 su <- su %>%
-  filter(!grepl('poor|low|-S|add|nudum|browsed|unplaced|support|X', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+  filter(!grepl('poor|low|-S|add|nudum|browsed|support|[?]|[$]', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
 #   filter(grepl('01', SiteUnit)) ###zonal specific
 # su <- su %>%
 # filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
@@ -158,8 +158,8 @@ vegsum.pairs <- do_pairwise(veg.dat2,
   noiseconstancy = 10,
   minplots = 1,
  minor = 1,
-  use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 1.5,
-  reduce.lifeform = FALSE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
   reduced.exceptions = reduced.exceptions
 )
 
@@ -278,9 +278,8 @@ create_VGS_table <- function(veg.sum.table, table.name = ""){
 ```{r report table}
 # su2 <- su %>% mutate(bgc = str_extract(SiteUnit, "[^_]+"))
 # bgc.choose <- c("CWHxm1", "CWHvh1", "MHmm1")
-unit.choose <- su %>% pull(SiteUnit)
-table.name1 <- "Bogs1"
-# unit.choose <- c("Ws51", "Ws52", "Ws53", "Ws56.1", "Ws56.2", "Ws56.3",  "Ws57")
+table.name1 <- "RichSkunk"
+ unit.choose <- c( "Ws52", "Ws53", "Ws56.1", "Ws56.2", "Ws56.3",  "Ws57", "Ws59")
 su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
 ##determine order of species by unit
@@ -288,33 +287,33 @@ indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.l
 veg.sum.table1 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 create_VGS_table(veg.sum.table1, table.name = table.name1)
 
-# table.name2 <- "Skunkcabbage2"
-#  unit.choose <- c("Ws54.1", "Ws54.2", "Ws55.1", "Ws55.2", "Ws59")
-#  su.choose <- su %>% filter(SiteUnit %in% unit.choose)
-# vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
-# ##determine order of species by unit
-# indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
-# veg.sum.table2 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
-# create_VGS_table(veg.sum.table2, table.name = table.name2)
+table.name2 <- "PoorSkunk_Sedge"
+ unit.choose <- c("Ws54.1", "Ws54.2", "Ws55","Ws58.1", "Ws58.2", "Ws60")
+ su.choose <- su %>% filter(SiteUnit %in% unit.choose)
+vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
+##determine order of species by unit
+indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
+veg.sum.table2 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+create_VGS_table(veg.sum.table2, table.name = table.name2)
  
                   
-#  unit.choose <- c("Bb13 Rumefue", "Bbd01 Poa_mac", "Bb_Festrub", "Bb_Calysol","Bb_Grinsti","Br Festrub","HwSs-Gaulsha","HwSs-Kindpra")  
-# su.choose <- su %>% filter(SiteUnit %in% unit.choose)
-# table.name3 <- "Beach3"
-# vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0)
-# ##determine order of species by unit
-# indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
-# veg.sum.table3 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
-# create_VGS_table(veg.sum.table3, table.name = table.name3)
+table.name3 <- "Non-forestSwamp"
+ unit.choose <- c("Ws50.1", "Ws50.2", "Ws51.1", "Ws51.2","Ws61", "Ws62")
+ su.choose <- su %>% filter(SiteUnit %in% unit.choose)
+vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
+##determine order of species by unit
+indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
+veg.sum.table3 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+create_VGS_table(veg.sum.table3, table.name = table.name3)
 
 vegsum.wbk <- createWorkbook()
 openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name1)
 openxlsx::writeData(vegsum.wbk, sheet = table.name1, veg.sum.table1)
-# openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name2)
-# openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
-# openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name3)
-# openxlsx::writeData(vegsum.wbk, sheet = table.name3, veg.sum.table3)
-saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_Bogs_table.xlsx", overwrite = TRUE)
+openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name2)
+openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
+openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name3)
+openxlsx::writeData(vegsum.wbk, sheet = table.name3, veg.sum.table3)
+saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_Swamp_Associations.xlsx", overwrite = TRUE)
 
 ```
 
