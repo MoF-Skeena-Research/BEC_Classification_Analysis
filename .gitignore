@@ -8,3 +8,6 @@
 /Vpro/
 /old/
 /clean_tabs/
+*.pdf
+/vegsum.tables/
+*.gpkg
