@@ -280,7 +280,7 @@ create_VGS_table <- function(veg.sum.table, table.name = ""){
 # bgc.choose <- c("CWHxm1", "CWHvh1", "MHmm1")
 unit.choose <- su %>% pull(SiteUnit)
 table.name1 <- "Bogs1"
-# unit.choose <- c("Ws51", "Ws52", "Ws53", "Ws56.1", "Ws56.2", "Ws56.3",  "Ws57")
+unit.choose <- c("Wb50", "Wb51", "Wb55.1", "Wb55.2", "Wb56")
 su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
 ##determine order of species by unit
@@ -288,14 +288,14 @@ indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.l
 veg.sum.table1 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 create_VGS_table(veg.sum.table1, table.name = table.name1)
 
-# table.name2 <- "Skunkcabbage2"
-#  unit.choose <- c("Ws54.1", "Ws54.2", "Ws55.1", "Ws55.2", "Ws59")
-#  su.choose <- su %>% filter(SiteUnit %in% unit.choose)
-# vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
-# ##determine order of species by unit
-# indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
-# veg.sum.table2 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
-# create_VGS_table(veg.sum.table2, table.name = table.name2)
+table.name2 <- "Bogs2"
+unit.choose <- c("Wb51", "Wb52.1", "Wb52.2", "Wb53.1", "Wb53.2", "Wb57")
+su.choose <- su %>% filter(SiteUnit %in% unit.choose)
+vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
+##determine order of species by unit
+indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
+veg.sum.table2 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+create_VGS_table(veg.sum.table2, table.name = table.name2)
  
                   
 #  unit.choose <- c("Bb13 Rumefue", "Bbd01 Poa_mac", "Bb_Festrub", "Bb_Calysol","Bb_Grinsti","Br Festrub","HwSs-Gaulsha","HwSs-Kindpra")  
@@ -310,8 +310,8 @@ create_VGS_table(veg.sum.table1, table.name = table.name1)
 vegsum.wbk <- createWorkbook()
 openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name1)
 openxlsx::writeData(vegsum.wbk, sheet = table.name1, veg.sum.table1)
-# openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name2)
-# openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
+openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name2)
+openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
 # openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name3)
 # openxlsx::writeData(vegsum.wbk, sheet = table.name3, veg.sum.table3)
 saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_Bogs_table.xlsx", overwrite = TRUE)

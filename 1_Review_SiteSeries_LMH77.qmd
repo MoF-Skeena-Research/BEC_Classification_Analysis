@@ -89,8 +89,8 @@ Vegetation data is read in from saved .RDS file generated from the BECMaster cle
 
 ```{r load data, echo=FALSE, message=FALSE}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
-#taxon.all <- read_sppmaster()
-taxon.all <- read_sppmaster(database = "C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb")
+taxon.all <- read_sppmaster()
+#taxon.all <- read_sppmaster(database = "C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb")
 
 taxon.lifeform <- taxon.all %>%
   filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
@@ -129,7 +129,7 @@ author = "All"
 # "CWHws3", "CWHxm1", "CWHxm2", "CWHxm3", "IDFww1"))
 # author = "DMeidinger_test"
 
- su2 <- su %>% filter(bgc == "CWHxs")
+ #su2 <- su %>% filter(bgc == "CWHxs")
   bgc.unique <- unique(su2$bgc)
 ss.unique <- su2 %>% select(SiteUnit, bgc) %>% distinct
 
@@ -161,7 +161,7 @@ vegsum.pairs <- do_pairwise(veg.dat2,
   minplots = 1,
   minor = 1,
   use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
-  reduce.lifeform = FALSE, reduced.lifeforms = reduced.lifeforms, reduction = .5,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .5,
 
   reduced.exceptions = reduced.exceptions
 )

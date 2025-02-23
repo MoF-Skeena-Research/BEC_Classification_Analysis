@@ -66,8 +66,8 @@ Vegetation data is read in from saved .RDS file generated from the BECMaster cle
 
 ```{r load data, echo=FALSE}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
-#taxon.all <- read_sppmaster()
-taxon.all <- read_sppmaster(database = "C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb")
+taxon.all <- read_sppmaster()
+#taxon.all <- read_sppmaster(database = "C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb")
 
 taxon.lifeform <- taxon.all %>%
   filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
@@ -166,7 +166,7 @@ vegsum.pairs <- do_pairwise(veg.dat2,
   su = su2, minimportance = 0.1, minconstancy = 60,
   noiseconstancy = 10,
   minplots = 1,  minor = 1,
-  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
+  use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 1.5,
   reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
   reduced.exceptions = reduced.exceptions
 )
@@ -293,22 +293,22 @@ gt::gt(singles.poor) %>%
 
 ```{r pull associations from dendrogram at cut.level, echo=FALSE}
 
-assocs <- cluster_groups(unit.compare, cut.level = 0.2, minclus = 0, group.label = "Association.clst")
+assocs <- cluster_groups(unit.compare, cut.level = 0.17, minclus = 0, group.label = "Association_clst")
 assocs <- full_join(assocs, merge ) %>% filter(!SiteUnit %in% mergedUnit) %>% 
-  mutate(Association.clst = ifelse(!is.na(mergedUnit), mergedUnit, Association.clst)) %>% 
-  mutate(mergedUnit = ifelse(is.na(mergedUnit), SiteUnit, mergedUnit)) %>% mutate(Association.clst = paste0("assoc-", Association.clst))
-alliances <- cluster_groups(unit.compare, cut.level = 0.4, minclus = 0, group.label = "Alliance.clst")
-alliances  <- left_join(assocs, alliances ,  by = c("mergedUnit"="SiteUnit"), keep = TRUE) %>% select(Alliance.clst, Association.clst, SiteUnit.x, mergedUnit)%>% mutate(Alliance.clst = paste0("all-", Alliance.clst))
+  mutate(Association_clst = ifelse(!is.na(mergedUnit), mergedUnit, Association_clst)) %>% 
+  mutate(mergedUnit = ifelse(is.na(mergedUnit), SiteUnit, mergedUnit)) %>% mutate(Association_clst = paste0("assoc-", Association_clst))
+alliances <- cluster_groups(unit.compare, cut.level = 0.35, minclus = 0, group.label = "Alliance.clst")
+alliances  <- left_join(assocs, alliances ,  by = c("mergedUnit"="SiteUnit"), keep = TRUE) %>% select(Alliance.clst, Association_clst, SiteUnit.x, mergedUnit)%>% mutate(Alliance.clst = paste0("all-", Alliance.clst))
 orders <- cluster_groups(unit.compare, cut.level = 0.8, minclus = 0, group.label = "Order.clst")
-orders  <- left_join(alliances, orders,  by = c("mergedUnit"="SiteUnit"), keep = TRUE) %>% select(-SiteUnit, Order.clst, Alliance.clst, Association.clst, SiteUnit.x, mergedUnit)%>% mutate(Order.clst = paste0("order-", Order.clst))
+orders  <- left_join(alliances, orders,  by = c("mergedUnit"="SiteUnit"), keep = TRUE) %>% select(-SiteUnit, Order.clst, Alliance.clst, Association_clst, SiteUnit.x, mergedUnit)%>% mutate(Order.clst = paste0("order-", Order.clst))
 classes <- cluster_groups(unit.compare, cut.level = .99, minclus = 0, group.label = "Class.clst")
-classes  <- left_join(orders,classes,  by = c("mergedUnit"="SiteUnit"), keep = TRUE) %>% select(SiteUnit.x, Association.clst, Alliance.clst, Order.clst, Class.clst, mergedUnit)%>% mutate(Class.clst = paste0("class-", Class.clst))
+classes  <- left_join(orders,classes,  by = c("mergedUnit"="SiteUnit"), keep = TRUE) %>% select(SiteUnit.x, Association_clst, Alliance.clst, Order.clst, Class.clst, mergedUnit)%>% mutate(Class.clst = paste0("class-", Class.clst))
 
-subassocs <- cluster_groups(unit.compare, cut.level = 0.07, minclus = 0, group.label = "Subassociation.clst")
+subassocs <- cluster_groups(unit.compare, cut.level = 0.07, minclus = 0, group.label = "SubAssociation_clst")
 subassocs <- full_join(subassocs, merge ) %>% filter(!SiteUnit %in% mergedUnit) %>% 
-  mutate(Subassociation.clst = ifelse(!is.na(mergedUnit), mergedUnit, Subassociation.clst)) %>% 
-  mutate(mergedUnit = ifelse(is.na(mergedUnit), SiteUnit, mergedUnit)) %>% mutate(Subassociation.clst = paste0("subass-", Subassociation.clst))
-allunits <-  left_join(classes, subassocs,  by = c("mergedUnit"="SiteUnit"), keep = TRUE) %>% select(SiteUnit.x, Subassociation.clst, Association.clst, Alliance.clst, Order.clst, Class.clst)#%>% mutate(Class.clst = paste0("class-", Class.clst))
+  mutate(SubAssociation_clst = ifelse(!is.na(mergedUnit), mergedUnit, SubAssociation_clst)) %>% 
+  mutate(mergedUnit = ifelse(is.na(mergedUnit), SiteUnit, mergedUnit)) %>% mutate(SubAssociation_clst = paste0("subass-", SubAssociation_clst))
+allunits <-  left_join(classes, subassocs,  by = c("mergedUnit"="SiteUnit"), keep = TRUE) %>% select(SiteUnit.x, SubAssociation_clst, Association_clst, Alliance.clst, Order.clst, Class.clst)#%>% mutate(Class.clst = paste0("class-", Class.clst))
 su.temp <- su %>% select(PlotNumber, SiteUnit.orig, SiteUnit)
 su3 <- left_join(su.temp, su, by = "PlotNumber")
 
@@ -323,17 +323,25 @@ su3 <- left_join(su.temp, su, by = "PlotNumber")
 #   filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|unplaced', SiteUnit))
 # su.coast <- su.coast %>% mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct()
 # su.coast <- su.coast %>% filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))
-coast.units.su <- left_join(allunits, su3,  by = c("SiteUnit.x" = "SiteUnit.x")) %>% select(PlotNumber, SiteUnit.x, SiteUnit.orig.x, Subassociation.clst,Association.clst, Alliance.clst, Order.clst, Class.clst, bgc) %>% rename(SiteUnit = SiteUnit.orig.x)
+coast.units.su <- left_join(allunits, su3,  by = c("SiteUnit.x" = "SiteUnit.x")) %>% select(PlotNumber, SiteUnit.x, SiteUnit.orig.x, SubAssociation_clst,Association_clst, Alliance.clst, Order.clst, Class.clst, bgc) %>% rename(SiteUnit = SiteUnit.orig.x) %>% 
+  group_by(SiteUnit) %>%  mutate(n = n()) %>% ungroup
 # interior.units <- orders %>% filter(!Association == 0) %>%
 #    filter(!SiteUnit.y %in% coast.units$SiteUnit) %>%
 #   filter(Association %in% coast.units$Association)%>%
 #   left_join(su) %>%
 #   select(PlotNumber, SiteUnit, Association, Alliance, Order)
 #coast.units.su <- rbind(coast.units, interior.units)
-coast.units <- coast.units.su %>% select(-PlotNumber) %>% distinct
+coast.units <- coast.units.su %>% select(-PlotNumber) %>% distinct 
+colnames(coast.units) <- gsub('[.]', '_', colnames(coast.units))
 fwrite(coast.units.su, "./clean_data/Association_Units_v1.csv")
 fwrite(coast.units, "./clean_data/Coast_Hierarchical_Clusters_v1_clean.csv")
-
+unit.counts <- coast.units %>% summarise_all(n_distinct)
+gt::gt(unit.counts)
+bgc.units<- dbConnect(
+  odbc::odbc(),
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2024.accdb;")
+dbWriteTable(bgc.units, "LMH77_hierunits_v2", coast.units, overwrite = TRUE, batch_rows = 1)
+dbDisconnect(bgc.units)
 ```
 
 #### Export vegetation summary tables of site units by prospective associations
@@ -344,12 +352,12 @@ require(tictoc)
 library(stringr)
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
 author <- "test.assoc2"
-assoc.list <- coast.units %>% filter(!is.na(Association.clst)) %>% group_by(Association.clst) %>% mutate(n=n()) %>% filter(n>2) %>% distinct(Association.clst) %>% pull(Association.clst)
+assoc.list <- coast.units %>% filter(!is.na(Association_clst)) %>% group_by(Association_clst) %>% mutate(n=n()) %>% filter(n>2) %>% distinct(Association_clst) %>% pull(Association_clst)
 
 vegsum.wbk <- createWorkbook()
 for(assoc.choose in assoc.list){
 #assoc.choose = "assoc-13"
-assoc <- coast.units.su %>% filter(Association.clst %in% assoc.choose) %>% select(SiteUnit, Association.clst) %>% mutate(SiteUnit = gsub(" ", "", SiteUnit)) %>% mutate(SiteUnit = str_replace(SiteUnit, "/", "_"))
+assoc <- coast.units.su %>% filter(Association_clst %in% assoc.choose) %>% select(SiteUnit, Association_clst) %>% mutate(SiteUnit = gsub(" ", "", SiteUnit)) %>% mutate(SiteUnit = str_replace(SiteUnit, "/", "_"))
 su.assoc <- left_join(assoc, su, by = "SiteUnit") %>%  mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct()
 veg.dat.assoc <- veg.dat2 %>% filter(PlotNumber %in% su.assoc$PlotNumber)
 # vegsum.wbk <- createWorkbook()
@@ -358,7 +366,7 @@ veg.dat.assoc <- veg.dat2 %>% filter(PlotNumber %in% su.assoc$PlotNumber)
 vegSum <-
   create_veg_sum_all(vdat = veg.dat.assoc, siteUnits = su.assoc, strata.by = "Lifeform")
 
-indic.order <- build_species_ordering_hier(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc, hier.level = "Association.clst")
+indic.order <- build_species_ordering_hier(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc, hier.level = "Association_clst")
 veg.sum.table <- format_veg_table2(vsum = vegSum, spp=taxon.lifeform)
 openxlsx::addWorksheet(vegsum.wbk, sheetName = assoc.choose)
 openxlsx::writeData(vegsum.wbk, sheet = assoc.choose, veg.sum.table)
@@ -406,7 +414,7 @@ Merge in hierarchical cluster numbers to BECdb tables to help guide naming of un
 # table <- "tblBEC_SiteSeries_LMH77_forest"
 # becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2024.accdb;")
 # SS_v13 <- dbReadTable(becdb, table)
-# SS_v13_2 <- setDT(SS_v13)[setDT(coast.units), `:=`(Association_Code = Association.clst, Alliance = Alliance.clst, Order = Order.clst, Class = Class.clst), on = c("SS_Label" = "SiteUnit")]
+# SS_v13_2 <- setDT(SS_v13)[setDT(coast.units), `:=`(Association_Code = Association_clst, Alliance = Alliance.clst, Order = Order.clst, Class = Class.clst), on = c("SS_Label" = "SiteUnit")]
 # dbRemoveTable(becdb, table)
 # dbWriteTable(becdb, table, SS_v13_2, append = TRUE, batch_rows = 1)
 # dbDisconnect(becdb)
