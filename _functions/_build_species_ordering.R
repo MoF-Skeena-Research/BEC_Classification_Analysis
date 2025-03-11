@@ -1,6 +1,11 @@
 ## order species in table using multipatt from the indicspecies package
-build_species_ordering <- function(vdat, vsum = vegSum, code.lump = lump, siteUnits, BGC) {
-  vegdata <- lump_species2(vdat, code.lump)
+build_species_ordering <- function(vdat, vsum = vegSum,  siteUnits, BGC) { #code.lump = NULL,
+  # if (!is.null(code.lump)) {
+  #   vegdata <- lump_species(vdat, code.lump)
+  #   
+  # } else {
+  vegdata <- vdat#}
+  #vegdata <- lump_species2(vdat, code.lump)
   vegdata <- merge(vegdata, siteUnits, by = "PlotNumber")
   vegdata <- vegdata[PlotNumber %in% siteUnits$PlotNumber, ]
   # vegData <- vegData %>% filter(bgc %in% BGC)
@@ -44,8 +49,13 @@ build_species_ordering <- function(vdat, vsum = vegSum, code.lump = lump, siteUn
     arrange(siteunit)
 }
 
-build_species_ordering_all <- function(vdat, vsum = vegSum, code.lump = lump, siteUnits) {
-  vegdata <- lump_species(vdat, code.lump)
+
+build_species_ordering_all <- function(vdat, vsum = vegSum, code.lump = NULL, siteUnits) {
+  if (!is.null(code.lump)) {
+    vegdata <- lump_species(vdat, code.lump)
+    
+  } else {
+    vegdata <- vdat}
   setDT(vegdata)
   vegdata <- merge(vegdata, siteUnits, by = "PlotNumber")
   vegdata <- vegdata[PlotNumber %in% siteUnits$PlotNumber, ]

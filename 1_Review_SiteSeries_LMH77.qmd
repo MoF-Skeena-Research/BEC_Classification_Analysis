@@ -52,11 +52,12 @@ require(ggdendro)
 require(purrr)
 require(ggplotify)
 require(grid)
+require(webshot2)
 set.seed(1279)
 source("./_functions/_bec_dist.R")
 source("./_functions/_bec_dist_matrix.R")
-source("./_functions/_lump_species.R")
-source("./_functions/_lump_species2.R")
+source("./_functions/_lump_species_lifeform.R")
+source("./_functions/_lump_species_strata.R")
 source("./_functions/_create_su_vegdata.R")
 source("./_functions/_create_analysis_vegsum.R")
 source("./_functions/_TabletoTree.R")
@@ -79,6 +80,7 @@ source('./_functions/_create_dendro_all.R')
 source('./_functions/_create_dendro_bybgc.R')
 source('./_functions/_draw_ss_edatope.R')
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
+
 ```
 
 # Evaluate site series within each BGC
@@ -103,7 +105,7 @@ veglump <- dbConnect(
   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
 lump <- dbReadTable(veglump, "CorrelationII_Lump")
 dbDisconnect(veglump)
-veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
+veg.dat2 <- lump_species_lifeform(vegdata = veg.dat, lump, use.subtaxa = FALSE)
 db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
 su <- combined_su(db)
 su.nf <- su %>%
@@ -258,9 +260,9 @@ The dendrogram is an approximate representation of the similarity matrix. It is 
 
 ```{r cluster analysis, echo=FALSE}
 #bgc.unique <- c("CDFmm", "CWHvm3")
-singles <- for (bgc.choose in bgc.unique){
-  create_dendro_bybgc(bgc.choose, unit.compare, threshold.low = .10, threshold.high = .20)
-}
+# singles <- for (bgc.choose in bgc.unique){
+#   create_dendro_bybgc(bgc.choose, unit.compare, threshold.low = .10, threshold.high = .20)
+# }
 
 # singles.poor <- as.data.frame(singles) %>% filter(grepl('nplot|lowdiag', SiteUnit))
 # singles.good <- as.data.frame(singles) %>% filter(!grepl('nplot|lowdiag', SiteUnit))
@@ -289,27 +291,93 @@ singles <- for (bgc.choose in bgc.unique){
 ```{r build edatopic table, echo=FALSE}
 
 #bgc.choose <- "CWHvm1"
-draw_ss_edatope(plot.env, su2, bgc.choose = bgc.unique)
+#draw_ss_edatope(plot.env, su2, bgc.choose = bgc.unique)
 ```
 
 ## Generate formatted table summary report for BGC
+```{r}
+if (!requireNamespace("webshot2", quietly = TRUE)) {
+  warning("You'll need the 'webshot2' package.")
+}
+
+knit_print.gt_tbl <- function(x, ...) {
+  if (!knitr::is_html_output()) {
+    f <- glue::glue("{knitr::opts_current$get('label')}-gt_tbl.png")
+    gt::gtsave(x, filename = f, zoom = 1, expand = 5)
+    
+    size <- dim(png::readPNG(f))
+    if (knitr::is_typst_output()) {
+      knitr::asis_output(glue::glue("image(\"{f}\", width: {size[1]}px, height: {size[2]}px)"))
+    } else {
+      knitr::asis_output(glue::glue("\\centering\\includegraphics[width={size[1]}px,height={size[2]}px]{{{f}}}"))
+    }
+  } else {
+    return(gt:::knit_print.gt_tbl(x, ...))
+  }
+}
+
+registerS3method("knit_print", "gt_tbl", knit_print.gt_tbl, envir = asNamespace("knitr"))
+
+bgc.list <- "CDFmm"
+#bgc.list <- unique(su$bgc)
+#for(bgc.choose in bgc.list){
+vegdata <- readRDS('./clean_data/Reports_BECMaster_Veg.rds')
+tree_seedlings <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% mutate(Code = paste0(Code, "D")) %>% pull(Code)
+trees <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% pull(Code)
+vegdata <- vegdata  %>% filter(!Species %in% tree_seedlings)
+vegdata <- vegdata  %>% filter(!(Species %in% trees & Layer == "Moss"))
+
+veg.dat2 <- lump_species_strata(vegdata = vegdata, lump, use.subtaxa = FALSE)
+#BGC <- "MHmm1"
+for(bgc.choose in bgc.list){
+  vegSum <- create_veg_sum(vdat = veg.dat2, siteUnits = su, BGC = bgc.choose, strata.by = "Layer")
+  
+  ## Determine order of species by unit
+  indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum, siteUnits = su, BGC = bgc.choose) # code.lump=lump,
+  
+  veg.sum.table <- format_veg_table(vsum = vegSum, spp = taxon.lifeform)
+  
+  veg.sum.gt <- gt::gt(veg.sum.table) |> 
+    gt::tab_options(table.font.size = 8) |> 
+    gt::tab_style(
+      style = gt::cell_text(font = gt::google_font(name = "wingdings")),
+      locations = gt::cells_body(columns = 4:(ncol(veg.sum.table))-1, rows = 2:nrow(veg.sum.table))
+    ) |> 
+    gt::tab_style(
+      style = gt::cell_text(weight = "bold"),
+      locations = gt::cells_body(rows = 1)
+    ) |> 
+    gt::tab_header(
+      title = paste0(bgc.choose),
+      subtitle = paste("Summary Vegetation Table")
+    )
+   #tbl |> as_latex() 
+  print(veg.sum.gt)
+
+  # Include the image of the gt table
+#knit_print.gt_tbl(veg.sum.gt)
+ # image("CDFmm-gt_tbl.png")
+}
+```
+
 
 ```{r association sum table, echo=FALSE}
-# bgc.list <- unique(su$bgc)
-# for(bgc.choose in bgc.list){
+# bgc.list = "CDFmm"
+# #bgc.list <- unique(su$bgc)
+# #for(bgc.choose in bgc.list){
 # vegdata <- readRDS('./clean_data/Reports_BECMaster_Veg.rds')
 # tree_seedlings <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% mutate(Code = paste0(Code, "D")) %>% pull(Code)
 # trees <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% pull(Code)
 # vegdata <- vegdata  %>% filter(!Species %in% tree_seedlings)
 # vegdata <- vegdata  %>% filter(!(Species %in% trees & Layer == "Moss"))
 # 
-# veg.dat2 <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE)
-# BGC <- "MHmm1"
-# for(bgc.choose in bgc.unique){
+# veg.dat2 <- lump_species_strata(vegdata = vegdata, lump, use.subtaxa = FALSE)
+# #BGC <- "MHmm1"
+# for(bgc.choose in bgc.list){
 #   vegSum <-
 #   create_veg_sum(vdat = veg.dat2, siteUnits = su , BGC = bgc.choose, strata.by = "Layer")
 # ##determine order of species by unit
-# indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su, BGC = bgc.choose)
+# indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum,  siteUnits = su, BGC = bgc.choose)#code.lump=lump,
 # veg.sum.table <- format_veg_table(vsum = vegSum, spp = taxon.lifeform)
 # 
 # veg.sum.gt <- gt::gt(veg.sum.table) |> gt::tab_options(table.font.size = 8)|> gt::tab_style(
@@ -325,7 +393,7 @@ draw_ss_edatope(plot.env, su2, bgc.choose = bgc.unique)
 #  #veg.sum.gt2
 # print(veg.sum.gt)
 # }
-# }
+# #}
 ```
 
 ## Export draft summary tables to Excel
@@ -340,7 +408,6 @@ bgc.list = c("CDFmm", "CWHds2", "CWHmm1", "CWHmm2", "CWHws1", "CWHws2",
 "CWHws3", "CWHdm1", "CWHdm2", "CWHdm3", "IDFww1")
 tab.split = c('CDFmm_101', 'CDFmm_110', 'CDFmm_111','CDFmm_112',
                  'CWHdm2_110', 'CWHdm2_111','CWHdm2_112.1','CWHdm2_112.2', 'CWHdm2_113')
-
 
 ## Bobs
 author = "BGreen_new"
@@ -369,7 +436,7 @@ su3 <- su %>%
 bgc.list <- unique(su3$bgc)
 
 vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
-veg.dat2 <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE)
+veg.dat2 <- lump_species_strata(vegdata = vegdata, lump, use.subtaxa = FALSE)
 
 
 #bgc.choose = "CWHvh1"
@@ -380,7 +447,7 @@ for(bgc.choose in bgc.list){
 vegSum <- 
   create_veg_sum(vdat = veg.dat2, siteUnits = su3 , BGC = bgc.choose, minconstancy = 50, noiseconstancy = 25, minimportance = 0, strata.by = "Layer")
 ##determine order of species by unit
-indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits =su3, BGC = bgc.choose)
+indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum,  siteUnits =su3, BGC = bgc.choose)#code.lump=lump,
 veg.sum.table <- format_veg_table(vsum = vegSum, spp=taxon.lifeform,cons.1 = 70, cons.2 = 50)
 openxlsx::addWorksheet(vegsum.wbk, sheetName = bgc.choose)
 openxlsx::writeData(vegsum.wbk, sheet = bgc.choose, veg.sum.table) 

@@ -1,9 +1,9 @@
 ## summarizes veg dat using su table
 create_veg_sum <- function(vdat, siteUnits, BGC = bgc.choose, minconstancy = 50, noiseconstancy = 10, minimportance = 0, strata.by = "Layer") {
   if (strata.by == "Layer") {
-    vdat <- lump_species2(vdat, lump = lump)
+    vdat <- lump_species_strata(vdat, lump = lump)
   } else if (strata.by == "Lifeform") {
-    vdat <- vdat <- lump_species(vdat, lump = lump)
+    vdat <- vdat <- lump_species_lifeform(vdat, lump = lump)
   }
 
   vdat <- merge(vdat, siteUnits, by = "PlotNumber")
