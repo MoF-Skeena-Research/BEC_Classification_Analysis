@@ -100,13 +100,14 @@ taxon.lifeform <- taxon.all %>%
 veglump <- dbConnect(
   odbc::odbc(),
   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
-lump <- dbReadTable(veglump, "CorrelationII_Lump")
+lump <- dbReadTable(veglump, "CorrelationCoastGrass_Lump")
 dbDisconnect(veglump)
-veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
+veg.dat2 = veg.dat
+#veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
 db <- "D:/BC_Correlation2_Vpro_2023/Coast_NonForest_SUnew.accdb"
 
 master_su <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=", db,";"))
-su <- dbReadTable(master_su, "Coast_Grasslands_v0_SU")
+su <- dbReadTable(master_su, "Coast_Grasslands_final_SU")
 #su <- dbReadTable(master_su, "Coast_Grasslands2_SU")
 dbDisconnect(master_su)
   SU <- su %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
@@ -298,8 +299,8 @@ create_VGS_table(veg.sum.table1, table.name = table.name1)
 vegsum.wbk <- createWorkbook()
 openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name1)
 openxlsx::writeData(vegsum.wbk, sheet = table.name1, veg.sum.table1)
-openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name2)
-openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
+# openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name2)
+# openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
 # openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name3)
 # openxlsx::writeData(vegsum.wbk, sheet = table.name3, veg.sum.table3)
 saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_Grasslands_table.xlsx", overwrite = TRUE)
@@ -312,7 +313,7 @@ saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_Grasslands_table.xlsx", overwrit
 #| tbl-cap-location: top
 #| warning: false
 #| tbl-align: "left"
-# ss_x_bgc <- su %>% select(SiteUnit, bgc) %>% group_by(SiteUnit, bgc) %>% summarise(n = n()) %>% pivot_wider(names_from = SiteUnit, values_from = n, values_fill = 0) %>% ungroup() %>%  mutate_if(is.numeric, as.character) %>% arrange(bgc)
+# ss_x_bgc <- su %>% select(SiteUnit, bgc) %>% groupû_by(SiteUnit, bgc) %>% summarise(n = n()) %>% pivot_wider(names_from = SiteUnit, values_from = n, values_fill = 0) %>% ungroup() %>%  mutate_if(is.numeric, as.character) %>% arrange(bgc)
 # ss_x_bgc[ss_x_bgc == 0] <- "-"
 # # low.diff <- gt::as_gtable((gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) |> gt::cols_width(Site.Units ~ gt::px(250))), plot = TRUE, text_grob = gridtext::richtext_grob)
 # gt::gt(ss_x_bgc) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) 

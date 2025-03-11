@@ -148,8 +148,8 @@ require(grid)
 set.seed(1279)
 source("./_functions/_bec_dist.R")
 source("./_functions/_bec_dist_matrix.R")
-source("./_functions/_lump_species.R")
-source("./_functions/_lump_species2.R")
+source("./_functions/_lump_species_lifeform.R")
+source("./_functions/_lump_species_strata.R")
 source("./_functions/_create_su_vegdata.R")
 source("./_functions/_create_analysis_vegsum.R")
 source("./_functions/_TabletoTree.R")
@@ -170,6 +170,7 @@ source('./_functions/_create_dendro.R')
 source('./_functions/_create_dendro_all.R')
 source('./_functions/_create_dendro_bybgc.R')
 source('./_functions/_draw_ss_edatope.R')
+
 ```
 
 ```{r constancy differntial points, echo=FALSE}

@@ -106,7 +106,7 @@ veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
 db <- "D:/BC_Correlation2_Vpro_2023/Coast_NonForest_SUnew.accdb"
 
 master_su <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=", db,";"))
-su <- dbReadTable(master_su, "Coast_wetlands_v0_SU")
+su <- dbReadTable(master_su, "Coast_Wetlands_final_SU")
 dbDisconnect(master_su)
   SU <- su %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
     arrange(desc(PlotNumber)) %>% mutate(bgc = gsub(" ", "", bgc, fixed = TRUE)) 
@@ -265,12 +265,12 @@ The dendrogram is an approximate representation of the similarity matrix. It is 
 ```{r report table}
 # su2 <- su %>% mutate(bgc = str_extract(SiteUnit, "[^_]+"))
 #unit.list <- unique(su$SiteUnit)
- unit.choose <- c("Wf50", "Wf51", "Wf52", "Wf52.1", "Wf52.2",  "Wf53", "Ws50.1", "Ws50.2")
+ unit.choose <- c("Wf50", "Wf51", "Wf52", "Wf52.1", "Wf52.2",  "Wf53", "Ws50", "Ws51.1", "Ws51.2")
 su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 table.name1 <- "Fens"
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
 ##determine order of species by unit
-# indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
+ indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
 veg.sum.table1 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 create_VGS_table(veg.sum.table1, table.name = table.name1)
 
@@ -280,7 +280,7 @@ unit.choose <- c("Wm04", "Wm05", "Wm06", "Wm09", "Wm50.1", "Wm50.2", "Wm50.3", "
 table.name2 <- "Marshes"
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
 ##determine order of species by unit
-# indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
+indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
 veg.sum.table2 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 create_VGS_table(veg.sum.table2, table.name = table.name2)
 

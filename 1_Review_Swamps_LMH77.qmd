@@ -288,7 +288,7 @@ veg.sum.table1 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 create_VGS_table(veg.sum.table1, table.name = table.name1)
 
 table.name2 <- "PoorSkunk_Sedge"
- unit.choose <- c("Ws54.1", "Ws54.2", "Ws55","Ws58.1", "Ws58.2", "Ws60")
+ unit.choose <- c("Ws54.1", "Ws54.2", "Ws55","Ws58.1", "Ws58.2", "Ws60","Ws61", "Ws62")
  su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
 ##determine order of species by unit
@@ -297,22 +297,22 @@ veg.sum.table2 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 create_VGS_table(veg.sum.table2, table.name = table.name2)
  
                   
-table.name3 <- "Non-forestSwamp"
- unit.choose <- c("Ws50.1", "Ws50.2", "Ws51.1", "Ws51.2","Ws61", "Ws62")
- su.choose <- su %>% filter(SiteUnit %in% unit.choose)
-vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
-##determine order of species by unit
-indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
-veg.sum.table3 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
-create_VGS_table(veg.sum.table3, table.name = table.name3)
+# table.name3 <- "Non-forestSwamp"
+#  unit.choose <- c("Ws50.1", "Ws50.2", "Ws51.1", "Ws51.2")
+#  su.choose <- su %>% filter(SiteUnit %in% unit.choose)
+# vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
+# ##determine order of species by unit
+# indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
+# veg.sum.table3 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+# create_VGS_table(veg.sum.table3, table.name = table.name3)
 
 vegsum.wbk <- createWorkbook()
 openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name1)
 openxlsx::writeData(vegsum.wbk, sheet = table.name1, veg.sum.table1)
 openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name2)
 openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
-openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name3)
-openxlsx::writeData(vegsum.wbk, sheet = table.name3, veg.sum.table3)
+# openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name3)
+# openxlsx::writeData(vegsum.wbk, sheet = table.name3, veg.sum.table3)
 saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_Swamp_Associations.xlsx", overwrite = TRUE)
 
 ```

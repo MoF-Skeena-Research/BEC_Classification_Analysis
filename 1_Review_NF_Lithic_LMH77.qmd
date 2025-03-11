@@ -100,7 +100,8 @@ taxon.lifeform <- taxon.all %>%
 veglump <- dbConnect(
   odbc::odbc(),
   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
-lump <- dbReadTable(veglump, "CorrelationII_Lump")
+#lump <- dbReadTable(veglump, "CorrelationII_Lump")
+lump <- dbReadTable(veglump, "CorrelationCoastGrass_Lump")
 dbDisconnect(veglump)
 veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
 db <- "D:/BC_Correlation2_Vpro_2023/Coast_NonForest_SUnew.accdb"
