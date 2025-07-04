@@ -131,41 +131,8 @@ bgc.units<- dbConnect(
 bgcv12 <- dbReadTable(bgc.units, "tblBGC_UnitsWorkingandArchive")
 dbDisconnect(bgc.units)
 bgcv13 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% select(BGC_NoSpace, SiteClassificationStatus)
-```
-
-```{r interior site units, echo=FALSE}
-# db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
-# su <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb"
-# su2 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Cariboo_LMH39_Sorts.accdb"
-# su3 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/KootenayBoundary_Sorts.accdb"
-# su4 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Skeena_LMH26_Sorts.accdb"
-# su5 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/ThompsonOK_Sorts.accdb"
-# su6 <- combined_su(db)
-
-#su <- rbind(su, su2, su3, su4, su5, su6)
-#xx <- su %>% filter(PlotNumber == "K780448")
-# su <- su %>%
-#   filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|unplaced', SiteUnit))
-# su <- su %>% select(-SiteUnit.orig) %>% mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct() %>% mutate(zone = str_extract(bgc, "([A-Z]+)"))
-# bgc.unique <- su %>% distinct(bgc)
-# no.su <- anti_join(bgcv13, bgc.unique, by = c("BGC_NoSpace" = "bgc")) %>% filter(!SiteClassificationStatus == "none")
-# ###write combined SU to database
-# # master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
-# # DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
-# # dbWriteTable(master_su, "All_BC_zonals2_SU",  su, overwrite = TRUE, batch_rows = 1)
-# # dbDisconnect(master_su)
-# xx <- su %>% filter(SiteUnit == "IDFww1_101.2")
-# su <- su %>%
-# filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|MHwh', SiteUnit))###BGC specific|CWHms
-
 
 ```
-
 ### Evaluate site series within each BGC
 
 1.  Identify site series that have fewer than 5 plots (difficult to quantitatively analyse)
@@ -176,7 +143,7 @@ bgcv13 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% select(BGC_NoSpace, SiteC
 
 Some units with few plots or low diagnostics fall out as singles in the first pass cluster analysis. These are reviewed and merging rules applied before re-running the cluster analysis.
 
-
+## Prepare data for zonal comparison
 
 ```{r build pair.wise similarity matrix, echo=FALSE, message=FALSE, warning=FALSE}}
 
@@ -229,9 +196,12 @@ We will treat the CWHms as a transition subzone characterized by BaHw & Fd commo
 Minimum dissimilarity threshold to separate subassociations is set at 10% dissimilarity.
 Any splits to the right of the red line should be considered for merging into the same site series. For zonal ecosystems, some recognized BGC variants do not separate at the subassociation level. However, in these cases the azonal ecosystems are different between the variants and support the retention of separate BGC units.
 
-
+### Run Zonal comparison
+Produce a cluster analysis of zonal ecosystems to confirm BGC subzone/variant designation. 
+Export a csv file with the cluster membership for manual updating to hardwire zonal association groupings in further cluster analysis
 
 ```{r}
+source("./_functions/_cluster_by_spp_group.R")
 
 anal.groups <- fread("./clean_tabs/Forest_Analysis_Groups.csv") %>%
   group_by(Spp.group) %>%
@@ -246,116 +216,6 @@ spp.groups <- unique(anal.groups$Spp.group)
 #grp = "CwHw"
 zonal.compare<- unit.compare %>% filter(grepl('101', Unit1), grepl('101', Unit2)) 
 
-cluster_by_spp_group <- function(zonal.compare,
-                                 anal.groups = NULL,
-                                 spp.groups = NULL,
-                                 cut.level = 0.7,
-                                 combine.level = 0.5,
-                                 include.low.diag = FALSE,
-                                 low.diag.threshold = 25,
-                                 include.few.plots = FALSE,
-                                 few.plots.threshold = 5,
-                                 output.file = "cluster_memberships.csv") {
-  cluster_results <- list()
-  all_memberships <- list()
-
-  process_unit_compare <- function(unit_subset) {
-    unit.compare2 <- unit_subset
-
-    if (include.few.plots) {
-      unit.few <- unit.compare2 %>%
-        filter(nplots.x < few.plots.threshold) %>%
-        select(Unit1, nplots.x) %>%
-        distinct()
-
-      unit.compare2 <- unit.compare2 %>%
-        mutate(Unit1 = ifelse(Unit1 %in% unit.few$Unit1, paste0(Unit1, "-nplot"), Unit1),
-               Unit2 = ifelse(Unit2 %in% unit.few$Unit1, paste0(Unit2, "-nplot"), Unit2))
-    }
-
-    if (include.low.diag) {
-      unit.simple <- unit.compare2 %>%
-        filter(unit.diag.sum.x < low.diag.threshold) %>%
-        select(Unit1, unit.diag.sum.x) %>%
-        distinct()
-
-      unit.compare2 <- unit.compare2 %>%
-        mutate(Unit1 = ifelse(Unit1 %in% unit.simple$Unit1, paste0(Unit1, "-lowdiag"), Unit1),
-               Unit2 = ifelse(Unit2 %in% unit.simple$Unit1, paste0(Unit2, "-lowdiag"), Unit2))
-    }
-
-    unit.compare2 <- unit.compare2 %>%
-      select(Unit1, Unit2, BEC.sim.min)
-
-    return(unit.compare2)
-  }
-
-  compute_membership <- function(comp_data, group_label) {
-    unit_labels <- unique(c(comp_data$Unit1, comp_data$Unit2))
-    sim_matrix <- matrix(1, nrow = length(unit_labels), ncol = length(unit_labels),
-                         dimnames = list(unit_labels, unit_labels))
-
-    for (i in seq_len(nrow(comp_data))) {
-      u1 <- comp_data$Unit1[i]
-      u2 <- comp_data$Unit2[i]
-      val <- comp_data$BEC.sim.min[i]
-      sim_matrix[u1, u2] <- val
-      sim_matrix[u2, u1] <- val
-    }
-
-    dissimilarity <- as.dist(1 - sim_matrix)
-    hc <- hclust(dissimilarity, method = "average")
-    groups <- cutree(hc, h = combine.level)
-
-    return(data.frame(
-      SiteUnit = names(groups),
-      Cluster = groups,
-      Spp.group = group_label,
-      stringsAsFactors = FALSE
-    ))
-  }
-
-  if (is.null(anal.groups)) {
-    message("🔄 No anal.groups provided — clustering all available units together...")
-    unit_subset <- zonal.compare
-    unit.compare2 <- process_unit_compare(unit_subset)
-    remaining_units <- unique(c(unit.compare2$Unit1, unit.compare2$Unit2))
-    if (length(remaining_units) < 2) return(NULL)
-
-    cluster_results[["All_Units"]] <- draw_dendro_split(unit.compare2, cut.level = cut.level)
-    all_memberships[[1]] <- compute_membership(unit.compare2, "All_Units")
-  } else {
-    if (is.null(spp.groups)) {
-      spp.groups <- unique(anal.groups$Spp.group)
-    }
-
-    for (grp in spp.groups) {
-      unit.choose <- anal.groups %>%
-        filter(Spp.group == grp) %>%
-        pull(SiteUnit) %>%
-        unique()
-
-      if (length(unit.choose) < 2) next
-
-      unit_subset <- zonal.compare %>%
-        filter(Unit1 %in% unit.choose, Unit2 %in% unit.choose)
-
-      unit.compare2 <- process_unit_compare(unit_subset)
-
-      remaining_units <- unique(c(unit.compare2$Unit1, unit.compare2$Unit2))
-      if (length(remaining_units) < 2) next
-
-      cluster_results[[grp]] <- draw_dendro_split(unit.compare2, cut.level = cut.level)
-      all_memberships[[grp]] <- compute_membership(unit.compare2, grp)
-    }
-  }
-
-  membership_df <- do.call(rbind, all_memberships) %>% mutate(Association = NA)
-  write.csv(membership_df, file = output.file, row.names = FALSE)
-  message("✅ Cluster membership file saved to: ", output.file)
-
-  return(cluster_results)
-}
 
 zonal_results <- cluster_by_spp_group(
   zonal.compare,
@@ -366,101 +226,23 @@ zonal_results <- cluster_by_spp_group(
   low.diag.threshold = 20,
   include.few.plots = TRUE,
   few.plots.threshold = 4,
-  output.file = "cluster_memberships.csv"
+  output.file = "zonal_cluster_memberships.csv"
  )
-xx <- fread("zonal_cluster_memberships.csv")## modify to hard code site series association membership
+xx <- fread("zonal_cluster_memberships.csv")## modify this file to hard code site series group membership
 ```
 
 
-Step to hard code the merged site units from the review process.
+Step to hard code the merged site units from the review process of zonal
 ```{r merge reviewed singles, echo=FALSE}
+source("./_functions/_assign_manual_cluster.R")
+cluster.file = fread("./hierarchy/LMH77_zonal_assoc_memberships.csv") ## reviewed file
 
-assign_cluster_names <- function(su.tab,
-                                 cluster.file,
-                                 siteunit_col = "OriginalUnit",
+su_zonal <- assign_manual_cluster(su.tab = su2, cluster.file = cluster.file ,
+                                 siteunit_col = "SiteUnit",
                                  new_name_col = "Association",
-                                 use_last_step = FALSE) {
-  # Load cluster membership data
-  if (is.character(cluster.file) && file.exists(cluster.file)) {
-    membership <- data.table::fread(cluster.file)
-  } else if (is.data.frame(cluster.file)) {
-    membership <- cluster.file
-  } else {
-    stop("cluster.file must be either a valid file path or a data frame.")
-  }
-
-  # If using the last step from a stepwise lineage table
-  if (use_last_step) {
-    step_cols <- grep("^Step\\d+_Group$", names(membership), value = TRUE)
-    if (length(step_cols) == 0) {
-      stop("No stepwise group columns (e.g., Step1_Group) found in cluster data.")
-    }
-    last_col <- step_cols[which.max(as.numeric(gsub("\\D", "", step_cols)))]
-    new_name_col <- last_col
-  }
-
-  # Ensure required columns exist
-  if (!all(c(siteunit_col, new_name_col) %in% colnames(membership))) {
-    stop("Required columns not found in cluster data.")
-  }
-
-  # Rename for clarity
-  membership <- membership %>%
-    dplyr::rename(SiteUnit = all_of(siteunit_col),
-                  NewName = all_of(new_name_col))
-
-  # Join and update SiteUnit
-  updated_data <- su.tab %>%
-    dplyr::left_join(membership, by = "SiteUnit") %>%
-    dplyr::mutate(SiteUnit = ifelse(!is.na(NewName), NewName, SiteUnit)) %>%
-    dplyr::select(-NewName)
-
-  return(updated_data)
-}
-
-su_updated <- assign_cluster_names(su.tab = su2, cluster.file = unit_lineage,
-                                 siteunit_col = "OriginalUnit",
-                                 new_name_col = "Association",
-                                   use_last_step = TRUE)
-
-# assign_cluster_names <- function(su.tab, cluster.file, siteunit_col = "SiteUnit", new_name_col = "Association") {
-#   # Read in the updated cluster membership table
-#   membership <- fread(cluster.file)
-# 
-#   # Ensure the relevant columns exist
-#   if (!all(c(siteunit_col, new_name_col) %in% colnames(membership))) {
-#     stop("Required columns not found in membership file.")
-#   }
-# 
-#   # Rename columns for join clarity
-#   colnames(membership)[colnames(membership) == siteunit_col] <- "SiteUnit"
-#   colnames(membership)[colnames(membership) == new_name_col] <- "NewName"
-# 
-#   # Join and replace original SiteUnit with the new cluster name
-#   updated_data <- su.tab %>%
-#     left_join(membership, by = "SiteUnit") %>%
-#     mutate(SiteUnit = ifelse(!is.na(NewName), NewName, SiteUnit)) %>%
-#     select(-NewName)
-# 
-#   return(updated_data)
-# }
-# Load your original plot-level data (e.g., vegsum2 or similar)
-
-# Apply the updated names
-su_updated <- assign_cluster_names(su.tab = su2, cluster.file = "./hierarchy/LMH77_zonal_assoc_memberships.csv")
-# merge <- fread("./clean_data/MergeUnits.csv") %>% as.data.table
-# setDT(su2)[merge, SiteUnit := mergedUnit, on = "SiteUnit"]
+                                   use_last_step = FALSE)
 
 ```
-
-
-
-
-
-
-
-
-
 
 
 ## Cluster analysis and dendrogram of all site units
@@ -494,8 +276,8 @@ reduced.lifeforms <- c(9, 10, 11)
 # %>% filter(!grepl('ms',SiteUnit))
 #fwrite(su2, "./CoastGuide_Forest_101_SU.csv")
 tic()
-vegsum.pairs <- do_pairwise(veg.dat2,
-  su = su_updated, minimportance = 0.1, minconstancy = 60,
+vegsum.pairs <- do_pairwise(veg.dat2, su.field = "Step1_Group",
+  su = su_zonal, minimportance = 0.1, minconstancy = 60,
   noiseconstancy = 10,
   minplots = 1,  minor = 1,
   use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
@@ -503,8 +285,6 @@ vegsum.pairs <- do_pairwise(veg.dat2,
   reduced.exceptions = reduced.exceptions
 )
 toc()
-xx <- vegsum.pairs %>%
-  filter(Unit1 == "CWHws2_112a", Unit2 == "CWHws2_112b")
 
 unit.compare <- vegsum.pairs %>%
   select(Unit1, Unit2, BEC.sim.min, BEC.sim.mean , BEC.sim.max, diff.ratio.x, diff.ratio.y, diff.ratio, nplots.x, nplots.y, unit.diag.sum.x, unit.diag.sum.y) %>% filter(nplots.x>0) %>% mutate(metric.diff = BEC.sim.max - BEC.sim.min) %>%
@@ -512,14 +292,9 @@ unit.compare <- vegsum.pairs %>%
 unit.compare$bgc1 <- stringr::word(unit.compare$Unit1, 1, sep = "\\_")
 unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
 
-yy <- vegsum.pairs %>% 
-  select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, BEC.sim.min,BEC.sim.mean) %>% 
-  filter(Unit1 == "CWHws2_101", Unit2 == "CWHws2_110")
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/CoastGuide_Forested.accdb"
-coast.units <- combined_su(db) %>% select(SiteUnit) %>% distinct
- dis.matrix <- bec_dist_matrix(unit.compare, distance = "BEC.sim.min") %>% as.data.frame %>% rownames_to_column("SiteUnit")
-examine <- dis.matrix %>% filter(SiteUnit == "CWHvm1_101") %>% pivot_longer(- SiteUnit, names_to = "SiteUnit2", values_to = "BEC.sim.min") %>%
-  filter(BEC.sim.min <= 0.4) %>% select(SiteUnit2, BEC.sim.min) %>% arrange(desc(BEC.sim.min))
+unit.compare <- vegsum.pairs %>% filter(nplots.x > 0, Unit1 != Unit2) %>%  
+  select(Unit1, Unit2, Species, BEC.sim.min, nplots.x, unit.diag.sum.x) %>% 
+  distinct()
 
 ```
 ```{r site series with too few plots, echo=FALSE}
@@ -556,114 +331,52 @@ gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.fon
 ```
 
 ```{r}
-evaluate_clustering <- function(compare, clst_method = "average") {
-    dis.matrix <- bec_dist_matrix(compare) 
-    dis.dis<- as.dist(dis.matrix)
-   ss_clst <- agnes(dis.matrix, diss = TRUE, stand = TRUE, method = clst_method)
-    cophenetic_corr <- cor(dis.dis, cophenetic(ss_clst))
-    agglom_coeff <- round(ss_clst$ac, 3)
-  results <- data.frame(
-    clst_method = clst_method,
-    agglomerative_coeff = agglom_coeff,
-    cophenetic_corr = round(cophenetic_corr, 3),
-    stringsAsFactors = FALSE
-  )
+source("./_functions/_evaluate_clustering_by_group.R")
 
-  return(results)
-}
 
 anal.groups <- fread("./clean_tabs/Forest_Analysis_Groups.csv")
-anal.groups[, SiteUnit := gsub("/", "_", gsub(" ", "", SiteUnit))]
-#anal.groups <- anal.groups %>% mutate(Spp.group = 'All')
-anal.groups <- as.data.frame(anal.groups)
-spp.groups <- unique(anal.groups$Spp.group)
+#unit.compare <- fread("./clean_tabs/Unit_Comparison_Table.csv")
 
-# Initialize results list
-clustering_stats <- list()
+clustering_results <- evaluate_clustering_by_group(
+  unit.compare = unit.compare,
+  anal.groups = anal.groups,
+  clst_method = "average")
 
-for (grp in spp.groups) {
-  # Get SiteUnits for this group
-  unit.choose <- anal.groups %>%
-    filter(Spp.group == grp) %>%
-    pull(SiteUnit) %>%
-    unique()
+gt::gt(clustering_results) %>%
+  gt::fmt_number(columns = c("CCC", "AC"), decimals = 3) |>
+  gt::tab_options(table.font.size = 10) |>
+  gt::cols_label(
+    CCC = "Cophenetic Correlation",
+    AC = "Agglomerative Coefficient"
+  )
 
-  # SiteUnits that actually appear in unit.compare
-  units.in.compare <- unit.choose[unit.choose %in% union(unit.compare$Unit1, unit.compare$Unit2)]
-
-  # Skip if fewer than 2 valid units
-  if (length(units.in.compare) < 2) next
-
-  # Subset comparisons based on those units
-  unit_subset <- unit.compare %>%
-    filter(Unit1 %in% units.in.compare & Unit2 %in% units.in.compare)
-
-  if (nrow(unit_subset) == 0) next
-
-  # Evaluate clustering and record group details
-  clust_eval <- tryCatch({
-    evaluate_clustering(compare = unit_subset, clst_method = "average") %>%
-      mutate(Spp.group = grp,
-             n_SiteUnits_in_compare = length(units.in.compare),
-             n_comparisons = nrow(unit_subset))
-  }, error = function(e) {
-    message(sprintf("⚠️ Skipping %s due to error: %s", grp, e$message))
-    NULL
-  })
-
-  if (!is.null(clust_eval)) clustering_stats[[grp]] <- clust_eval
-}
-
-clustering_results <- do.call(rbind, clustering_stats)
 ```
 
 
 
 ### flag units with few plots or low diagnostics to remove before running clustering or to view within dendrogram.
 ```{r site dendrogram split, echo=FALSE}
+few.plots.threshold = 5
+low.diag.threshold = 30
 
-anal.groups <- fread("./clean_tabs/Forest_Analysis_Groups.csv") %>%
-  group_by(Spp.group) %>%
-  filter(n_distinct(SiteUnit) > 2) %>%
-  ungroup() %>% as.data.table
-
-anal.groups[, SiteUnit := gsub("/", "_", gsub(" ", "", SiteUnit))]
-anal.groups <- as.data.frame(anal.groups)
-#anal.groups <- anal.groups %>% mutate(Spp.group = 'All')
-spp.groups <- unique(anal.groups$Spp.group)
-#spp.groups = c("Coastal_High", "Coast") # "Boreal", "Coast", "Interior", "Mediterranean", "Subalpine", "Temperate"
-#grp = "CwHw"
-
-all_results <- cluster_by_spp_group(
-  unit.compare,
-  anal.groups = NULL,
-  cut.level = 0.5,
-  combine.level = 0.15,
-  include.low.diag = FALSE,
-  low.diag.threshold = 20,
-  include.few.plots = FALSE,
-  few.plots.threshold = 4,
-  output.file = "cluster_memberships2.csv"
-)
-
-xx <- fread("cluster_memberships2.csv") %>% group_by(Cluster, Spp.group) %>%
-  mutate(n_SiteUnits = n_distinct(SiteUnit)) %>% ungroup %>% filter(n_SiteUnits > 1) %>%
-  arrange(desc(n_SiteUnits)) %>% left_join(anal.groups, by = c("SiteUnit" = "SiteUnit")) %>%
-fwrite(xx, "cluster_memberships2.csv")
-
-# Need to combine the zonal groups with the new groups
-
-# yy <- fread("./hierarchy/LMH77_zonal_assoc_memberships.csv") %>% mutate(Cluster = NA) %>% 
-#   bind_rows(xx) %>% mutate(Cluster= ifelse(is.na(Cluster), Association, Cluster)) %>% left_join(
-#   group_by(Cluster) %>%
-#   mutate(Association = ifelse(!is.na(Association), Association, NA)) %>%
-#   fill(Association, .direction = "downup") %>%# filter(!SiteUnit == Association) %>% 
-#   ungroup()
-
-
-
-su_updated2 <- assign_cluster_names(su.tab = su2, cluster.file = "./hierarchy/LMH77_zonal_assoc_memberships.csv")
-
+    unit.compare2 <- unit.compare
+    include.few.plots <- TRUE
+    if (include.few.plots) {
+    unit.few <- unit.compare2 %>%
+        filter(nplots.x < few.plots.threshold) %>%
+        select(Unit1) %>% #, nplots.x) %>%
+        distinct()}
+    include.low.diag <- TRUE
+    if (include.low.diag) {
+      unit.simple <- unit.compare2 %>%
+        filter(unit.diag.sum.x < low.diag.threshold) %>%
+        select(Unit1) %>% #, unit.diag.sum.x) %>%
+        distinct()
+    }
+    unit.poor <- bind_rows(unit.few, unit.simple) 
+    
+    unit.compare.poor <- unit.compare %>% filter(Unit1 %in% unit.poor$Unit1 & Unit2 %in% unit.poor$Unit1)
+    unit.compare.good <- unit.compare %>% filter(!Unit1 %in% unit.poor$Unit1 & !Unit2 %in% unit.poor$Unit1) 
 
 ```
 
@@ -671,144 +384,116 @@ su_updated2 <- assign_cluster_names(su.tab = su2, cluster.file = "./hierarchy/LM
 Stepwise cluster lumping
 Allows hardwired groups to be fed in (for example from the zonal comparison above)
 ```{r}
+source("./_functions/_stepwise_cluster_lumping.R")
 
-  zonal.compare = unit.compare; combine.level = 0.1;  max.steps = 2;  stop.no.change = TRUE;  verbose = TRUE; similarity_col = "BEC.sim.min"; unit1_col = "Unit1"; unit2_col = "Unit2"; 
-
-
-stepwise_cluster_lumping <- function(unit.compare,
-                                     similarity_col = "BEC.sim.min",
-                                     unit1_col = "Unit1",
-                                     unit2_col = "Unit2",
-                                     combine.level = 0.7,
-                                     max.steps = 10,
-                                     stop.no.change = TRUE,
-                                     verbose = TRUE,
-                                     initial.groups = NULL) {
-  library(dplyr)
-  library(tidyr)
-
-  # Initialize unit history
-  original_units <- unique(c(unit.compare[[unit1_col]], unit.compare[[unit2_col]]))
-
-  if (!is.null(initial.groups)) {
-  if (is.vector(initial.groups)) {
-    unit_history <- data.frame(
-      OriginalUnit = names(initial.groups),
-      Step0_Group = as.character(initial.groups),
-      stringsAsFactors = FALSE
-    )
-  } else if (is.data.frame(initial.groups) && all(c("SiteUnit", "Association") %in% names(initial.groups))) {
-    unit_history <- initial.groups %>%
-      select(OriginalUnit = SiteUnit, Step0_Group = Association) %>%
-      mutate(Step0_Group = as.character(Step0_Group))
-  } else {
-    stop("initial.groups must be a named vector or a data frame with columns 'SiteUnit' and 'Association'")
-  }
-
-  # Add any missing units as their own group
-  missing_units <- setdiff(original_units, unit_history$OriginalUnit)
-  if (length(missing_units) > 0) {
-    unit_history <- bind_rows(
-      unit_history,
-      data.frame(OriginalUnit = missing_units, Step0_Group = missing_units, stringsAsFactors = FALSE)
-    )
-  }
-} else {
-  unit_history <- data.frame(
-    OriginalUnit = original_units,
-    Step0_Group = original_units,
-    stringsAsFactors = FALSE
-  )
-}
-
-  prev_groups <- unit_history$Step0_Group
-
-  for (step in 1:max.steps) {
-    if (verbose) message("🔁 Step ", step)
-
-    current_col <- paste0("Step", step - 1, "_Group")
-    next_col <- paste0("Step", step, "_Group")
-
-    # Map original units to current groups
-    group_map <- unit_history %>%
-      select(OriginalUnit, CurrentGroup = !!sym(current_col))
-
-    # Join group labels to both Unit1 and Unit2
-    grouped_compare <- unit.compare %>%
-      left_join(group_map, by = setNames("OriginalUnit", unit1_col)) %>%
-      rename(Group1 = CurrentGroup) %>%
-      left_join(group_map, by = setNames("OriginalUnit", unit2_col)) %>%
-      rename(Group2 = CurrentGroup)
-
-    grouped_compare <- grouped_compare %>%
-      filter(!is.na(Group1), !is.na(Group2))
-
-    # Aggregate similarity between groups
-    group_sim <- grouped_compare %>%
-      group_by(Group1, Group2) %>%
-      summarise(Sim = mean(.data[[similarity_col]], na.rm = TRUE), .groups = "drop")
-
-    # Create symmetric similarity matrix
-    group_labels <- unique(c(group_sim$Group1, group_sim$Group2))
-    sim_matrix <- matrix(1, nrow = length(group_labels), ncol = length(group_labels),
-                         dimnames = list(group_labels, group_labels))
-
-    for (i in seq_len(nrow(group_sim))) {
-      g1 <- group_sim$Group1[i]
-      g2 <- group_sim$Group2[i]
-      sim_matrix[g1, g2] <- group_sim$Sim[i]
-      sim_matrix[g2, g1] <- group_sim$Sim[i]
-    }
-
-    # Convert to dissimilarity and cluster
-    dissimilarity <- as.dist(1 - sim_matrix)
-    hc <- hclust(dissimilarity, method = "average")
-    new_groups <- cutree(hc, h = combine.level)
-
-    # Create mapping of current group → new group
-    group_map_new <- tibble::tibble(
-      !!current_col := names(new_groups),
-      !!next_col := paste0("Step", step, "_Grp", new_groups)
-    )
-
-    # Join to unit_history
-    unit_history <- unit_history %>%
-      left_join(group_map_new, by = current_col)
-
-current_groups <- unit_history[[next_col]]
-n_current <- length(unique(current_groups))
-
-if (stop.no.change && step > 1) {
-  if (n_current == n_prev) {
-    message("✅ Number of groups unchanged — stopping early at step ", step)
-    break
-  }
-}
-n_prev <- n_current
-
-    if (verbose) {
-      n_unique <- length(unique(current_groups))
-      message("   → ", n_unique, " groups after step ", step)
-    }
-  }
-
-  return(unit_history)
-}
 cluster.file <- fread("./hierarchy/LMH77_zonal_assoc_memberships.csv")
 
 unit_lineage <- stepwise_cluster_lumping(
-  unit.compare = unit.compare,
+  unit.compare = unit.compare.good,
   combine.level = 0.2,
   max.steps = 20,
   stop.no.change = TRUE,
   verbose = TRUE,
   initial.groups = cluster.file
 )
-su_updated <- assign_cluster_names(su.tab = su2, cluster.file = unit_lineage,
-                                 siteunit_col = "SiteUnit",
-                                 new_name_col = "Association",
-                                   use_last_step = TRUE)
+
+#su_updated <- left_join(su2, unit_lineage, by = c("SiteUnit" = "OriginalUnit")) %>% distinct %>% mutate(Association = Step3_Group) %>% select(PlotNumber, SiteUnit, Association)
+
+ss.unique <- su2 %>% select(SiteUnit) %>% distinct()
+
+su_unit_lineage <- left_join(ss.unique, unit_lineage, by = c("SiteUnit" = "OriginalUnit")) %>% mutate(Set_Association = Step0_Group, Association_modelled = Step3_Group) %>% 
+  select(SiteUnit, Set_Association, Association_modelled) #%>% mutate(Association_modelled = sub(".*_", "", Association_modelled))
+su.no.group <- su_unit_lineage %>% filter(is.na(Association_modelled)) %>% select(SiteUnit, Set_Association) %>% mutate(Association_modelled = "no group") %>%
+  mutate(SiteUnit = paste0(SiteUnit, "_no_group")) %>% distinct()
+
+su_unit_lineage <- su_unit_lineage %>% filter(!is.na(Association_modelled))
+
+su_updated <- left_join(su_unit_lineage, su2, , by = c("SiteUnit" = "SiteUnit")) %>% select(PlotNumber, SiteUnit, Association_modelled)
+
 ```
+
+#### Export vegetation summary tables of site units by prospective associations
+
+```{r build veg guide summary and export to excel, echo = FALSE, warning=FALSE, message=FALSE}
+require(openxlsx)
+require(tictoc)
+library(stringr)
+data.path = "D:/OneDrive - Government of BC/GitHub_data"
+author <- "test.assoc2"
+#assoc.list <- coast.units %>% filter(!is.na(Association_clst)) %>% group_by(Association_clst) %>% mutate(n=n()) %>% filter(n>2) %>% distinct(Association_clst) %>% pull(Association_clst)
+assoc.list <- su_updated %>% filter(!is.na(Association_modelled)) %>%  select(SiteUnit, Association_modelled) %>% distinct() %>% group_by(Association_modelled) %>% mutate(n=n()) %>% filter(n>2) %>%  distinct(Association_modelled) %>% pull(Association_modelled)
+#assoc.choose = "Step3_Grp1"
+vegsum.wbk <- createWorkbook()
+for(assoc.choose in assoc.list){
+#assoc.choose = "assoc-13"
+assoc <- su_updated %>% filter(Association_modelled %in% assoc.choose) %>% select(SiteUnit, Association_modelled) %>% mutate(SiteUnit = gsub(" ", "", SiteUnit)) %>% mutate(SiteUnit = str_replace(SiteUnit, "/", "_"))
+su.assoc <- left_join(assoc, su, by = "SiteUnit") %>%  mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct()
+veg.dat.assoc <- veg.dat2 %>% filter(PlotNumber %in% su.assoc$PlotNumber)
+# vegsum.wbk <- createWorkbook()
+# #bgc.choose = "CDFmmtab2"
+# #for(bgc.choose in bgc.list){
+vegSum <-
+  create_veg_sum_all(vdat = veg.dat.assoc, siteUnits = su.assoc, strata.by = "Lifeform")
+
+indic.order <- build_species_ordering_hier(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc, hier.level = "Association_modelled")
+veg.sum.table <- format_veg_table2(vsum = vegSum, spp=taxon.lifeform)
+openxlsx::addWorksheet(vegsum.wbk, sheetName = assoc.choose)
+openxlsx::writeData(vegsum.wbk, sheet = assoc.choose, veg.sum.table)
+}
+
+saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_assoc_tables_v4_", author, ".xlsx"), overwrite = TRUE)
+
+```
+
+
+
+Run again to see if any of the initial groups now merge with other associations
+
+```{r}
+key.site.indicators <- c("POPUTRI", "LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG")#,  "TIARELLA", "DRYOEXP" "PICESIT", )
+reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
+# reduced.lifeforms = c(1,2)
+reduced.lifeforms <- c(9, 10, 11)
+### select units to run
+#su2 <- su2 %>% filter(grepl('101', SiteUnit))# %>%
+#  mutate(SiteUnit = gsub("\\.(1|2)$", "", SiteUnit))
+# %>% filter(!grepl('ms',SiteUnit))
+#fwrite(su2, "./CoastGuide_Forest_101_SU.csv")
+tic()
+vegsum.pairs <- do_pairwise(veg.dat2, su.field = "Association_modelled",
+  su = su_updated, minimportance = 0.1, minconstancy = 60,
+  noiseconstancy = 10,
+  minplots = 1,  minor = 1,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  reduced.exceptions = reduced.exceptions
+)
+toc()
+
+unit.compare.assoc <- vegsum.pairs %>%
+  select(Unit1, Unit2, BEC.sim.min, BEC.sim.mean , BEC.sim.max, diff.ratio.x, diff.ratio.y, diff.ratio, nplots.x, nplots.y, unit.diag.sum.x, unit.diag.sum.y) %>% filter(nplots.x>0) %>% mutate(metric.diff = BEC.sim.max - BEC.sim.min) %>%
+ distinct()
+unit.compare$bgc1 <- stringr::word(unit.compare$Unit1, 1, sep = "\\_")
+unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
+
+unit.compare.assoc<- vegsum.pairs %>% filter(nplots.x > 0, Unit1 != Unit2) %>%  
+  select(Unit1, Unit2, Species, BEC.sim.min, nplots.x, unit.diag.sum.x) %>% 
+  distinct()
+
+association_results <- cluster_by_spp_group(
+  unit.compare.assoc,
+  anal.groups=NULL,
+  cut.level = 0.7,
+  combine.level = 0.2,
+  include.low.diag = TRUE,
+  low.diag.threshold = 20,
+  include.few.plots = TRUE,
+  few.plots.threshold = 4,
+  output.file = "initial_association_memberships.csv"
+ )
+zz <- fread("initial_association_memberships.csv")
+```
+
 
 
 ```{r}
