@@ -1,7 +1,8 @@
 ## pair-wise comparison of vegetation summary data
 
 # veg.dat = veg.dat2
-# su = su2 
+# su = su_updated
+# su.field = "Step1_Group"
 # minimportance = 0
 # minconstancy = 50
 # noiseconstancy = 10
@@ -11,13 +12,13 @@
 # ksi = key.site.indicators
 # ksi.value = 1.5
 # reduce.lifeform = TRUE
-# reduced.lifeforms = reduced.lifeforms 
+# reduced.lifeforms = reduced.lifeforms
 # reduction = .1
 # reduced.exceptions = reduced.exceptions
 # mindiff = .1
 # mindd = 0.35
 
-do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 50,
+do_pairwise <- function(veg.dat, su, su.field = "SiteUnit", minimportance = 0, minconstancy = 50,
                         noiseconstancy = 10,
                         minplots = 5, mindiff = .1, mindd = 0.35,
                         use.ksi = FALSE, ksi = NULL, ksi.value = 1.5,
@@ -28,9 +29,11 @@ do_pairwise <- function(veg.dat, su, minimportance = 0, minconstancy = 50,
   tic()
   su.choice <- su %>% select(SiteUnit)
   vegdat <- as.data.table(veg.dat)
+  su <- su %>% select(PlotNumber, su.field) %>% rename(SiteUnit = su.field)
   vegdat[su, SiteUnit := i.SiteUnit, on = "PlotNumber"] ## limit data to those listed in SiteUnit
   vegdat <- vegdat[!is.na(SiteUnit) & SiteUnit != "", ]
   vegdat <- unique(vegdat[!is.na(SiteUnit) & SiteUnit != "", ])
+
   vegdat3 <- vegdat[, if (.N > 1) .SD, by = .(SiteUnit, Species)]
   vegdat3[, nplots := length(unique(PlotNumber)), by = .(SiteUnit)]
   vegsum <- vegdat3[, .(MeanCov = sum(Cover, na.rm = TRUE) / nplots[1],

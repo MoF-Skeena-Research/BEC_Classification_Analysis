@@ -1,9 +1,10 @@
-create_dendro_all <- function(unit.compare, threshold.low = .1, cut.level = .2){
+create_dendro_all <- function(unit.compare, threshold.low = .1, cut.level = .2, method = "average", parameter = 1){
   compared <- unit.compare 
   dis.matrix <- bec_dist_matrix(compared) 
   ss_clst <- agnes(dis.matrix,
                    diss = TRUE, stand = TRUE,
-                   method = "average")
+                   method = method, par.method = parameter)
+                   #method = "average")
   dendro_hc <- as.hclust(ss_clst)
   dend.co <- stats::cophenetic(dendro_hc)
   dend.dis <- as.dist(dis.matrix)
@@ -29,15 +30,18 @@ create_dendro_all <- function(unit.compare, threshold.low = .1, cut.level = .2){
     geom_text(aes(x = 0, y = (cut.level+0.02), label = paste0((cut.level*100),"%"), hjust = 0), angle = 90, color = "darkgreen", size = 3)+
     
     # add label to graph 
-    geom_text(data=coph_annotation, aes( x=x, y=y, label=label), 
-              color="black", 
-              size=3 , angle=0, fontface="bold" ) +
+    # geom_text(data=coph_annotation, aes( x=x, y=y, label=label), 
+    #           color="black", 
+    #           size=3 , angle=0, fontface="bold" ) +
+    labs(title = paste0("Cluster Dendrogram of Site Units: "),
+         subtitle = paste0("Cophenetic Correlation: ", round(cophenetic, 3), 
+                           ", Agglomerative Coefficient: ", round(ss_clst$ac, 3))) +
     coord_flip()+
     scale_y_reverse(limits = c(1, -.3))+
     labs(x = "", y = "Difference")+
     theme_minimal()+
-    theme(axis.text.y=element_blank(), axis.title.y = element_blank())+
-    ggtitle(paste0("Cluster Dendrogram of Site Units") )
+    theme(axis.text.y=element_blank(), axis.title.y = element_blank())#+
+    #ggtitle(paste0("Cluster Dendrogram of Site Units") )
   print(yy)
   return(dendro_hc)
   

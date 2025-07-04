@@ -1,5 +1,5 @@
 
-draw_dendro_split <- function(unit.compare, subass.level = .1, assoc.level = .2, alliance.level = .4, cut.level = .5){
+draw_dendro_split2 <- function(unit.compare,agnes.method = "gaverage", flex.par = .5, cut.level=NULL){
   singles.count = 0
   singles.list = data.frame(SiteUnit = character(), stringsAsFactors = FALSE)
   new.unit <- data.frame(SiteUnit = character(), stringsAsFactors = FALSE)
@@ -7,7 +7,7 @@ draw_dendro_split <- function(unit.compare, subass.level = .1, assoc.level = .2,
   dis.matrix <- bec_dist_matrix(compared) 
   ss_clst <- agnes(dis.matrix,
                    diss = TRUE, stand = TRUE,
-                   method = "average")
+                   method = agnes.method, par.method = flex.par)
   dendro_hc <- as.hclust(ss_clst)
   dendro_hc.dend <- as.dendrogram(dendro_hc)
   if (!is.null(cut)){
@@ -29,36 +29,21 @@ draw_dendro_split <- function(unit.compare, subass.level = .1, assoc.level = .2,
     # coph_annotation <- data.frame(x = 9, y=.85, label = paste0("Cophenetic:",cophenetic))
     hcdata <- dendro_data(dendro_hc.dend.i, type = "rectangle")
     yy <- ggplot() +
-      # Draw cluster segments
       geom_segment(data = segment(hcdata), 
-                   aes(x = x, y = y, xend = xend, yend = yend)) +
-      
-      # Label leaves
+                   aes(x = x, y = y, xend = xend, yend = yend)
+      ) +
       geom_text(data = label(hcdata), 
                 aes(x = x, y = y, label = label, hjust = 0), 
-                size = 3) +
+                size = 3
+      ) +
+      geom_hline(yintercept = .10, linetype = "dashed", color = "red")+
+      geom_hline(yintercept = .20, linetype = "dashed", color = "green")+
+      geom_hline(yintercept = cut.level, linetype = "dashed", color = "purple")+
+      # add value label to hline
+      geom_text(aes(x = 0, y = .07, label = "10%-Subassociation", hjust = 0), angle = 90,color = "red", size = 3)+
+      geom_text(aes(x = 0, y = .20, label = "20%-Association", hjust = 0), angle = 90,color = "green", size = 3)+
+      geom_text(aes(x = 0, y = cut.level, label = paste0(cut.level,"%"), hjust = 0), angle = 90, color = "purple", size = 3)+
       
-      # Add shaded band between 0.07 and 0.10
-      annotate("rect", xmin = -Inf, xmax = Inf, ymin = subass.level - .03, ymax = subass.level,
-               fill = "red", alpha = 0.15) +
-      annotate("rect", xmin = -Inf, xmax = Inf, ymin = assoc.level - .02, ymax = assoc.level + .02,
-               fill = "darkgreen", alpha = 0.15) +
-      annotate("rect", xmin = -Inf, xmax = Inf, ymin = alliance.level - .02, ymax = alliance.level + .02,
-               fill = "purple", alpha = 0.15) +
-      # Additional horizontal lines
-      # geom_hline(yintercept = assoc.level + .02, linetype = "dashed", color = "green") +
-      # geom_hline(yintercept = assoc.level - .02, linetype = "dashed", color = "green") +
-      # geom_hline(yintercept = subass.level - .03, linetype = "dashed", color = "red") +
-      # geom_hline(yintercept = subass.level, linetype = "dashed", color = "red") +
-      # geom_hline(yintercept = alliance.level +2, linetype = "dashed", color = "purple") +
-      # geom_hline(yintercept = alliance.level -2, linetype = "dashed", color = "purple") +
-      # Add labels
-      geom_text(aes(x = 0, y = subass.level - .015, label = "Subassociation", hjust = 0),
-                angle = 90, color = "grey30", size = 3) +
-      geom_text(aes(x = 0, y = assoc.level, label = "Association", hjust = 0),
-                angle = 90, color = "grey30", size = 3) +
-      geom_text(aes(x = 0, y = alliance.level, label = "Alliance", hjust = 0),
-                angle = 90, color = "grey30", size = 3)+
       # add label to graph 
       # geom_text(data=coph_annotation, aes( x=x, y=y, label=label), 
       #           color="black", 
