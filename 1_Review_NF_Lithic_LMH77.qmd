@@ -92,7 +92,7 @@ Vegetation data is read in from saved .RDS file generated from the BECMaster cle
 
 ```{r load data, echo=FALSE, message=FALSE}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
-taxon.all <- read_sppmaster()
+taxon.all <- read_sppmaster("D:/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb")
 taxon.lifeform <- taxon.all %>%
   filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
   dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
@@ -107,7 +107,7 @@ veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
 db <- "D:/BC_Correlation2_Vpro_2023/Coast_NonForest_SUnew.accdb"
 
 master_su <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=", db,";"))
-su <- dbReadTable(master_su, "Coast_Lithic_v1_SU")
+su <- dbReadTable(master_su, "Coast_Lithic_final_SU")
 dbDisconnect(master_su)
   SU <- su %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
     arrange(desc(PlotNumber)) %>% mutate(bgc = gsub(" ", "", bgc, fixed = TRUE)) 
@@ -124,7 +124,9 @@ dbDisconnect(master_su)
 #su$SiteUnit <- gsub(".*_","",su$SiteUnit) ## extracts only the site association code
 
 su <- su %>%
-  filter(!grepl('poor|low|-S|add|nudum|browsed|X|support|unplaced', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+  filter(!str_detect(SiteUnit, "poor|low|-S|add|nudum|browsed|X|support|unplaced|\\$$")) %>%
+  select(-SiteUnit.orig) %>%
+  arrange(SiteUnit)
 #   filter(grepl('01', SiteUnit)) ###zonal specific
 # su <- su %>%
 # filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
@@ -254,7 +256,8 @@ The dendrogram is an approximate representation of the similarity matrix. It is 
 ## Generate comparative veg summary report
 
 ```{r report table}
- unit.choose <- c("Ro50", "Ro50.1", "Ro50.2!", "Ro51.1", "Ro51.2", "Ro52")
+#unit.choose <- c("Ro60.1", "Ro60.2", "Ro60!2.1", "Ro60!2.2",  "Ro61.1", "Ro61.2", "Ro62")
+unit.choose <- unique(su$SiteUnit)
 su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 table.name1 = "Lithic_Ro"
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
@@ -270,7 +273,7 @@ openxlsx::writeData(vegsum.wbk, sheet = table.name1, veg.sum.table1)
 # openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
 # openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name3)
 # openxlsx::writeData(vegsum.wbk, sheet = table.name3, veg.sum.table3)
-saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_draft_lithic_table.xlsx", overwrite = TRUE)
+saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_final_lithic_table.xlsx", overwrite = TRUE)
 
 ```
 

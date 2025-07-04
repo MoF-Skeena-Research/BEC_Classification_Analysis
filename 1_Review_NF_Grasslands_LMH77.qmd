@@ -92,7 +92,7 @@ Vegetation data is read in from saved .RDS file generated from the BECMaster cle
 
 ```{r load data, echo=FALSE, message=FALSE}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
-taxon.all <- read_sppmaster()
+taxon.all <- read_sppmaster("D:/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster_May2025.accdb")
 taxon.lifeform <- taxon.all %>%
   filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
   dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
@@ -124,8 +124,16 @@ dbDisconnect(master_su)
 
 #su$SiteUnit <- gsub(".*_","",su$SiteUnit) ## extracts only the site association code
 
+# su <- su %>%
+#   filter(!grepl('poor|low|-S|add|nudum|browsed|X|!|support|unplaced', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+library(dplyr)
+library(stringr)
+
 su <- su %>%
-  filter(!grepl('poor|low|-S|add|nudum|browsed|X|!|support|unplaced', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+  filter(!str_detect(SiteUnit, "poor|low|-S|add|nudum|browsed|X|support|unplaced|\\$$")) %>%
+  select(-SiteUnit.orig) %>%
+  arrange(SiteUnit)
+
 #   filter(grepl('01', SiteUnit)) ###zonal specific
 # su <- su %>%
 # filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms

@@ -1,5 +1,5 @@
 ---
-title: "Combine BGC SUs into single SU"
+title: "Split FG_SU into BGC SUs into separate SU"
 author: "Will MacKenzie"
 date: "13/09/2021"
 output: html_document
@@ -17,31 +17,42 @@ source("./_functions/_TabletoTree.R")
 #### Import becdb
 ```{r set folders, include=FALSE}
 require(DBI) #loads odbc as well
- becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2024.accdb;")
+# becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/published_sorts/ThompsonOK_Sorts.accdb;")
+ becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/published_sorts/KootenayBoundary_Sorts.accdb;")
 
-BGCs <- dbReadTable(becdb, "tblBGC_UnitsWorkingandArchive")%>% filter(!is.na(VersionRetired)) %>% select(BGC_Label, BGC_NoSpace, BGC_Zone) 
-SiteSeries<- dbReadTable(becdb, "tblBEC_SiteSeries_v13_compiled")# %>% filter(Status == "Current") %>% select(BGC_NoSpace, SS_NoSpace, SS_Label)
+#LMH76 <- dbReadTable(becdb, "LMH76_Published_SU")
+LMH70 <- dbReadTable(becdb, "LMH75_Published_SU")
 dbDisconnect(becdb)
-BGCs_noSS <- anti_join(BGCs , SiteSeries)
+# Extract the SiteUnit string before "/"
+SS_tbl <- LMH70 %>%
+  mutate(SiteUnitPrefix = str_extract(SiteUnit, "^[^/]+") %>% str_replace_all(" ", ""))  
 
-# becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECdb_Working/BECdb_ver12_2021_reduced.accdb;")
-# dbWriteTable(becdb, "BGCs_NoSS",  BGCs_noSS, overwrite = TRUE, batch_rows = 1)
-# dbDisconnect(becdb)
+# Split the table into separate tables
+split_tables <- split(SS_tbl[, c("PlotNumber", "SiteUnit")], SS_tbl$SiteUnitPrefix)
+
+# Assign each table a unique name
+table_names <- paste0(unique(SS_tbl$SiteUnitPrefix), "_SU")
+ 
+ becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/published_sorts/KootenayBoundary_Sorts.accdb;")
+for (name in names(split_tables)) {
+  table_name <- paste0(name, "_SU")  # Table names based on SiteUnitPrefix
+  dbWriteTable(becdb, table_name, split_tables[[name]], overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+}
+dbDisconnect(becdb)
+# Disconnect from database
+
+# 
+# 
+# 
+# 
+# # Save each table as a separate CSV (optional)
+# for (i in seq_along(table_names)) {
+#     write.csv(split_tables[[i]], paste0(table_names[i], ".csv"), row.names = FALSE)
+# }
+
 ```
 
-#### Import all BECMaster tables in /raw_data folder
-```{r set folders, include=FALSE}
-require(DBI) #loads odbc as well
- becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;")
 
-plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
-# ADMIN<- dbReadTable(becmaster, "BECMaster_fixing_Admin")
-# VEG <- dbReadTable(becmaster, "BECMaster_fixing_Veg")
-env.fields <- colnames(plot.env)
-odbc::odbcListColumns(becmaster, table = "BECMaster_fixing_ENV")
-dbDisconnect(becmaster)
-
-```
 
 ```{r function to create provincial SU table}
 library(odbc)
@@ -95,7 +106,6 @@ master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Acc
 DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
 dbWriteTable(master_su, "All_BGC13_May2025_SU",  SU_all, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
 dbDisconnect(master_su)
-fwrite(SU_all, "./clean_tabs/All_BGC13_May2025_SU.csv")
 # update the BEC
 # View output
 head(SU_all)

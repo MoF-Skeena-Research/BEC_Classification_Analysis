@@ -81,6 +81,7 @@ source('./_functions/_create_dendro.R')
 source('./_functions/_create_dendro_all.R')
 source('./_functions/_create_dendro_bybgc.R')
 source('./_functions/_draw_ss_edatope.R')
+source("./_functions/_lump_species_strata.R")
 ```
 
 # Evaluate site series within each BGC
@@ -91,7 +92,7 @@ Vegetation data is read in from saved .RDS file generated from the BECMaster cle
 
 ```{r load data, echo=FALSE, message=FALSE}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
-taxon.all <- read_sppmaster()
+taxon.all <- read_sppmaster("D:/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb")
 taxon.lifeform <- taxon.all %>%
   filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
   dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
@@ -105,7 +106,7 @@ veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
 db <- "D:/BC_Correlation2_Vpro_2023/Coast_NonForest_SUnew.accdb"
 
 master_su <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=", db,";"))
-su <- dbReadTable(master_su, "Coast_Bogs_FinalAB_SU")
+su <- dbReadTable(master_su, "Coast_Bogs_Final_SU")
 dbDisconnect(master_su)
   SU <- su %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
     arrange(desc(PlotNumber)) %>% mutate(bgc = gsub(" ", "", bgc, fixed = TRUE)) 
@@ -120,9 +121,10 @@ dbDisconnect(master_su)
 #   filter(grepl('_[[:alpha:]]', SiteUnit))
 
 #su$SiteUnit <- gsub(".*_","",su$SiteUnit) ## extracts only the site association code
-
 su <- su %>%
-  filter(!grepl('poor|low|-S|add|nudum|browsed|unplaced|support|X', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+  filter(!str_detect(SiteUnit, "poor|low|-S|add|nudum|browsed|X|!|support|unplaced|\\$$")) %>%
+  select(-SiteUnit.orig) %>%
+  arrange(SiteUnit)
 #   filter(grepl('01', SiteUnit)) ###zonal specific
 # su <- su %>%
 # filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
@@ -276,26 +278,27 @@ create_VGS_table <- function(veg.sum.table, table.name = ""){
 ## Generate comparative veg summary report
 
 ```{r report table}
-# su2 <- su %>% mutate(bgc = str_extract(SiteUnit, "[^_]+"))
-# bgc.choose <- c("CWHxm1", "CWHvh1", "MHmm1")
+#vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
+#veg.dat2 <- lump_species_strata(vegdata = vegdata, lump, use.subtaxa = FALSE)
+su <- su %>% mutate(SiteUnit = ifelse(SiteUnit %in% c("Wb53.1", "Wb53.2"), "Wb53", SiteUnit)) 
 unit.choose <- su %>% pull(SiteUnit)
 table.name1 <- "Bogs1"
-unit.choose <- c("Wb50", "Wb51", "Wb55.1", "Wb55.2", "Wb56")
+unit.choose <- c("Wb50", "Wb51", "Wb52", "Wb53", "Wb54", "Wb55.1", "Wb55.2", "Wb56", "Wb57", "Wb58")
 su.choose <- su %>% filter(SiteUnit %in% unit.choose)
-vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
+vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25, strata.by = "Lifeform")
 ##determine order of species by unit
-indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
-veg.sum.table1 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
+indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum, siteUnits = su.choose)
+veg.sum.table1 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)#, type="All"
 create_VGS_table(veg.sum.table1, table.name = table.name1)
 
-table.name2 <- "Bogs2"
-unit.choose <- c("Wb51", "Wb52.1", "Wb52.2", "Wb53.1", "Wb53.2", "Wb57")
-su.choose <- su %>% filter(SiteUnit %in% unit.choose)
-vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
-##determine order of species by unit
-indic.order <- build_species_ordering_all(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.choose)
-veg.sum.table2 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
-create_VGS_table(veg.sum.table2, table.name = table.name2)
+# table.name2 <- "Bogs2"
+# unit.choose <- c( "Wb52", "Wb53.1", "Wb53.2", "Wb56")
+# su.choose <- su %>% filter(SiteUnit %in% unit.choose)
+# vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25, strata.by = "Lifeform")
+# ##determine order of species by unit
+# indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum,  siteUnits = su.choose)
+# veg.sum.table2 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)#, type="All"
+# create_VGS_table(veg.sum.table2, table.name = table.name2)
  
                   
 #  unit.choose <- c("Bb13 Rumefue", "Bbd01 Poa_mac", "Bb_Festrub", "Bb_Calysol","Bb_Grinsti","Br Festrub","HwSs-Gaulsha","HwSs-Kindpra")  
@@ -310,8 +313,8 @@ create_VGS_table(veg.sum.table2, table.name = table.name2)
 vegsum.wbk <- createWorkbook()
 openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name1)
 openxlsx::writeData(vegsum.wbk, sheet = table.name1, veg.sum.table1)
-openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name2)
-openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
+# openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name2)
+# openxlsx::writeData(vegsum.wbk, sheet = table.name2, veg.sum.table2)
 # openxlsx::addWorksheet(vegsum.wbk, sheetName = table.name3)
 # openxlsx::writeData(vegsum.wbk, sheet = table.name3, veg.sum.table3)
 saveWorkbook(vegsum.wbk, "./vegsum.tables/LMH77_Bogs_table.xlsx", overwrite = TRUE)

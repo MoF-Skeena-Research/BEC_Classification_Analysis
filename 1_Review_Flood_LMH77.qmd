@@ -91,7 +91,7 @@ Vegetation data is read in from saved .RDS file generated from the BECMaster cle
 
 ```{r load data, echo=FALSE, message=FALSE}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
-taxon.all <- read_sppmaster()
+taxon.all <- read_sppmaster("D:/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb")
 taxon.lifeform <- taxon.all %>%
   filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
   dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
@@ -122,7 +122,9 @@ dbDisconnect(master_su)
 #su$SiteUnit <- gsub(".*_","",su$SiteUnit) ## extracts only the site association code
 
 su <- su %>%
-  filter(!grepl('poor|low|-S|add|nudum|browsed|support|[?]|[$]|unplaced|X', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+  filter(!str_detect(SiteUnit, "poor|low|-S|add|nudum|browsed|X|!|support|unplaced|\\$$")) %>%
+  select(-SiteUnit.orig) %>%
+  arrange(SiteUnit)
 #   filter(grepl('01', SiteUnit)) ###zonal specific
 # su <- su %>%
 # filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
@@ -254,7 +256,7 @@ The dendrogram is an approximate representation of the similarity matrix. It is 
 ```{r cluster analysis, echo=FALSE}
 #bgc.unique <- c("CDFmm", "CWHvm3")
 #for (bgc.choose in bgc.unique){
-  create_dendro_all(unit.compare, threshold.low = .07)
+  create_dendro_all(unit.compare, threshold.low = .07, method = "average", parameter = .9)
 #}
 ```
 

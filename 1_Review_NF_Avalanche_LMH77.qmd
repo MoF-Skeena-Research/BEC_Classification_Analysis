@@ -88,7 +88,7 @@ Vegetation data is read in from saved .RDS file generated from the BECMaster cle
 
 ```{r load data, echo=FALSE, message=FALSE}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
-taxon.all <- read_sppmaster()
+taxon.all <- read_sppmaster("D:/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb")
 taxon.lifeform <- taxon.all %>%
   filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
   dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
@@ -101,10 +101,9 @@ lump <- lump %>% filter(Use == "TRUE")
 dbDisconnect(veglump)
 veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
 db <- "D:/BC_Correlation2_Vpro_2023/Coast_NonForest_SUnew.accdb"
-
 master_su <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=", db,";"))
 #su <- dbReadTable(master_su, "Coast_Skunkcabbage_Final_SU")
-su <- dbReadTable(master_su, "Coast_Avalanche_v0_SU")
+su <- dbReadTable(master_su, "Coast_Avalanche_final_SU")
 dbDisconnect(master_su)
   # SU <- su %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
   #   arrange(desc(PlotNumber)) %>% mutate(bgc = gsub(" ", "", bgc, fixed = TRUE)) 
@@ -120,7 +119,9 @@ dbDisconnect(master_su)
 # su$SiteUnit <- gsub(".*_","",su$SiteUnit) ## extracts only the site association code
 #su <- beach.su
 su <- su %>%
-  filter(!grepl('poor|low|-S|add|nudum|browsed|support|!|unplaced|X|interior', SiteUnit))  %>% arrange(SiteUnit)
+  filter(!str_detect(SiteUnit, "poor|low|-S|add|nudum|browsed|X|!|support|unplaced|\\$$|interior")) %>%
+  #select(-SiteUnit.orig) %>%
+  arrange(SiteUnit)
 #   filter(grepl('01', SiteUnit)) ###zonal specific
 # su <- su %>%
 # filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
@@ -255,7 +256,7 @@ data.path = "D:/OneDrive - Government of BC/GitHub_data"
 author <- "WHMacKenzie"
 assoc.choose = "Avalanche1"
 table.name1 = "Avalanche"
-unit.choose <- c("Vh50", "Vs50.1", "Vs50.2", "Vt_MHmm")
+unit.choose <- c("Vh60", "Vs60.1", "Vs60.2")
 su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 
 #for(assoc.choose in assoc.list){

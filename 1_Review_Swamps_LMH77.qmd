@@ -91,7 +91,7 @@ Vegetation data is read in from saved .RDS file generated from the BECMaster cle
 
 ```{r load data, echo=FALSE, message=FALSE}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
-taxon.all <- read_sppmaster()
+taxon.all <- read_sppmaster("D:/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster_May2025.accdb")
 taxon.lifeform <- taxon.all %>%
   filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
   dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
@@ -122,7 +122,9 @@ dbDisconnect(master_su)
 #su$SiteUnit <- gsub(".*_","",su$SiteUnit) ## extracts only the site association code
 
 su <- su %>%
-  filter(!grepl('poor|low|-S|add|nudum|browsed|support|[?]|[$]', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+  filter(!str_detect(SiteUnit, "poor|low|-S|add|nudum|browsed|X|!|support|unplaced|\\$$")) %>%
+  select(-SiteUnit.orig) %>%
+  arrange(SiteUnit)
 #   filter(grepl('01', SiteUnit)) ###zonal specific
 # su <- su %>%
 # filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
@@ -279,7 +281,7 @@ create_VGS_table <- function(veg.sum.table, table.name = ""){
 # su2 <- su %>% mutate(bgc = str_extract(SiteUnit, "[^_]+"))
 # bgc.choose <- c("CWHxm1", "CWHvh1", "MHmm1")
 table.name1 <- "RichSkunk"
- unit.choose <- c( "Ws52", "Ws53", "Ws56.1", "Ws56.2", "Ws56.3",  "Ws57", "Ws59")
+ unit.choose <- c( "Ws52", "Ws53", "Ws56.1", "Ws56.2", "Ws56.3",  "Ws57", "Ws59", "Ws63")
 su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
 ##determine order of species by unit

@@ -79,6 +79,7 @@ source('./_functions/_create_dendro.R')
 source('./_functions/_create_dendro_all.R')
 source('./_functions/_create_dendro_bybgc.R')
 source('./_functions/_draw_ss_edatope.R')
+source('./_functions/_create_VGS_table.R')
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
 
 ```
@@ -411,7 +412,7 @@ tab.split = c('CDFmm_101', 'CDFmm_110', 'CDFmm_111','CDFmm_112',
 
 ## Bobs
 author = "BGreen_new"
-bgc.list = c("CWHds1", "CWHms1", "CWHms2", "CWHms3", "MHmm1",
+bgc.list = c("CWHds1", "CWHms3", "CWHms4", "CWHms5", "MHmm1",
 "MHmm2", "MHms", "MHvh")
 
 # 
@@ -428,13 +429,13 @@ bgc.list = c("CWHds1", "CWHms1", "CWHms2", "CWHms3", "MHmm1",
 
 su3 <- su %>% 
   mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", ""))  %>% 
-  filter(bgc %in% bgc.list) %>%
-  mutate(bgc = ifelse(SiteUnit %in% tab.split, paste0(bgc, "tab2"), bgc)) %>% 
-  mutate(SiteUnit = ifelse(SiteUnit %in% tab.split, str_replace_all(SiteUnit, "_", "tab2_"), SiteUnit))%>%
+  #filter(bgc %in% bgc.list) %>%
+  #mutate(bgc = ifelse(SiteUnit %in% tab.split, paste0(bgc, "tab2"), bgc)) %>% 
+  #mutate(SiteUnit = ifelse(SiteUnit %in% tab.split, str_replace_all(SiteUnit, "_", "tab2_"), SiteUnit))%>%
   arrange(bgc)
 
 bgc.list <- unique(su3$bgc)
-
+author = "fix_lump_prom"
 vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
 veg.dat2 <- lump_species_strata(vegdata = vegdata, lump, use.subtaxa = FALSE)
 
@@ -442,17 +443,21 @@ veg.dat2 <- lump_species_strata(vegdata = vegdata, lump, use.subtaxa = FALSE)
 #bgc.choose = "CWHvh1"
 vegsum.wbk <- createWorkbook()
 tic()
-bgc.choose = "CWHxs"
+#bgc.choose = "CWHms5"
 for(bgc.choose in bgc.list){
 vegSum <- 
   create_veg_sum(vdat = veg.dat2, siteUnits = su3 , BGC = bgc.choose, minconstancy = 50, noiseconstancy = 25, minimportance = 0, strata.by = "Layer")
+vegSum <- vegSum %>% filter(Species %in% c("MNIUM", "RACOMITR"))
 ##determine order of species by unit
-indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum,  siteUnits =su3, BGC = bgc.choose)#code.lump=lump,
+#indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum,  siteUnits =su3, BGC = bgc.choose)#code.lump=lump,
 veg.sum.table <- format_veg_table(vsum = vegSum, spp=taxon.lifeform,cons.1 = 70, cons.2 = 50)
+#create_VGS_table(veg.sum.table, table.name = bgc.choose)
 openxlsx::addWorksheet(vegsum.wbk, sheetName = bgc.choose)
 openxlsx::writeData(vegsum.wbk, sheet = bgc.choose, veg.sum.table) 
 }
 toc()
-saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_veg_tables_", author, ".xlsx"), overwrite = TRUE)
+#saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_veg_tables_", author, ".xlsx"), overwrite = TRUE)
+saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_", author, ".xlsx"), overwrite = TRUE)
+
 
 ```
