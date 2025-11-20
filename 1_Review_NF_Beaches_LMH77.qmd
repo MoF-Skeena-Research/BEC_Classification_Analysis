@@ -92,7 +92,7 @@ Vegetation data is read in from saved .RDS file generated from the BECMaster cle
 
 ```{r load data, echo=FALSE, message=FALSE}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
-taxon.all <- read_sppmaster("D:/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb")
+taxon.all <- read_sppmaster("D:/OneDrive/BCSpeciesList/SpeciesTaxonomyMasterjuly2025.accdb")
 taxon.lifeform <- taxon.all %>%
   filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
   dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
@@ -101,13 +101,13 @@ veglump <- dbConnect(
   odbc::odbc(),
   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
 #lump <- dbReadTable(veglump, "CorrelationII_Lump")
-lump <- dbReadTable(veglump, "CorrelationCoastGrass_Lump")
+lump <- dbReadTable(veglump, "CorrelationII_Lump")
 dbDisconnect(veglump)
 veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
 db <- "D:/BC_Correlation2_Vpro_2023/Coast_NonForest_SUnew.accdb"
 
 master_su <- dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=", db,";"))
-su <- dbReadTable(master_su, "Coast_Beach_v1_SU")
+su <- dbReadTable(master_su, "Coast_Beach_final_SU")
 dbDisconnect(master_su)
   SU <- su %>% mutate(bgc = substr(SiteUnit,1,9)) %>% drop_na() %>% distinct(PlotNumber, .keep_all = TRUE) %>% 
     arrange(desc(PlotNumber)) %>% mutate(bgc = gsub(" ", "", bgc, fixed = TRUE)) 
@@ -124,7 +124,7 @@ dbDisconnect(master_su)
 #su$SiteUnit <- gsub(".*_","",su$SiteUnit) ## extracts only the site association code
 
 su <- su %>%
-  filter(!grepl('poor|low|-S|add|nudum|browsed|X|!|support|unplaced', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
+  filter(!grepl('poor|low|-S|add|nudum|browsed|X|support|unplaced', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
 #   filter(grepl('01', SiteUnit)) ###zonal specific
 # su <- su %>%
 # filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
@@ -265,8 +265,9 @@ The dendrogram is an approximate representation of the similarity matrix. It is 
 
 ```{r report table}
 # su2 <- su %>% mutate(bgc = str_extract(SiteUnit, "[^_]+"))
-#unit.list <- unique(su$SiteUnit)
- unit.choose <- c("Bb01.1", "Bb01.2", "Bb02.1", "Bb02.2", "Bb02.3", "Bb02.4", "Bb03", "Bb04")
+unit.list <- unique(su$SiteUnit)
+unit.list
+ unit.choose <- c("Bb01", "Bb02.1", "Bb02.2", "Bb02!2.1", "Bb02.3", "Bb03", "Bb04", "Bb05")
 su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 table.name1 <- "Beach1"
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)
@@ -276,7 +277,7 @@ veg.sum.table1 <- format_veg_table2(vsum = vegSum, spp = taxon.lifeform)
 create_VGS_table(veg.sum.table1, table.name = table.name1)
 
 
- unit.choose <- c("Bb05", "Bb05.2", "Bb06","Bb07.1", "Bb07.2", "Bb08", "Bb08.2", "Bb09", "Bb10", "Bb11") 
+ unit.choose <- c("Bb!3.1", "Bb06","Bb07.1", "Bb07.2", "Bb08", "Bb08.2", "Bb09", "Bb10", "Bb11") 
  su.choose <- su %>% filter(SiteUnit %in% unit.choose)
 table.name2 <- "Beach2"
 vegSum <- create_veg_sum_all(vdat = veg.dat2, siteUnits = su.choose, minimportance = 0, minconstancy = 50, noiseconstancy = 25)

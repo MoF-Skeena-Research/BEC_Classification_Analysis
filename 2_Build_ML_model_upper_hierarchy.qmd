@@ -23,9 +23,38 @@ require(C50)
 require(indicspecies)
 require(doParallel)
 require(vip)
+require(DBI)
 source("./_functions/_TabletoTree.R")
 source("./_functions/_TreetoTable.R")
+source("./_functions/_bec_dist.R")
+source("./_functions/_bec_dist_matrix.R")
+source("./_functions/_lump_species.R")
+source("./_functions/_lump_species2.R")
+source("./_functions/_create_su_vegdata.R")
+source("./_functions/_create_analysis_vegsum.R")
+source("./_functions/_TabletoTree.R")
+source("./_functions/_TreetoTable.R")
+source("./_functions/_add_vars.R")
+source("./_functions/_do_pairwise.R")
+source("./_functions/_create_diagnostic_veg.R")
+source("./_functions/_return_similar_pairs.R")
+source("./_functions/_read_sppmaster.R")
+source("./_functions/_combined_su.R")
+source("./_functions/_create_veg_sum.R")
+source('./_functions/_create_veg_sum_all.R')
+source('./_functions/_build_species_ordering.R')
+source('./_functions/_format_veg_table.R')
+source('./_functions/_format_veg_table2.R')
+source('./_functions/_encode_veg_sum.R')
+source('./_functions/_create_dendro.R')
+source('./_functions/_create_dendro_all.R')
+source('./_functions/_create_dendro_bybgc.R')
+source('./_functions/_draw_dendro_split.R')
+source('./_functions/_cluster_groups.R')
+source('./_functions/_TabletoTree.R')
+source('./_functions/_build_species_ordering_hier.R')
 cloud_dir <- "F:/OneDrive - Personal/OneDrive/BEC_Classification_Paper/"
+
 #cloud_dir <- "F:/OneDrive - Government of BC/CCISSv12/"
 ```
 
@@ -63,27 +92,21 @@ b. Predict Order membership of BECMaster plots that are unassigned to existing s
 6. Build for non-forested units. Classes based on major site level differences rather than climate and using major species groups (e.g. Hydrophytic Carex spp )
 May wish to assign a temporary notree pseudo species to all units that have no trees to help separate forested hierarchy from non-forested hierarchy (Hurdle model)
 
-```{r import data}
+```{r import data and create veg summary}
 veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") ### named veg.dat
 taxon.all <- read_sppmaster() %>% filter(Codetype == "U")
 db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/CoastGuide_Forested.accdb"
 #db <- "D:/BC_Correlation2_Vpro_2023/Coast_Association_Exercise.accdb"
 su <- combined_su(db)
 SUTab <- su %>%
-  filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|unplaced|support', SiteUnit))  %>% arrange(SiteUnit)#
+  filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|ys|moved|X|unplaced|support|omit', SiteUnit))  %>% arrange(SiteUnit)#_W|_F|
 
 #SUTab <- fread("../BEC_Classification_Analysis/clean_tabs/All_BGC13_May2025_SU.csv")
 #SUTab <- fread("./CoastGuide_Forest_101_SU.csv")
 SUTab$SiteUnit <-  trimws(SUTab$SiteUnit)
 SS.names <- unique(SUTab$SiteUnit)
 
-```
-
-
-## create Tree-based Orders
-```{r summarize site series, echo=FALSE}
-veg.dat2 <- veg.dat %>% filter(Lifeform %in% c("1", "2"))
-vegdata = veg.dat2; su = SUTab; constancycut = 0
+#vegdata = veg.dat2; su = SUTab; constancycut = 0
 create_su_vegdata_orders <- function(vegdata, su, constancycut = 0){
   su.choice <- su %>% select(SiteUnit)
   vegdat <- as.data.table(vegdata)
@@ -120,109 +143,291 @@ vegdat3 <- vegdat2[,if(.N > 1) .SD, by = .(SiteUnit,Species)]
   return(vegsum)
 }
 
-vegsum <- create_su_vegdata_orders(veg.dat2, SUTab)
+vegsum.all<- create_su_vegdata_orders(veg.dat, SUTab)
 
-spp.rain <- c("TSUGHET", "THUJPLI", "PICESIT", "PICEXLU", "PINUCON1")
-coast.montane <- c("ABIEAMA")
-spp.temp <- c("PSEUMEN1", "LARIOCC", "PINUMON", "JUNISCO")
-spp.tempS <- c("ABIEGRA")
-spp.temp.hot <- c("PINUPON")
-spp.subboreal <- c("PICEENE", "PINUCON2")
-spp.boreal <- c("PICEGLA", "PICEMAR", "LARILAR")
-spp.coast.high <- c("TSUGMER", "CALLNOO")
-spp.interior.high <- c("ABIELAS", "PINUALB", "LARILYA", "PICEENG")
+veg.dat2 <- veg.dat %>% filter(Lifeform %in% c("1", "2"))
+vegsum.trees <- create_su_vegdata_orders(veg.dat2, SUTab)
+
+spp.rain <- c("TSUGHET", "PICESIT")
+spp.coast.high <- c("TSUGMER", "CALLNOO", "ABIELAS")
 coast.dry <- c("PSEUMEN2")
-decid.coast <- c("ALNURUB", "ACERMAC", "MALUFUS", "QUERGAR")
-decid.int <- c("POPUTRI", "POPUBAL", "BETUPAP", "POPUTRE", "SALILAS", "SALILAS2")
+coast.montane <- c("ABIEAMA")
+coast.s <- c("THUJPLI", "ABIEGRA")
+decid.coast <- c("ALNURUB", "ACERMAC", "MALUFUS", "QUERGAR", "POPUTRI")
 
-#filter out non-forest units
-vegsum2 <- vegsum %>%
-  mutate(Spp.group = case_when(
-    Species %in% spp.rain ~ "CwHw",
-    Species %in% coast.dry ~ "Fdc",
-    Species %in% coast.montane ~ "Ba",
-    Species %in% spp.temp ~ "Fdi",
-    Species %in% spp.temp.hot ~ "Py",
-    Species %in% spp.tempS ~ "Temperate_South",
-    Species %in% spp.boreal ~ "Boreal",
-    Species %in% spp.subboreal ~ "Subboreal",
-    Species %in% spp.coast.high ~ "MH",
-    Species %in% spp.interior.high ~ "ESSF",
-    Species %in% decid.coast ~ "Coastal_Deciduous",
-    Species %in% decid.int ~ "Interior_Deciduous",
-    TRUE ~ "Other"
-  ))
+vegsum.trees <- vegsum.trees %>%
+   mutate(Spp.group = case_when(
+     Species %in% spp.rain ~ "CWH",
+     Species %in% coast.s ~ "CWHs",
+     Species %in% coast.dry ~ "Fdc",
+      Species %in% spp.coast.high ~ "MH",
+      Species %in% coast.montane ~ "Ba",
+      Species %in% decid.coast ~ "Coastal_Deciduous",
+     Species == "PSEUMEN1" ~ "Fdi",
+      Species == "PINUCON1" ~ "Plc",
+     TRUE ~ "Other"
+   ))
+```
 
-vegsum2 <- vegsum2 %>% group_by(SiteUnit, Spp.group) %>%  filter(MeanCovRatio >= .10, Spp.group != "Other", MeanCov >= 7)%>%
-#xx <- vegsum2 %>% filter(Spp.group == "Fdc" | Spp.group == "Ba" | Spp.group == "CwHw")  
-  group_by(SiteUnit) %>% arrange(Spp.group) %>%
-  mutate(Spp.group = paste(sort(unique(Spp.group)), collapse = "_")) %>%
-  ungroup() %>% distinct
-anal.groups <- vegsum2 %>% group_by(SiteUnit, Spp.group) %>% mutate(Spp.group.sum = sum(MeanCov, na.rm = TRUE)) %>% ungroup %>% group_by(SiteUnit) %>% slice_max(Spp.group.sum, n=1) %>%  select(SiteUnit, Spp.group) %>% distinct
+
+## Create rule-based tree-based Orders
+```{r summarize site series, echo=FALSE}
+spp.groups <- vegsum.trees %>%
+  group_by(SiteUnit, Spp.group) %>%
+  summarise(group_cover = sum(MeanCov, na.rm = TRUE), .groups = "drop") %>%
+  group_by(SiteUnit) %>%
+  mutate(
+    total_cover = sum(group_cover),
+    group_prop = group_cover / total_cover
+  )
+siteunit.groups <- spp.groups %>%
+  summarise(
+    MH_Ba = sum(group_prop[Spp.group %in% c("MH", "Ba")], na.rm = TRUE),
+    MH = sum(group_prop[Spp.group == "MH"], na.rm = TRUE),
+    Fdc = sum(group_prop[Spp.group %in% c("Fdc", "CWHs")], na.rm = TRUE),
+    Decid = sum(group_prop[Spp.group == "Coastal_Deciduous"], na.rm = TRUE),
+    CWH = sum(group_prop[Spp.group %in% c("CWH", "CWHs")], na.rm = TRUE),
+    Fdi = sum(group_prop[Spp.group == "Fdi"], na.rm = TRUE),
+    Bog = sum(group_prop[Spp.group == "Plc"], na.rm = TRUE)
+  ) %>%
+  mutate(
+    anal_group = case_when(
+      MH_Ba > 0.70 ~ "MH",
+      MH > 0.50 ~ "MH",
+      #Fdc > 0.90 ~ "Fdc",
+      Decid > 0.7 ~ "Deciduous",
+      #CWH > 0.5 ~ "CWH",
+      Fdi > 0.5 ~ "Fdi",
+      TRUE ~ "CWH"
+    )
+  )
+
+anal.groups <- siteunit.groups %>% select(SiteUnit, anal_group) %>% distinct
 fwrite(anal.groups, "./clean_tabs/Forest_Analysis_Groups.csv")
 
 ```
 
+
+## Prep two data sets 
+one with trees only and 
+one with all species
 ```{r prep data, include = TRUE, echo = FALSE}
+#vegsum.all<- create_su_vegdata_orders(veg.dat, SUTab)
+tree.data <- left_join(anal.groups, vegsum.trees) %>% filter(!is.na(nplots)) %>% arrange(Species) %>% distinct()
+tree.sum <-
+  tree.data %>% dplyr::select(SiteUnit, anal_group, Species, MeanCov, Constancy) %>% 
+  pivot_wider(id_cols = c(SiteUnit, anal_group),
+    names_from = Species,
+    values_from = c(MeanCov, Constancy)) %>% 
+  mutate(Order = ifelse(is.na(anal_group) | anal_group == "", "unplaced", anal_group)) %>% filter(!SiteUnit == "") %>%  mutate_if(is.character, as.factor) %>% 
+   replace(is.na(.),0) %>% distinct() %>% droplevels()%>% select(-anal_group)
+#classID <- class.dat %>% dplyr::select(SiteUnit, anal_group)
+all.data <- left_join(anal.groups, vegsum.all) %>% filter(!is.na(nplots)) %>% arrange(Species) %>% distinct()
+all.sum <-
+  all.data %>% dplyr::select(SiteUnit, anal_group, Species, MeanCov, Constancy) %>% 
+  pivot_wider(id_cols = c(SiteUnit, anal_group),
+    names_from = Species,
+    values_from = c(MeanCov, Constancy)) %>% 
+  mutate(Order = ifelse(is.na(anal_group) | anal_group == "", "unplaced", anal_group)) %>% filter(!SiteUnit == "") %>%  mutate_if(is.character, as.factor) %>% 
+   replace(is.na(.),0) %>% distinct() %>% droplevels() %>% select(-anal_group)
 
-classID <- class.dat %>% dplyr::select(SiteUnit, Suborder)
-#class.dat2 <- class.dat %>% select(-SiteUnit)
-BEC_good <- class.dat %>% filter(!Suborder == "unplaced") %>% arrange(SiteUnit)
-BEC_good$SiteUnit <- BEC_good$SiteUnit %>% as.factor
-BEC_new <- class.dat %>% filter(Suborder == "unplaced") %>% arrange(SiteUnit)
 
+```
+
+## Build an ML model with tree cover and constancy
+Note in RF as a tree based model it is not required to scale and normalize covariates and may have negative influence on the model performance  
+## Collect accuracy metrics and predictions and improperly predicted site units
+```{r examine ranger model}
 set.seed(123)
-BEC_split <- initial_split(BEC_good,strata = Suborder)
+BEC_split <- initial_split(tree.sum, strata = Order, prop = .75)
 BEC_train <- training(BEC_split)
 BEC_test  <- testing(BEC_split)
+BEC_recipe <-
+    recipe(Order ~ ., data = BEC_train) %>%
+     update_role(SiteUnit, new_role = "id variable") %>% 
+  step_novel(SiteUnit) #%>% 
+    #prep() 
+    #summary(BEC_recipe)
 
-SU_names <- as.data.frame(BEC_good$SiteUnit) %>%  distinct() %>% rowid_to_column('.row') %>% dplyr::rename("SiteUnit" = 2)
+BEC_fmodel <- rand_forest(trees = 501) %>%
+  set_mode("classification") %>%
+  set_engine("ranger", importance = "impurity")
+
+BEC_workflow <- workflow() %>%
+  add_model(BEC_fmodel) %>% 
+    add_recipe(BEC_recipe,blueprint = hardhat::default_recipe_blueprint(allow_novel_levels = TRUE))
+# the last fit
+set.seed(345)
+BEC_ranger_model_trees <- fit(BEC_workflow, BEC_train)
+BEC_ranger_model_trees
 
 BEC_recipe <-
-    recipe(Suborder ~ ., data = BEC_train) %>%
+    recipe(Order ~ ., data = tree.sum) %>%
      update_role(SiteUnit, new_role = "id variable") %>% 
-  step_novel(SiteUnit) %>% 
-    prep() 
-    summary(BEC_recipe)
-    
-BEC_fmodel <- rand_forest(mtry = 5, min_n = 2, trees = 501) %>%
-  set_mode("classification") %>%
-  set_engine("ranger", importance = "impurity") #or "permutations
+  step_novel(SiteUnit)
+BEC_ranger_model_trees <- fit(BEC_workflow, tree.sum)
+save(BEC_ranger_model_trees, file = "./rFmodels/Coast_Orders_trees_rFmodel.Rdata")
 
-# note in RF as a tree based model it is not required to scale and normalize covariates and may have negative influence on the model performance  
+
+BEC.pred <- predict(BEC_ranger_model_trees, tree.sum) %>% bind_cols(tree.sum) %>% dplyr::select(SiteUnit, Order, .pred_class) 
+hierarchy <- fread("./hierarchy/coast_siteunits_hierarchy_membership.csv") %>% mutate_if(is.logical, as.character) 
+## update membership of zonal associations
+hierarchy[BEC.pred, Order := .pred_class, on = "SiteUnit"] 
+fwrite(hierarchy, "./hierarchy/coast_siteunits_hierarchy_membership.csv") 
+# BEC.acc <- BEC.pred %>%  metrics(truth = Order, estimate = .pred_class)
+# BEC.acc
+# BEC.pred.list <- BEC.pred$SiteUnit %>% as.character
+# BEC.missed <- BEC.pred  %>%   mutate(Compare = ifelse(.pred_class == Order, "Same", "Diff")) %>% filter(Compare == "Diff")
+# fwrite(BEC.missed, "./outputs/MisplacedSuborders.csv")
+# BEC.mis.list <- BEC.missed$SiteUnit %>% as.character
+# SS_misID_SU <- SUTab[SUTab$SiteUnit %in% BEC.mis.list,]
+# fwrite(SS_misID_SU, "./outputs/WrongOrderPredicted_SU.csv")
+# 
+# 
+# Hier.orders <- Hier.clean %>% dplyr::select(Order, Suborder) %>% distinct()
+# BEC.order <- BEC.pred %>% dplyr::select(SiteUnit, .pred_class, Suborder)
+# BEC.order <- left_join(BEC.order, Hier.orders) %>% rename (Order.hier = Order)
+# BEC.order <- left_join(BEC.order, Hier.orders, by.x = .pred_class, by.y = Suborder) %>% rename (Order.pred = Order) %>% 
+#   mutate(Order.compare = ifelse(Order.hier == Order.pred, "Same", "Diff")) %>%
+#   mutate(Compare = ifelse(.pred_class == Suborder, "Same", "Diff")) %>% filter(Compare == "Diff")
 ```
 
 
+```{r examine ranger model}
+#BEC.pred <- predict(BEC_ranger_model_trees, BEC_test) %>% bind_cols(BEC_test %>% dplyr::select(SiteUnit, anal_group)) 
+tree.sum2 <- tree.sum %>% select(-SiteUnit) %>% mutate(Order = as.factor(tree.sum$Order)) # to avoid factor conversion issues
+C5_model <- C5.0(x = tree.sum2 %>% select(-Order), y = tree.sum2$Order)
+
+plot(C5_model)         # Basic plot (needs R graphics device)
+summary(C5_model) 
+
+library(randomForestExplainer)
+
+
+# Make sure you have a standard ranger/randomForest object
+representative_tree <- min_depth_distribution(ranger_model)
+plot_min_depth_distribution(representative_tree)
+
+library(rpart)
+library(rpart.plot)
+
+tree_model <- rpart(Order ~ ., data = tree.sum2, method = "class")
+
+rpart.plot(tree_model, type = 4, extra = 101, box.palette = "Greens", under = TRUE)
+
+```
+
+
+```{r pull example ranger model}
+ranger_model <- BEC_ranger_model_trees$fit$fit$fit
+class(ranger_model)
+tree_df <- ranger::treeInfo(ranger_model, tree = 5)
+library(data.tree)
+library(DiagrammeR)
+
+# Create root node
+forest_tree <- Node$new("root2")
+forest_tree$label <- "Root2"  # Optional: label root node
+
+# Recursive tree builder with explicit labeling
+add_branch <- function(node, df, id) {
+  row <- df[df$nodeID == id, ]
+
+  if (row$terminal == TRUE) {
+    # Collect pred.* columns and format as readable string
+    prob_cols <- grep("^pred\\.", names(row), value = TRUE)
+    probs <- round(as.numeric(row[prob_cols]), 2)
+    prob_labels <- paste0(gsub("pred\\.", "", prob_cols), ": ", probs, collapse = "\n")
+    node$label <- paste("Leaf →", row$prediction, "\n", prob_labels)
+  } else {
+    split_var <- row$splitvarName
+    split_val <- row$splitval
+# Format numeric values nicely, pass others unchanged
+if (is.numeric(split_val)) {
+  split_val <- round(split_val, 2)
+}
+
+# Create left child (<=) with non-empty name
+left <- node$AddChild("left")
+left_label <- paste(split_var, "<=", split_val)
+left$label <- left_label
+add_branch(left, df, row$leftChild)
+
+# Create right child (>) with non-empty name
+right <- node$AddChild("right")
+right_label <- paste(split_var, ">", split_val)
+right$label <- right_label
+add_branch(right, df, row$rightChild)
+  }
+}
+
+# Build the tree starting from node 0
+add_branch(forest_tree, tree_df, id = 0)
+
+# Ensure DiagrammeR uses your labels
+forest_tree$Do(function(node) {
+  node$name <- node$label
+})
+
+# Render
+ToDiagrammeRGraph(forest_tree) %>%
+  DiagrammeR::render_graph()
+
+
+```
+## Now build model with all species
+
+```{r final ranger model}
+BEC_recipe <-
+    recipe(Order ~ ., data = all.sum) %>%
+     update_role(SiteUnit, new_role = "id variable") %>% 
+  step_novel(SiteUnit)
+BEC_workflow <- workflow() %>%
+  add_model(BEC_fmodel) %>% 
+    add_recipe(BEC_recipe,blueprint = hardhat::default_recipe_blueprint(allow_novel_levels = TRUE))
+
+BEC_ranger_model_all <- fit(BEC_workflow, all.sum)
+BEC_ranger_model_all
+save(BEC_ranger_model_all, file = "./rFmodels/Coast_Orders_allspp_rFmodel.Rdata")
+
+# all.sum2 <- all.sum %>% select(-SiteUnit) %>% mutate(Order = as.factor(all.sum$Order)) # to avoid factor conversion issues
+# C5_model <- C5.0(x = all.sum2 %>% select(-Order), y = all.sum2$Order)
+# 
+# plot(C5_model)         # Basic plot (needs R graphics device)
+# summary(C5_model) 
+```
+
+###OLDER CODE
 
 ##Import hierarchy matrix from 0_0_Plot_SU_Hierarchy script with original placements plus all unassigned units added to an unplaced Formation category
 ```{r import  hierarchy data}
-Vpro.hier <- fread("./clean_tabs/BECv13_ForestHierarchy.csv")
-
-###move SU with <4 plots to the UnitsTooFew formation (=2)
-#Vpro.hier[Name %in% Units.toofew, Parent:= 2]
-#fwrite(Vpro.hier, "./outputs/UpdatedVPROHierarchyv13_updated.csv")
-
-SUhier <- treeToTable(Vpro.hier)
-Hier.clean <- SUhier$table
+# Vpro.hier <- fread("./clean_tabs/BECv13_ForestHierarchy.csv")
+# 
+# ###move SU with <4 plots to the UnitsTooFew formation (=2)
+# #Vpro.hier[Name %in% Units.toofew, Parent:= 2]
+# #fwrite(Vpro.hier, "./outputs/UpdatedVPROHierarchyv13_updated.csv")
+# 
+# SUhier <- treeToTable(Vpro.hier)
+# Hier.clean <- SUhier$table
 
 ```
 
 ```{r reduce summary for analysis, echo=FALSE}
 ##limit life forms to tree species
-trees <- c(1,2)
-constcut <- 33 ##remove species less than cutoff
-covercut <- 1
-treespp <- taxon.all[Lifeform %in% trees, ] %>% dplyr::select(Code)
-treespp <- as.vector(treespp$Code)
-vegDat_test <- vegsum[Species %in% treespp,]### include only trees for hierarchy build
-vegDat_test <- vegDat_test %>% dplyr::filter(MeanCov > covercut) %>% dplyr::filter(Constancy > constcut)
-
-
-tree.sum <- as.data.table(vegDat_test)#vegDat <- as_tibble(vegDat)
-tree.sum$SiteUnit <- as.factor(tree.sum$SiteUnit)
-
-
-#fwrite(tree.sum, './inputs/SiteUnitConiferSummary.csv')
+# trees <- c(1,2)
+# constcut <- 33 ##remove species less than cutoff
+# covercut <- 1
+# treespp <- taxon.all[Lifeform %in% trees, ] %>% dplyr::select(Code)
+# treespp <- as.vector(treespp$Code)
+# vegDat_test <- vegsum[Species %in% treespp,]### include only trees for hierarchy build
+# vegDat_test <- vegDat_test %>% dplyr::filter(MeanCov > covercut) %>% dplyr::filter(Constancy > constcut)
+# 
+# 
+# tree.sum <- as.data.table(vegDat_test)#vegDat <- as_tibble(vegDat)
+# tree.sum$SiteUnit <- as.factor(tree.sum$SiteUnit)
+# 
+# 
+# #fwrite(tree.sum, './inputs/SiteUnitConiferSummary.csv')
 
 
 ```
@@ -230,10 +435,10 @@ tree.sum$SiteUnit <- as.factor(tree.sum$SiteUnit)
 
 ```{r filter and prepare for analysis}
 
-vegSum <- tree.sum
-SS_good <- vegSum %>% filter(nPlots >3) %>% filter(Constancy >= 33)  %>% distinct()  #%>% rename(SiteUnit = SiteUnit))## Select only site series will enough plots
-Hier.units <- Hier.clean %>% dplyr::select(SiteUnit, Class, Order, Suborder) %>% distinct()
-Hier.data <- left_join(Hier.units, SS_good) %>% filter(!is.na(nPlots)) %>% arrange(Species) %>% distinct()
+# vegSum <- tree.sum
+# SS_good <- vegSum %>% filter(nPlots >3) %>% filter(Constancy >= 33)  %>% distinct()  #%>% rename(SiteUnit = SiteUnit))## Select only site series will enough plots
+# Hier.units <- Hier.clean %>% dplyr::select(SiteUnit, Class, Order, Suborder) %>% distinct()
+# Hier.data <- left_join(Hier.units, SS_good) %>% filter(!is.na(nPlots)) %>% arrange(Species) %>% distinct()
 #fwrite(Hier.data, './inputs/SiteUnitForested_w_HierarchyUnits.csv')
 ```
 

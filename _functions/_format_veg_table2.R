@@ -44,8 +44,10 @@ format_veg_table2 <- function(vsum = vegSum, spp = species){
   #                           "10" ~ "D",
   #                           "11" ~ "D",
   #                           "12" ~ "C")
-  vsum <- vsum[ order(match(vsum$Scientific, indic.order$ScientificName)), ]
-  
+  #vsum <- vsum[ order(match(vsum$Scientific, indic.order$ScientificName)), ]
+  if (exists("indic.order") && "ScientificName" %in% names(indic.order)) {
+    vsum <- vsum[ order(match(vsum$Scientific, indic.order$ScientificName)), ]
+  }
   vsum2 <-   vsum %>% select(order(colnames(vsum))) %>%  
    select(Layer, `Scientific name`, everything()) %>% 
     relocate(`Common name`, .after = last_col()) %>%

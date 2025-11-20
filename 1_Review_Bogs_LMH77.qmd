@@ -280,7 +280,7 @@ create_VGS_table <- function(veg.sum.table, table.name = ""){
 ```{r report table}
 #vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
 #veg.dat2 <- lump_species_strata(vegdata = vegdata, lump, use.subtaxa = FALSE)
-su <- su %>% mutate(SiteUnit = ifelse(SiteUnit %in% c("Wb53.1", "Wb53.2"), "Wb53", SiteUnit)) 
+su <- su %>% mutate(SiteUnit = ifelse(SiteUnit %in% c("Wb53.2", "Wb53.3"), "Wb53", SiteUnit)) 
 unit.choose <- su %>% pull(SiteUnit)
 table.name1 <- "Bogs1"
 unit.choose <- c("Wb50", "Wb51", "Wb52", "Wb53", "Wb54", "Wb55.1", "Wb55.2", "Wb56", "Wb57", "Wb58")

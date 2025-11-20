@@ -51,6 +51,7 @@ require(purrr)
 require(ggplotify)
 require(grid)
 require(data.tree)
+library(stats)
 set.seed(1279)
 source("./_functions/_bec_dist.R")
 source("./_functions/_bec_dist_matrix.R")
@@ -79,6 +80,7 @@ source('./_functions/_draw_dendro_split.R')
 source('./_functions/_cluster_groups.R')
 source('./_functions/_TabletoTree.R')
 source('./_functions/_build_species_ordering_hier.R')
+source("./_functions/_cluster_by_spp_group.R")
 ```
 
 # Introduction
@@ -113,7 +115,7 @@ db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/CoastGuide_Forested.accdb"
 #db <- "D:/BC_Correlation2_Vpro_2023/Coast_Association_Exercise.accdb"
 su <- combined_su(db)
 su <- su %>%
-  filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|unplaced|support', SiteUnit))  %>% arrange(SiteUnit)#
+  filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|unplaced|omit|support', SiteUnit))  %>% arrange(SiteUnit)#
 #   filter(grepl('01', SiteUnit)) ###zonal specific
 su2 <- su %>% select(-SiteUnit.orig) %>%
 filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
@@ -123,45 +125,104 @@ ss.unique <- su2 %>% select(SiteUnit, bgc) %>% distinct
 ss.count <- length(ss.unique$SiteUnit)
  becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;")
 plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
+plot.edatope <- dbReadTable(becmaster, "BECMaster_fixing_edatopic")
 dbDisconnect(becmaster)
+
+#asmr.codes <- fread("./inputs/asmr_codes.csv")
+remove = c("Gg", "Ro", "Gs", "Rt", "Gb", "00", "/x", "Bb", "Br", "/Fm", "Fl")
+becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2024.accdb;")
+BGC_all <- dbReadTable(becdb, "tblBGC_UnitsWorkingandArchive") %>% 
+  filter(is.na(VersionRetired)) %>% select(FSRegion, BGC_NoSpace)
+edatopic <- dbReadTable(becdb, "Edatopic_v13_3") %>% #filter(is.na(Ignore)) %>% 
+  mutate(rSMR = paste0("rSMR", substr(Edatopic, 2, 2))) %>% 
+    mutate(SNR = substr(Edatopic, 1, 1)) %>% 
+ filter(startsWith(Source, "BEC")) %>% select(BGC, rSMR, SNR, SS_NoSpace, Edatopic) %>% distinct %>% filter(!str_detect(SS_NoSpace, paste(remove, collapse = "|"))) %>% 
+  mutate(SiteUnit = gsub("/", "_", SS_NoSpace)) 
+dbDisconnect(becdb)
+
+rsmr_asmr.long <- fread("../aSMR_X_rSMR/outputs/modelled_aSMR_by_rSMR_long.csv") %>% filter(cmd.type == "CMD", PERIOD == "1961_1990")
+SS.edatopic <- left_join(edatopic, rsmr_asmr.long, by = c("BGC", "rSMR")) %>%
+  #mutate(SiteUnit = gsub("/", "_", SiteUnit)) %>%
+  select(BGC, rSMR, SNR, SiteUnit, Edatopic, aSMR) %>%
+  #filter(!is.na(rSMR_value)) %>% 
+  distinct()
+SS.edatopic.range <- SS.edatopic %>% group_by(SiteUnit) %>% 
+  summarise(SNR.range = paste0(min(SNR), "_", max(SNR)), rSMR = paste0(min(rSMR), "_", max(rSMR)), aSMR = paste0(min(aSMR), "_", max(aSMR)) ) %>%
+  ungroup() %>% 
+  mutate(SiteUnit = gsub("/", "_", SiteUnit)) %>%
+  select(SiteUnit, SNR.range, rSMR, aSMR)
+#%>% 
+  #mutate(rSMR = as.numeric(substr(rSMR, nchar(rSMR), nchar(rSMR))))
+
+
+## export list of site units in the analysis with columns for all hierarchical units. This file can be edited to hardwire site series group membership
+### ONLY RUN ONCE. CHECK AT END OF PROCESS THAT ALL NAMES ARE ACCOUNTED FOR
+    # hierarchy_ss <- ss.unique %>% 
+    # mutate(Subass = "", Association = "", assoc_method = "", Suball = "", Alliance = "", Subord = "", Order = "", Class = "") %>%
+    # arrange(SiteUnit)
+    #fwrite(hierarchy_ss,  "./hierarchy/coast_siteunits_hierarchy_membership.csv")
+
 bgc.units<- dbConnect(
   odbc::odbc(),
   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2024.accdb;")
 bgcv12 <- dbReadTable(bgc.units, "tblBGC_UnitsWorkingandArchive")
 dbDisconnect(bgc.units)
 bgcv13 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% select(BGC_NoSpace, SiteClassificationStatus)
+
 ```
 
-```{r interior site units, echo=FALSE}
-# db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
-# su <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb"
-# su2 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Cariboo_LMH39_Sorts.accdb"
-# su3 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/KootenayBoundary_Sorts.accdb"
-# su4 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Skeena_LMH26_Sorts.accdb"
-# su5 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/ThompsonOK_Sorts.accdb"
-# su6 <- combined_su(db)
 
-#su <- rbind(su, su2, su3, su4, su5, su6)
-#xx <- su %>% filter(PlotNumber == "K780448")
-# su <- su %>%
-#   filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|unplaced', SiteUnit))
-# su <- su %>% select(-SiteUnit.orig) %>% mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct() %>% mutate(zone = str_extract(bgc, "([A-Z]+)"))
-# bgc.unique <- su %>% distinct(bgc)
-# no.su <- anti_join(bgcv13, bgc.unique, by = c("BGC_NoSpace" = "bgc")) %>% filter(!SiteClassificationStatus == "none")
-# ###write combined SU to database
-# # master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
-# # DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
-# # dbWriteTable(master_su, "All_BC_zonals2_SU",  su, overwrite = TRUE, batch_rows = 1)
-# # dbDisconnect(master_su)
-# xx <- su %>% filter(SiteUnit == "IDFww1_101.2")
-# su <- su %>%
-# filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|MHwh', SiteUnit))###BGC specific|CWHms
+## Cluster analysis and dendrogram of all site units
 
+The agglomerative clustering algorithm AGNES successively groups site units based on dissimilarity. It successively merges site units from the bottom up (most similar units get grouped first). Because units or initial clusters may have near equal dissimilarity to neighbours in two directions, the algorithm may not be able to maintain an exact ordering of dissimilarity. We evaluate the cluster analysis using two metrics. 
+1) The cophenetic correlation coefficient (CCC) evaluate how well a hierarchical clustering dendrogram preserves the original pairwise distances between observations. The closer CCC is to 1, the better it represents the original distance matrix. Lower numbers indicate that some branchlets of the dendrogram can be associated with more than one branch. 
+2) The agglomerative coefficient (AC) is a metric that quantifies the strength of the clustering structure. The closer AC is to 1 indicates strong clustering structure and the observations are tightly grouped by low dissimilarity. This will be affected by the breadth/size of the analysis where a larger number of site units will tend to have lower AC values.
+
+We chose to use the clustering method that maximizes the CCC. We tested a number of methods: complete, average, single, ward,  weighted, and flexible (at a wide range of settings). The "average" method consistently produced the highest cophenetic values so we applied this as the standard method for clustering.
+
+In the dendrograms, the red line represents the minimum threshold for separating site units into separate subassociations. This is set at 10% dissimilarity, but in some BGCs we separate some site series to as low as 7% dissimilarity.
+The green line represents the dissimilarity threshold for an association. The initial threshold is set at 20% based on review.
+
+
+
+
+```{r build pair.wise similarity matrix, echo=FALSE, message=FALSE, warning=FALSE}}
+
+key.site.indicators <- c("POPUTRI", "LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG", "NEPHCRI", "PICESIT")#,  "TIARELLA", "DRYOEXP" "PICESIT", )
+reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
+# reduced.lifeforms = c(1,2)
+reduced.lifeforms <- c(9, 10, 11)#1, 2, 
+### select units to run
+#su2 <- su2 %>% filter(grepl('101', SiteUnit))# %>%
+#  mutate(SiteUnit = gsub("\\.(1|2)$", "", SiteUnit))
+# %>% filter(!grepl('ms',SiteUnit))
+#fwrite(su2, "./CoastGuide_Forest_101_SU.csv")
+
+su_working <- su2 #su_hier %>%
+#mutate(unit_working = ifelse(!is.na(unit_assigned) & unit_assigned != "", unit_assigned, SiteUnit)) %>% select(PlotNumber, unit_working) %>% rename(SiteUnit = unit_working)
+#tic()
+vegsum.pairs <- do_pairwise(veg.dat2, 
+  su = su_working, minimportance = 0.1, minconstancy = 60,
+  noiseconstancy = 10,
+  minplots = 1,  minor = 1,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  reduced.exceptions = reduced.exceptions
+)
+toc()
+
+unit.compare <- vegsum.pairs %>%
+  select(Unit1, Unit2, BEC.sim.min, BEC.sim.mean , BEC.sim.max, diff.ratio.x, diff.ratio.y, diff.ratio, nplots.x, nplots.y, unit.diag.sum.x, unit.diag.sum.y) %>% filter(nplots.x>0) %>% mutate(metric.diff = BEC.sim.max - BEC.sim.min) %>%
+ distinct()
+unit.compare$bgc1 <- stringr::word(unit.compare$Unit1, 1, sep = "\\_")
+unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
+
+unit.compare <- vegsum.pairs %>% filter(nplots.x > 0, Unit1 != Unit2) %>%  
+  select(Unit1, Unit2, Species, BEC.sim.min, nplots.x, unit.diag.sum.x) %>% 
+  distinct()
+
+bec_dist_matrix <- bec_dist_matrix(vegsum.pairs, distance = "BEC.sim.min") %>% data.frame
+write.csv(bec_dist_matrix, "./clean_tabs/LMH77_Forest_Distance_matrix.csv")
 
 ```
 
@@ -174,14 +235,376 @@ bgcv13 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% select(BGC_NoSpace, SiteC
 3.  Compare site series within each BGCs to identify site series below the minimal threshold to separate
 
 Some units with few plots or low diagnostics fall out as singles in the first pass cluster analysis. These are reviewed and merging rules applied before re-running the cluster analysis.
+List of site series with too few plots or low diagnostic potential for reliable analysis 
+```{r site series with too few plots, echo=FALSE}
+#| label: tab-too-few-plots
+#| fig-cap: "Site Units with Fewer than 5 Plots"
+#| warning: false
+#| fig-align: "left"
 
-```{r merge reviewed singles, echo=FALSE}
-merge <- fread("./clean_data/MergeUnits.csv") %>% as.data.table
-setDT(su2)[merge, SiteUnit := mergedUnit, on = "SiteUnit"]
+compared <- unit.compare
+ss_too.few <- compared %>%
+  select(Unit1, nplots.x) %>% 
+  filter(nplots.x < 5) %>% 
+  rename("Number of Plots" = nplots.x, "Site Unit" = Unit1) %>% 
+  distinct()
+# low.num <- gt::as_gtable(gt::gt(ss_too.few) %>% gt::fmt_number(decimals = 0)|> gt::tab_options(table.font.size = 10), plot = TRUE)
+num_units <- ss_too.few %>% 
+  pull(`Site Unit`) %>% 
+  n_distinct()
+col_label <- paste0("Site Unit (", num_units, ")")
+
+  gt::gt(ss_too.few ) %>%
+  gt::fmt_number(columns = "Number of Plots", decimals = 0) %>%
+  gt::tab_options(table.font.size = 10) %>%
+  gt::cols_label(`Site Unit` = col_label) %>% 
+  gt::tab_options(table.font.size = 10)
 
 ```
 
-```{r build pair.wise similarity matrix, echo=FALSE}
+```{r site series with low diagnostic potential, echo=FALSE}
+#| label: tab-low-diagnostic
+#| fig-cap: "Site Units with Low Diagnostic Potential"
+#| warning: false
+#| fig-align: "left"
+
+ss_low.diag <- compared %>%
+  select(Unit1, unit.diag.sum.x)  %>% 
+  filter(unit.diag.sum.x < 30) %>% 
+  rename("Diagnostic Potential" = unit.diag.sum.x, "Site Unit" = Unit1) %>%
+  distinct()
+# low.diag.pot <- gt::as_gtable(gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10), plot = TRUE)
+num_units <- ss_low.diag %>% 
+  pull(`Site Unit`) %>% 
+  n_distinct()
+col_label <- paste0("Site Unit (", num_units, ")")
+
+  gt::gt(ss_low.diag) %>%
+  gt::fmt_number(columns = "Diagnostic Potential", decimals = 0) %>%
+  gt::tab_options(table.font.size = 10) %>%
+  gt::cols_label(`Site Unit` = col_label) %>% 
+  gt::tab_options(table.font.size = 10)
+```
+Probably the best approach is separate site units into already defined Orders or SubOrders based on tree species composition, then cluster within hierarchical unit. 
+```{r}
+
+source("./_functions/_evaluate_clustering_by_group2.R")
+
+### Chunk here could feed in major analysis groups such as Orders
+hierarchy <- fread("./hierarchy/coast_siteunits_hierarchy_membership.csv") %>% mutate_if(is.logical, as.character) # from ML upper hierarchy
+group.table <- hierarchy %>% select(SiteUnit, Order)
+
+
+
+clustering_results <- evaluate_clustering_by_group(
+  unit.compare = unit.compare,
+  grouping_table = group.table,
+  clst_method = "average",
+  siteunit_col = "SiteUnit",
+  analgroup_col = "Order")
+
+gt::gt(clustering_results) %>%
+  gt::fmt_number(columns = c("CCC", "AC"), decimals = 3) |>
+  gt::tab_options(table.font.size = 10) |>
+  gt::cols_label(
+    CCC = "Cophenetic Correlation",
+    AC = "Agglomerative Coefficient"
+  )
+
+```
+
+### Step2. Feed in hard-coded merged site units from a previous process
+Zonal groups from independent scripts
+Some 102 groups are from a manual merge in the intial correlation work. Most site units have low plot numbers and were grouped on major indicators and 'logical' climatic grouping 
+```{r merge reviewed singles, echo=FALSE}
+source("./_functions/_assign_manual_cluster.R")
+zonal.groups = fread("./hierarchy/LMH77_zonal_assoc_memberships.csv")
+# su_zonal <- assign_manual_cluster(su.tab = su2, cluster.file = zonal.groups ,
+#                                  group_col = "assigned_assoc",
+#                                    use_last_step = FALSE)
+hierarchy <- fread("./hierarchy/coast_siteunits_hierarchy_membership.csv") %>% mutate_if(is.logical, as.character) 
+## update membership of zonal associations
+hierarchy[zonal.groups, unit_working := unit_assigned, on = "SiteUnit"] 
+
+hierarchy <- as.data.frame(hierarchy) %>% mutate(unit_method = ifelse(SiteUnit %in% zonal.groups$SiteUnit, "Zonal", unit_method)) %>% as.data.frame
+fwrite(hierarchy, "./hierarchy/coast_siteunits_hierarchy_membership.csv")
+
+su_hier <- left_join(su2, hierarchy)
+# 
+su_updated <- su_hier %>% 
+  mutate(SiteUnit = ifelse(!is.na(unit_working) & unit_working != "", unit_working, SiteUnit)) %>%
+  select(PlotNumber, SiteUnit, Order) 
+
+```
+
+```{r build pair.wise similarity matrix, echo=FALSE, message=FALSE, warning=FALSE}}
+
+su_working <- su_updated #su_hier %>%
+#mutate(unit_working = ifelse(!is.na(unit_assigned) & unit_assigned != "", unit_assigned, SiteUnit)) %>% select(PlotNumber, unit_working) %>% rename(SiteUnit = unit_working)
+#tic()
+vegsum.pairs <- do_pairwise(veg.dat2, 
+  su = su_working, minimportance = 0.1, minconstancy = 60,
+  noiseconstancy = 10,
+  minplots = 1,  minor = 1,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .25,
+  reduced.exceptions = reduced.exceptions
+)
+toc()
+
+unit.compare <- vegsum.pairs %>% filter(nplots.x > 0, Unit1 != Unit2) %>%  
+  select(Unit1, Unit2, Species, BEC.sim.min, nplots.x, unit.diag.sum.x) %>% 
+  distinct()
+
+# bec_dist_matrix <- bec_dist_matrix(vegsum.pairs, distance = "BEC.sim.min") %>% data.frame
+# write.csv(bec_dist_matrix, "./clean_tabs/LMH77_Forest_Distance_matrix.csv")
+
+```
+
+### flag units with few plots or low diagnostics to remove before running clustering or to view within dendrogram.
+```{r site dendrogram split, echo=FALSE}
+source("./_functions/_bec_dist_matrix.R")
+few.plots.threshold = 7
+low.diag.threshold = 30
+
+    unit.compare2 <- unit.compare
+    include.few.plots <- TRUE
+    if (include.few.plots) {
+    unit.few <- unit.compare2 %>%
+        filter(nplots.x < few.plots.threshold) %>%
+        select(Unit1) %>% #, nplots.x) %>%
+        distinct()}
+    include.low.diag <- TRUE
+    if (include.low.diag) {
+      unit.simple <- unit.compare2 %>%
+        filter(unit.diag.sum.x < low.diag.threshold) %>%
+        select(Unit1) %>% #, unit.diag.sum.x) %>%
+        distinct()
+    }
+    unit.poor <- bind_rows(unit.few, unit.simple) 
+    
+    unit.compare.poor <- unit.compare %>% filter(Unit1 %in% unit.poor$Unit1 & Unit2 %in% unit.poor$Unit1)
+    unit.compare.good <- unit.compare %>% filter(!Unit1 %in% unit.poor$Unit1 & !Unit2 %in% unit.poor$Unit1) 
+    #hierarchy.groups <- hierarchy %>% filter(SiteUnit %in% anal.group.choose$SiteUnit) %>% filter(!is.na(unit_assigned), unit_assigned != "")
+    #anal.group.choose[hierarchy.groups, SiteUnit := unit_assigned, on = "SiteUnit"]
+    unit.compare.anal <- unit.compare.good 
+
+```
+
+
+### First Iteration: Stepwise cluster lumping by analysis group (Order)
+
+Successively merges units at a specified dissimilarity threshold.
+
+```{r}
+source("./_functions/_stepwise_cluster_lumping.R")
+su_order <- su_updated %>% filter(Order == "CWH") %>% arrange(SiteUnit)
+order_siteunits <- su_order  %>% select(SiteUnit) %>% distinct() %>% pull(SiteUnit)
+unit.compare.anal <- unit.compare.good %>% filter(Unit1 %in% order_siteunits, Unit2 %in% order_siteunits)
+
+unit_lineage <- stepwise_cluster_lumping(
+  unit.compare = unit.compare.anal,
+  combine.level = 0.4, ## Alliance Level
+  max.steps = 1,
+  stop.no.change = TRUE,
+  verbose = TRUE,
+  initial.groups = NULL
+)
+last_column <- names(unit_lineage)[ncol(unit_lineage)]
+unit_lineage<- unit_lineage %>%
+  select(OriginalUnit, all_of(last_column)) %>% rename(unit_working_update = 2)
+
+#su_updated <- left_join(su2, unit_lineage, by = c("SiteUnit" = "OriginalUnit")) %>% distinct %>% mutate(Association = Step3_Group) %>% select(PlotNumber, SiteUnit, Association)
+
+#ss.unique <- su2 %>% select(SiteUnit) %>% distinct()
+
+su_cluster1 <- left_join(su_order, unit_lineage, by = c("SiteUnit" = "OriginalUnit")) %>%  mutate(SiteUnit = unit_working_update) %>%  select(-unit_working_update)
+#   select(SiteUnit, Set_Association, Association_modelled) #%>% mutate(Association_modelled = sub(".*_", "", Association_modelled))
+# su.no.group <- su_unit_lineage %>% filter(is.na(Association_modelled)) %>% select(SiteUnit, Set_Association) %>% mutate(Association_modelled = "no group") %>%
+#   mutate(SiteUnit = paste0(SiteUnit, "_no_group")) %>% distinct()
+# 
+# #su_unit_lineage <- su_unit_lineage %>% filter(!is.na(Association_modelled))
+# 
+# su_updated3 <- left_join(su_updated, su_unit_lineage,  by = c("SiteUnit" = "SiteUnit")) %>% select(PlotNumber, SiteUnit, Association_modelled)
+    
+    association_results <- cluster_by_spp_group(
+  unit.compare.anal,
+  analysis_tab = NULL,
+  group_var = NULL,
+  group = NULL,
+  cut.level = 0.4,
+  combine.level = 0.2,
+  include.low.diag = TRUE,
+  low.diag.threshold = 1,
+  include.few.plots = TRUE,
+  few.plots.threshold = 1,
+  output.file = "initial_association_memberships.csv"
+ )
+zz <- fread("initial_association_memberships.csv")
+
+```
+#### Export vegetation summary tables of site units by prospective associations
+
+```{r build veg guide summary and export to excel, echo = FALSE, warning=FALSE, message=FALSE}
+require(openxlsx)
+require(tictoc)
+library(stringr)
+data.path = "D:/OneDrive - Government of BC/GitHub_data"
+author <- "alliance1-CWH "
+su_update <- su_cluster1 %>% rename(Working = SiteUnit) %>% as.data.table
+setDT(su2)
+su3 <- merge(su2, su_update[, .(PlotNumber, Working)], by = "PlotNumber", all.x = TRUE)
+
+#assoc.list <- coast.units %>% filter(!is.na(Association_clst)) %>% group_by(Association_clst) %>% mutate(n=n()) %>% filter(n>2) %>% distinct(Association_clst) %>% pull(Association_clst)
+unit.list <- su3 %>% filter(!is.na(Working)) %>%  select(SiteUnit, Working) %>% distinct() %>% group_by(Working) %>% mutate(n=n()) %>% filter(n > 0) %>% arrange(desc(n)) %>%  distinct(Working) %>% pull(Working)
+#assoc.choose = "Step3_Grp1"
+vegsum.wbk <- createWorkbook()
+for(unit.choose in unit.list){
+#assoc.choose = "assoc-MC102"
+assoc.plots <- su3 %>% filter(Working %in% unit.choose) %>% select(PlotNumber, SiteUnit)# %>% mutate(SiteUnit = gsub(" ", "", SiteUnit)) %>% mutate(SiteUnit = str_replace(SiteUnit, "/", "_"))
+su.assoc <- left_join(assoc.plots, su3) #%>%  mutate(SiteUnit = Working) %>% distinct()
+veg.dat.assoc <- veg.dat2 %>% filter(PlotNumber %in% su.assoc$PlotNumber)
+# vegsum.wbk <- createWorkbook()
+# #bgc.choose = "CDFmmtab2"
+# #for(bgc.choose in bgc.list){
+vegSum <-
+  create_veg_sum_all(vdat = veg.dat.assoc, siteUnits = su.assoc, strata.by = "Lifeform")
+
+#indic.order <- build_species_ordering_hier(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc, hier.level = "Working")
+veg.sum.table <- format_veg_table2(vsum = vegSum, spp=taxon.lifeform)
+## add in aSMR and SNR from edatopic tables conversion and climate summary data
+su.units <- su.assoc %>% select(SiteUnit) %>% distinct %>% pull(SiteUnit)
+#  mutate(SiteUnit = str_replace(SiteUnit, "\\.(1|2)$", "")) %>% 
+
+ss.edatopic <- SS.edatopic.range %>% filter(SiteUnit %in% su.units) %>% select(SiteUnit, rSMR, SNR.range, aSMR) %>% t %>% as.data.frame() 
+# Promote first row to column names
+colnames(ss.edatopic) <- ss.edatopic[1, ]
+ss.edatopic <- ss.edatopic[-1, ]
+
+ss.edatopic <- as.data.frame(ss.edatopic) %>% rownames_to_column(var = "Scientific name") %>%
+  mutate(Layer = "Env") %>% select(Layer, `Scientific name`, everything()) %>%  mutate(`Common name` = "Env")
+full.table <- bind_rows(veg.sum.table, ss.edatopic)
+openxlsx::addWorksheet(vegsum.wbk, sheetName = unit.choose)
+openxlsx::writeData(vegsum.wbk, sheet = unit.choose, full.table)
+}
+
+saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_assoc_tables_", author, ".xlsx"), overwrite = TRUE)
+
+```
+
+### Second Iteration: Compare first iteration cluster units
+Run again to see if any of the initial groups now merge with other associations
+
+```{r}
+
+# key.site.indicators <- c("POPUTRI", "LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG")#,  "TIARELLA", "DRYOEXP" "PICESIT", )
+# reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
+# reduced.lifeforms = c(1,2)
+#reduced.lifeforms <- c(9, 10, 11)
+### select units to run
+#su2 <- su2 %>% filter(grepl('101', SiteUnit))# %>%
+#  mutate(SiteUnit = gsub("\\.(1|2)$", "", SiteUnit))
+# %>% filter(!grepl('ms',SiteUnit))
+#fwrite(su2, "./CoastGuide_Forest_101_SU.csv")
+tic()
+vegsum.pairs <- do_pairwise(veg.dat2, 
+  su = su_cluster1, minimportance = 0.1, minconstancy = 60,
+  noiseconstancy = 10,
+  minplots = 1,  minor = 1,
+  use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
+  reduced.exceptions = reduced.exceptions
+)
+toc()
+
+unit.compare.assoc <- vegsum.pairs %>%
+  select(Unit1, Unit2, BEC.sim.min, BEC.sim.mean , BEC.sim.max, diff.ratio.x, diff.ratio.y, diff.ratio, nplots.x, nplots.y, unit.diag.sum.x, unit.diag.sum.y) %>% filter(nplots.x>0) %>% mutate(metric.diff = BEC.sim.max - BEC.sim.min) %>%
+ distinct()
+unit.compare$bgc1 <- stringr::word(unit.compare$Unit1, 1, sep = "\\_")
+unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
+
+unit.compare.assoc<- vegsum.pairs %>% filter(nplots.x > 0, Unit1 != Unit2) %>%  
+  select(Unit1, Unit2, Species, BEC.sim.min, nplots.x, unit.diag.sum.x) %>% 
+  distinct()
+
+association_results <- cluster_by_spp_group(
+  unit.compare.assoc,
+  analysis_tab = NULL,
+  group_var = NULL,
+  group = NULL,
+  cut.level = 0.4,
+  combine.level = 0.2,
+  include.low.diag = TRUE,
+  low.diag.threshold = 1,
+  include.few.plots = TRUE,
+  few.plots.threshold = 1,
+  output.file = "initial_association_memberships.csv"
+ )
+zz <- fread("initial_association_memberships.csv")
+```
+
+### Second Iteration: Stepwise cluster lumping into new proto associations
+Merge initial groups into new groups 
+```{r}
+unit_lineage2 <- stepwise_cluster_lumping(
+  unit.compare = unit.compare.assoc,
+  combine.level = 0.25,
+  max.steps = 20,
+  stop.no.change = TRUE,
+  verbose = TRUE,
+  initial.groups = NULL
+)
+last_column <- names(unit_lineage2)[ncol(unit_lineage2)]
+unit_lineage2 <- unit_lineage2 %>%
+  select(OriginalUnit, all_of(last_column)) %>% rename(unit_working_update = 2)
+
+#su_updated <- left_join(su2, unit_lineage, by = c("SiteUnit" = "OriginalUnit")) %>% distinct %>% mutate(Association = Step3_Group) %>% select(PlotNumber, SiteUnit, Association)
+
+#ss.unique <- su2 %>% select(SiteUnit) %>% distinct()
+
+su_cluster2 <- left_join(su_cluster1, unit_lineage2, by = c("SiteUnit" = "OriginalUnit")) %>%  mutate(SiteUnit = unit_working_update) %>%  select(-unit_working_update)
+```
+#### Export second iteration vegetation summary tables of site units by prospective associations
+
+```{r build veg guide summary and export to excel, echo = FALSE, warning=FALSE, message=FALSE}
+require(openxlsx)
+require(tictoc)
+library(stringr)
+data.path = "D:/OneDrive - Government of BC/GitHub_data"
+author <- "cluster2-20"
+su_update <- su_cluster2 %>% rename(Working = SiteUnit) %>% as.data.table
+setDT(su2)
+su3 <- merge(su2, su_update[, .(PlotNumber, Working)], by = "PlotNumber", all.x = TRUE) %>% as.data.frame
+
+#assoc.list <- coast.units %>% filter(!is.na(Association_clst)) %>% group_by(Association_clst) %>% mutate(n=n()) %>% filter(n>2) %>% distinct(Association_clst) %>% pull(Association_clst)
+unit.list <- su3 %>% filter(!is.na(Working)) %>%  select(SiteUnit, Working) %>% distinct() %>% group_by(Working) %>% mutate(n=n()) %>% filter(n > 5) %>% arrange(desc(n)) %>%  distinct(Working) %>% pull(Working)
+#assoc.choose = "Step3_Grp1"
+vegsum.wbk <- createWorkbook()
+for(unit.choose in unit.list){
+#assoc.choose = "assoc-MC102"
+assoc.plots <- su3 %>% filter(Working %in% unit.choose) %>% select(PlotNumber, SiteUnit)# %>% mutate(SiteUnit = gsub(" ", "", SiteUnit)) %>% mutate(SiteUnit = str_replace(SiteUnit, "/", "_"))
+su.assoc <- left_join(assoc.plots, su3) %>%  as.data.frame %>% distinct()
+veg.dat.assoc <- veg.dat2 %>% filter(PlotNumber %in% su.assoc$PlotNumber)
+# vegsum.wbk <- createWorkbook()
+# #bgc.choose = "CDFmmtab2"
+# #for(bgc.choose in bgc.list){
+vegSum <-
+  create_veg_sum_all(vdat = veg.dat.assoc, siteUnits = su.assoc, strata.by = "Lifeform")
+
+#indic.order <- build_species_ordering_hier(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc, hier.level = "Working")
+veg.sum.table <- format_veg_table2(vsum = vegSum, spp=taxon.lifeform)
+openxlsx::addWorksheet(vegsum.wbk, sheetName = unit.choose)
+openxlsx::writeData(vegsum.wbk, sheet = unit.choose, veg.sum.table)
+}
+
+saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_assoc_tables_", author, ".xlsx"), overwrite = TRUE)
+
+```
+
+
+Run a third iteration to see if any of the initial groups now merge with other associations
+
+```{r}
 
 key.site.indicators <- c("POPUTRI", "LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG")#,  "TIARELLA", "DRYOEXP" "PICESIT", )
 reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
@@ -193,300 +616,332 @@ reduced.lifeforms <- c(9, 10, 11)
 # %>% filter(!grepl('ms',SiteUnit))
 #fwrite(su2, "./CoastGuide_Forest_101_SU.csv")
 tic()
-vegsum.pairs <- do_pairwise(veg.dat2,
-  su = su2, minimportance = 0.1, minconstancy = 60,
+vegsum.pairs <- do_pairwise(veg.dat2, 
+  su = su_cluster2, minimportance = 0.1, minconstancy = 60,
   noiseconstancy = 10,
   minplots = 1,  minor = 1,
-  use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 1.5,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
   reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
   reduced.exceptions = reduced.exceptions
 )
 toc()
-xx <- vegsum.pairs %>%
-  filter(Unit1 == "CWHws2_112a", Unit2 == "CWHws2_112b")
 
-unit.compare <- vegsum.pairs %>%
+unit.compare.assoc <- vegsum.pairs %>%
   select(Unit1, Unit2, BEC.sim.min, BEC.sim.mean , BEC.sim.max, diff.ratio.x, diff.ratio.y, diff.ratio, nplots.x, nplots.y, unit.diag.sum.x, unit.diag.sum.y) %>% filter(nplots.x>0) %>% mutate(metric.diff = BEC.sim.max - BEC.sim.min) %>%
  distinct()
 unit.compare$bgc1 <- stringr::word(unit.compare$Unit1, 1, sep = "\\_")
 unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
 
-yy <- vegsum.pairs %>% 
-  select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, BEC.sim.min,BEC.sim.mean) %>% 
-  filter(Unit1 == "CWHws2_101", Unit2 == "CWHws2_110")
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/CoastGuide_Forested.accdb"
-coast.units <- combined_su(db) %>% select(SiteUnit) %>% distinct
- dis.matrix <- bec_dist_matrix(unit.compare, distance = "BEC.sim.min") %>% as.data.frame %>% rownames_to_column("SiteUnit")
- unit
-examine <- dis.matrix %>% filter(SiteUnit == "CWHms5_101.2") %>% pivot_longer(- SiteUnit, names_to = "SiteUnit2", values_to = "BEC.sim.min") %>%
-  filter(BEC.sim.min <= 0.4) %>% select(SiteUnit2, BEC.sim.min) %>% arrange(desc(BEC.sim.min))
+unit.compare.assoc<- vegsum.pairs %>% filter(nplots.x > 0, Unit1 != Unit2) %>%  
+  select(Unit1, Unit2, Species, BEC.sim.min, nplots.x, unit.diag.sum.x) %>% 
+  distinct()
 
+association_results <- cluster_by_spp_group(
+  unit.compare.assoc,
+  anal.groups=NULL,
+  cut.level = 0.7,
+  combine.level = 0.2,
+  include.low.diag = TRUE,
+  low.diag.threshold = 1,
+  include.few.plots = TRUE,
+  few.plots.threshold = 1,
+  output.file = "initial_association_memberships.csv"
+ )
+zz <- fread("initial_association_memberships.csv")
 ```
 
-### Cluster analysis and dendrogram of zonal ecosystems
-```{r zonal dendrogram, echo=FALSE}
 
-anal.groups <- fread("./clean_tabs/Forest_Analysis_Groups.csv") %>%
-  group_by(Spp.group) %>%
-  #filter(n_distinct(SiteUnit) > 2) %>%
-  ungroup() %>% as.data.table
+#### Export vegetation summary tables of site units by prospective associations
 
-anal.groups[, SiteUnit := gsub("/", "_", gsub(" ", "", SiteUnit))]
-anal.groups <- as.data.frame(anal.groups)
-anal.groups <- anal.groups %>% mutate(Spp.group = 'All')
-spp.groups <- unique(anal.groups$Spp.group)
-#spp.groups = c("Coastal_High", "Coast") # "Boreal", "Coast", "Interior", "Mediterranean", "Subalpine", "Temperate"
-#grp = "CwHw"
-zonal.compare<- unit.compare %>% filter(grepl('101', Unit1) | grepl('101', Unit2)) 
-# Create a list to store results
-cluster_results <- list()
+```{r build veg guide summary and export to excel, echo = FALSE, warning=FALSE, message=FALSE}
+require(openxlsx)
+require(tictoc)
+library(stringr)
+data.path = "D:/OneDrive - Government of BC/GitHub_data"
+author <- "cluster2-15"
+su_update <- su_cluster3 %>% rename(Working = SiteUnit) %>% as.data.table
+setDT(su2)
+su3 <- merge(su2, su_update[, .(PlotNumber, Working)], by = "PlotNumber", all.x = TRUE)
 
-for (grp in spp.groups) {
-  # Get SiteUnits for this Spp.group
-  unit.choose <- anal.groups %>%
-    filter(Spp.group == grp) %>%
-    pull(SiteUnit) %>%
-    unique()
+#assoc.list <- coast.units %>% filter(!is.na(Association_clst)) %>% group_by(Association_clst) %>% mutate(n=n()) %>% filter(n>2) %>% distinct(Association_clst) %>% pull(Association_clst)
+unit.list <- su3%>% filter(!is.na(Working)) %>%  select(SiteUnit, Working) %>% distinct() %>% group_by(Working) %>% mutate(n=n()) %>% filter(n>=1) %>%  distinct(Working) %>% pull(Working)
+#assoc.choose = "Step3_Grp1"
+vegsum.wbk <- createWorkbook()
+for(unit.choose in unit.list){
+#assoc.choose = "assoc-MC102"
+assoc.plots <- su3 %>% filter(Working %in% unit.choose) %>% select(PlotNumber, SiteUnit)# %>% mutate(SiteUnit = gsub(" ", "", SiteUnit)) %>% mutate(SiteUnit = str_replace(SiteUnit, "/", "_"))
+su.assoc <- left_join(assoc.plots, su3) #%>%  mutate(SiteUnit = Working) %>% distinct()
+veg.dat.assoc <- veg.dat2 %>% filter(PlotNumber %in% su.assoc$PlotNumber)
+# vegsum.wbk <- createWorkbook()
+# #bgc.choose = "CDFmmtab2"
+# #for(bgc.choose in bgc.list){
+vegSum <-
+  create_veg_sum_all(vdat = veg.dat.assoc, siteUnits = su.assoc, strata.by = "Lifeform")
 
-  # Skip if fewer than 2 SiteUnits
-  if (length(unit.choose) < 2) next
-
-  # Filter unit.compare based on SiteUnits
-  unit_subset <- zonal.compare %>%
-    filter(Unit1 %in% unit.choose, Unit2 %in% unit.choose)
-
-  unit.few <- unit_subset %>%
-    filter(nplots.x < 5) %>%
-    select(Unit1, nplots.x) %>%
-    distinct()
-
-  unit.simple <- unit_subset %>%
-    filter(unit.diag.sum.x < 25) %>%
-    select(Unit1, unit.diag.sum.x) %>%
-    distinct()
-
-  unit.compare2 <- unit_subset %>%
-    mutate(Unit1.new = ifelse(Unit1 %in% unit.few$Unit1, paste0(Unit1, "-nplot"), Unit1),
-           Unit2.new = ifelse(Unit2 %in% unit.few$Unit1, paste0(Unit2, "-nplot"), Unit2)) %>%
-    mutate(Unit1.new = ifelse(Unit1.new %in% unit.simple$Unit1, paste0(Unit1.new, "-lowdiag"), Unit1.new),
-           Unit2.new = ifelse(Unit2.new %in% unit.simple$Unit1, paste0(Unit2.new, "-lowdiag"), Unit2.new)) %>%
-    mutate(Unit1 = Unit1.new, Unit2 = Unit2.new) %>%
-    select(Unit1, Unit2, BEC.sim.min)
-
-  unit.compare3 <- unit.compare2 %>%
-    filter(!grepl("nplot|lowdiag", Unit1),
-           !grepl("nplot|lowdiag", Unit2))
-
-    # Only proceed if enough distinct SiteUnits remain for clustering
-remaining_units <- unique(c(unit.compare3$Unit1, unit.compare3$Unit2))
-if (length(remaining_units) < 2) next
-
-  # Perform clustering or dendrogram splitting
-  cut.level <- 0.4
-  singles <- draw_dendro_split(unit.compare3, cut.level = cut.level)
- # draw_dendro_split(unit.compare3, cut.level = cut.level)
+#indic.order <- build_species_ordering_hier(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc, hier.level = "Working")
+veg.sum.table <- format_veg_table2(vsum = vegSum, spp=taxon.lifeform)
+openxlsx::addWorksheet(vegsum.wbk, sheetName = unit.choose)
+openxlsx::writeData(vegsum.wbk, sheet = unit.choose, veg.sum.table)
 }
+
+saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_assoc_tables_", author, ".xlsx"), overwrite = TRUE)
+
 ```
 
+Look at edatopic space between units
+
+```{r joint distribution between unit edatopic comparison}
+library(infotheo)
+library(dplyr)
+library(tidyr)
+library(purrr)
+
+# Step 1: Prepare edatopic data
+plot.eda <- plot.edatope %>% select(PlotNumber, SNR, aSMR) %>% distinct()  %>%
+  mutate(
+    SNR = factor(SNR, levels = c("A", "B", "C", "D", "E"), ordered = TRUE),
+    aSMR.code = recode(aSMR, "0" = "XD", "1" = "ED", "2" = "VD", "3" = "MD", "4" = "SD", "5" = "F", "6" = "M", "7" = "VM", "8" = "W", "9" = "VW"),
+    #rSMR = factor(aSMR, levels = c("0", "1", "2", "3", "4", "5", "6", "7", "8"), ordered = TRUE),
+    edatopic = interaction(aSMR.code, SNR,  drop = TRUE) 
+  )%>% drop_na
+
+# Step 2: Join with associations and filter
+assoc.test <- su_updated %>% left_join(plot.eda, by = "PlotNumber")  %>% 
+  drop_na(edatopic) %>%
+  mutate(aSMR.code = factor(aSMR.code, levels = c("XD", "ED", "VD", "MD", "SD", "F", "M", "VM", "W", "VW"), ordered = TRUE)) %>% 
+  mutate(Unit = as.factor(Association_modelled))
+  #filter(Association_modelled %in% c("Step3_Grp9", "Step3_Grp24", "Step3_Grp55")) %>%
+
+# Ensure aSMR is an ordered factor from driest to wettest
+assoc.test2 <- assoc.test %>% 
+  group_by(Unit, aSMR.code) %>%
+  mutate(n = n()) %>%  ungroup() %>%
+  group_by(Unit) %>% 
+  mutate(nplots = n(), percent = 100 * n / nplots, mean.asmr = mean(aSMR)) %>%
+  ungroup() %>%
+  filter(percent >= 15) 
+
+asmr_percent <- assoc.test2 %>%
+  mutate(Unit = as.factor(Association_modelled)) %>% 
+  #filter(Unit %in% c("Step3_Grp1", "Step3_Grp2", "Step3_Grp3", "Step3_Grp4", "Step3_Grp5", "Step3_Grp6", "Step3_Grp7", "Step3_Grp8", "Step3_Grp9", "Step3_Grp10"))%>% 
+  count(Unit, aSMR.code, aSMR) %>%
+  group_by(Unit) %>%
+  mutate(percent = 100 * n / sum(n), mean.asmr = mean(aSMR)) %>%
+  ungroup()%>%
+  filter(percent >= 15)  # Remove classes <10%
 
 
-```{r site series with too few plots, echo=FALSE}
-#| label: tab-too-few-plots
-#| fig-cap: "Site Units with Fewer than 5 Plots"
-#| warning: false
-#| fig-align: "left"
+# Reorder Unit factor levels by mean.asmr
+unit_order <- asmr_percent %>%
+  distinct(Unit, mean.asmr) %>%
+  arrange(desc(mean.asmr)) %>%
+  pull(Unit)
 
-compared <- unit.compare
-ss_too.few <- compared %>%
-  select(Unit1, nplots.x) %>% 
-  filter(nplots.x < 6) %>% 
-  rename("Number of Plots" = nplots.x, "Site Unit" = Unit1) %>% 
-  distinct()
-# low.num <- gt::as_gtable(gt::gt(ss_too.few) %>% gt::fmt_number(decimals = 0)|> gt::tab_options(table.font.size = 10), plot = TRUE)
+asmr_percent <- asmr_percent %>%
+  mutate(Unit = factor(Unit, levels = unit_order))
 
-gt::gt(ss_too.few) %>% gt::fmt_number(decimals = 0)|> gt::tab_options(table.font.size = 10)
-```
+ggplot(asmr_percent, aes(x = aSMR.code, y = fct_reorder(Unit, desc(mean.asmr)), fill = percent)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(option = "C", direction = -1, name = "Percent") +
+  labs(
+    title = "aSMR Distribution by Association (Heatmap)",
+    x = "aSMR",
+    y = "Association"
+  ) +
+  theme_minimal(base_size = 8) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.major = element_blank()
+    
+# asmr_palette <- c(
+#   "XD" = "black",
+#   "ED" = "red",
+#   "VD" = "purple",
+#   "MD" = "orange",
+#   "SD" = "yellow",
+#   "F"  = "lightgreen",
+#   "M"  = "darkgreen",
+#   "VM" = "blue",
+#   "W"  = "lightblue",
+#   "VW" = "darkblue"
+# )
+# 
+# ggplot(asmr_percent, aes(x = percent, y = Unit, fill = aSMR.code)) +
+#   geom_col(position = "stack") +
+#   scale_fill_manual(values = asmr_palette, name = "aSMR") +
+#   labs(
+#     title = "Percent of Plots by aSMR for Each Association",
+#     x = "Percent of Plots",
+#     y = "Association"
+#   ) +
+#   theme_minimal(base_size = 12) +
+#   theme(
+#     axis.text.y = element_text(size = 8),
+#     panel.grid.major.y = element_blank())
+    
+# library(plotly)
+# 
+# p <- ggplot(asmr_percent, aes(x = aSMR.code, y = percent, fill = aSMR.code)) +
+#   geom_col() +
+#   facet_wrap(~ Unit, ncol = 4) +
+#   theme_minimal()
+# 
+# ggplotly(p)
 
-```{r site series with low diagnostic potential, echo=FALSE}
-#| label: tab-low-diagnostic
-#| fig-cap: "Site Units with Low Diagnostic Potential"
-#| warning: false
-#| fig-align: "left"
-ss_low.diag <- compared %>%
-  select(Unit1, unit.diag.sum.x)  %>% 
-  filter(unit.diag.sum.x < 30) %>% 
-  rename("Diagnostic Potential" = unit.diag.sum.x, "Site Unit" = Unit1) %>%
-  distinct()
-# low.diag.pot <- gt::as_gtable(gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10), plot = TRUE)
-gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10)
-# require(gridExtra)
-# grid.arrange(low.num, low.diag.pot, ncol = 2)
-```
 
-## Dendrogram of cluster analysis for all units
-
-The dendrogram is an approximate representation of the similarity matrix. It is constructed using agglomerative hierarchical clustering which merges site units from the bottom up.
-
-The green line represents the dissimilarity threshold for an association. Currently set at 20% but some ; site unit 'leaves' to the right of this threshold will fall under the same association in the hierarchy.
-
-Splits between the association threshold and the red minimum threshold are subassociation level divisions.
-
-Any splits to the right of the red line should be considered for merging into the same site series.
-
-Evaluating the clusterability using the cophenetic correlation coefficient and agglomerative coefficient. The closer cophonetic is to 1, the better it represents the original distance matrix. The agglomerative coefficient is a measure of the clustering structure, with higher values indicating more structure. We optimize the clustering method to maximize the cophenetic correlation coefficient.
-Probably the best approach is separate site units into already defined Orders or SubOrders based on tree species composition, then cluster within hierarchical unit. 
-
-
-```{r}
-evaluate_clustering <- function(compare, clst_method = "average") {
-    dis.matrix <- bec_dist_matrix(compare) 
-    dis.dis<- as.dist(dis.matrix)
-   ss_clst <- agnes(dis.matrix, diss = TRUE, stand = TRUE, method = clst_method)
-    cophenetic_corr <- cor(dis.dis, cophenetic(ss_clst))
-    agglom_coeff <- round(ss_clst$ac, 3)
-  results <- data.frame(
-    clst_method = clst_method,
-    agglomerative_coeff = agglom_coeff,
-    cophenetic_corr = round(cophenetic_corr, 3),
-    stringsAsFactors = FALSE
   )
-
-  return(results)
-}
-
-anal.groups <- fread("./clean_tabs/Forest_Analysis_Groups.csv")
-anal.groups[, SiteUnit := gsub("/", "_", gsub(" ", "", SiteUnit))]
-#anal.groups <- anal.groups %>% mutate(Spp.group = 'All')
-anal.groups <- as.data.frame(anal.groups)
-spp.groups <- unique(anal.groups$Spp.group)
-
-# Initialize results list
-clustering_stats <- list()
-
-for (grp in spp.groups) {
-  # Get SiteUnits for this group
-  unit.choose <- anal.groups %>%
-    filter(Spp.group == grp) %>%
-    pull(SiteUnit) %>%
-    unique()
-
-  # SiteUnits that actually appear in unit.compare
-  units.in.compare <- unit.choose[unit.choose %in% union(unit.compare$Unit1, unit.compare$Unit2)]
-
-  # Skip if fewer than 2 valid units
-  if (length(units.in.compare) < 2) next
-
-  # Subset comparisons based on those units
-  unit_subset <- unit.compare %>%
-    filter(Unit1 %in% units.in.compare & Unit2 %in% units.in.compare)
-
-  if (nrow(unit_subset) == 0) next
-
-  # Evaluate clustering and record group details
-  clust_eval <- tryCatch({
-    evaluate_clustering(compare = unit_subset, clst_method = "average") %>%
-      mutate(Spp.group = grp,
-             n_SiteUnits_in_compare = length(units.in.compare),
-             n_comparisons = nrow(unit_subset))
-  }, error = function(e) {
-    message(sprintf("⚠️ Skipping %s due to error: %s", grp, e$message))
-    NULL
-  })
-
-  if (!is.null(clust_eval)) clustering_stats[[grp]] <- clust_eval
-}
-
-clustering_results <- do.call(rbind, clustering_stats)
 ```
 
 
+```{r joint distribution between unit edatopic comparison}
+compute_js_similarity_pairs <- function(assoc_data, threshold = 0.7) {
+  library(dplyr)
+  library(tidyr)
+  library(tibble)
 
-### flag units with few plots or low diagnostics to remove before running clustering or to view within dendrogram.
-```{r site dendrogram split, echo=FALSE}
+  # Step 1: Prepare joint frequency matrix
+  joint_freqs <- assoc_data %>%
+    count(Association_modelled, edatopic) %>%
+    pivot_wider(names_from = edatopic, values_from = n, values_fill = 0) %>%
+    column_to_rownames("Association_modelled")
+  joint_freqs <- joint_freqs[, order(colnames(joint_freqs))]
 
-anal.groups <- fread("./clean_tabs/Forest_Analysis_Groups.csv") %>%
-  group_by(Spp.group) %>%
-  #filter(n_distinct(SiteUnit) > 2) %>%
-  ungroup() %>% as.data.table
+  # Step 2: Jensen-Shannon Divergence functions
+  kl_div <- function(p, q) {
+    sum(ifelse(p > 0, p * log(p / q), 0))
+  }
 
-anal.groups[, SiteUnit := gsub("/", "_", gsub(" ", "", SiteUnit))]
-anal.groups <- as.data.frame(anal.groups)
-anal.groups <- anal.groups %>% mutate(Spp.group = 'All')
-spp.groups <- unique(anal.groups$Spp.group)
-#spp.groups = c("Coastal_High", "Coast") # "Boreal", "Coast", "Interior", "Mediterranean", "Subalpine", "Temperate"
-#grp = "CwHw"
+  jsd <- function(p, q) {
+    m <- 0.5 * (p + q)
+    0.5 * kl_div(p, m) + 0.5 * kl_div(q, m)
+  }
 
-# Create a list to store results
-cluster_results <- list()
+  js_similarity <- function(p, q) {
+    1 - sqrt(jsd(p, q))
+  }
 
-for (grp in spp.groups) {
-  # Get SiteUnits for this Spp.group
-  unit.choose <- anal.groups %>%
-    filter(Spp.group == grp) %>%
-    pull(SiteUnit) %>%
-    unique()
+  # Step 3: Compute similarity matrix
+  prob_matrix <- sweep(joint_freqs, 1, rowSums(joint_freqs), FUN = "/")
+  n_units <- nrow(prob_matrix)
+  similarity_matrix <- matrix(NA, nrow = n_units, ncol = n_units)
 
-  # Skip if fewer than 2 SiteUnits
-  if (length(unit.choose) < 2) next
+  for (i in 1:n_units) {
+    for (j in 1:n_units) {
+      p <- as.numeric(prob_matrix[i, ])
+      q <- as.numeric(prob_matrix[j, ])
+      similarity_matrix[i, j] <- js_similarity(p, q)
+    }
+  }
 
-  # Filter unit.compare based on SiteUnits
-  unit_subset <- unit.compare %>%
-    filter(Unit1 %in% unit.choose, Unit2 %in% unit.choose)
+  rownames(similarity_matrix) <- rownames(prob_matrix)
+  colnames(similarity_matrix) <- rownames(prob_matrix)
 
-  unit.few <- unit_subset %>%
-    filter(nplots.x < 5) %>%
-    select(Unit1, nplots.x) %>%
-    distinct()
+  # Step 4: Extract similar pairs above threshold
+  similar_pairs <- as.data.frame(similarity_matrix) %>%
+    rownames_to_column("Unit1") %>%
+    pivot_longer(-Unit1, names_to = "Unit2", values_to = "Similarity") %>%
+    filter(Unit1 != Unit2, Similarity >= threshold) %>%
+    arrange(desc(Similarity))
 
-  unit.simple <- unit_subset %>%
-    filter(unit.diag.sum.x < 25) %>%
-    select(Unit1, unit.diag.sum.x) %>%
-    distinct()
-
-  unit.compare2 <- unit_subset %>%
-    mutate(Unit1.new = ifelse(Unit1 %in% unit.few$Unit1, paste0(Unit1, "-nplot"), Unit1),
-           Unit2.new = ifelse(Unit2 %in% unit.few$Unit1, paste0(Unit2, "-nplot"), Unit2)) %>%
-    mutate(Unit1.new = ifelse(Unit1.new %in% unit.simple$Unit1, paste0(Unit1.new, "-lowdiag"), Unit1.new),
-           Unit2.new = ifelse(Unit2.new %in% unit.simple$Unit1, paste0(Unit2.new, "-lowdiag"), Unit2.new)) %>%
-    mutate(Unit1 = Unit1.new, Unit2 = Unit2.new) %>%
-    select(Unit1, Unit2, BEC.sim.min)
-
-  unit.compare3 <- unit.compare2 %>%
-    filter(!grepl("nplot|lowdiag", Unit1),
-           !grepl("nplot|lowdiag", Unit2))
-
-    # Only proceed if enough distinct SiteUnits remain for clustering
-remaining_units <- unique(c(unit.compare3$Unit1, unit.compare3$Unit2))
-if (length(remaining_units) < 2) next
-
-  # Perform clustering or dendrogram splitting
-  cut.level <- 0.4
-  singles <- draw_dendro_split(unit.compare3, cut.level = cut.level)
- # draw_dendro_split(unit.compare3, cut.level = cut.level)
+  return(list(similar_pairs = similar_pairs, similarity_matrix = similarity_matrix))
 }
+result <- compute_js_similarity_pairs(assoc.test2, threshold = 0.7)
 
-# unit.few <- unit.compare %>% filter(nplots.x < 10)  %>% select(Unit1, nplots.x) %>% distinct
-# unit.simple <- unit.compare %>% filter(unit.diag.sum.x < 30)  %>% select(Unit1, unit.diag.sum.x) %>% distinct
-# xx <- unit.compare %>% filter(Unit1 %in% unit.few$SiteUnit)
-# unit.compare2 <- unit.compare %>%  mutate(Unit1.new = ifelse(Unit1 %in% unit.few$Unit1, paste0(Unit1,"-nplot"), Unit1))
-# unit.compare2 <- unit.compare2 %>%  mutate(Unit2.new = ifelse(Unit2 %in% unit.few$Unit1, paste0(Unit2,"-nplot"), Unit2))      
-# unit.compare2 <- unit.compare2 %>%  mutate(Unit1.new = ifelse(Unit1.new %in% unit.simple$Unit1, paste0(Unit1.new,"-lowdiag"), Unit1.new))
-# unit.compare2 <- unit.compare2 %>%  mutate(Unit2.new = ifelse(Unit2.new %in% unit.simple$Unit1, paste0(Unit2.new,"-lowdiag"), Unit2.new))
-# unit.compare2 <- unit.compare2 %>% mutate(Unit1 = Unit1.new, Unit2 = Unit2.new) %>% 
-#   select(Unit1, Unit2, BEC.sim.min) 
-# 
-# 
-# 
-# unit.compare3 <- unit.compare2 %>% filter(grepl('CWH', Unit1)) %>% filter(grepl('CWH', Unit2)) %>% 
-#   filter(!grepl('nplot|lowdiag', Unit1)) %>% filter(!grepl('nplot|lowdiag', Unit2))
-# cluster_eval <- evaluate_flexible_clustering(compare = unit.compare3, clst_method = "average")
-# cluster_eval
-# cut.level <- 0.4
-# #singles <- draw_dendro_split2(unit.compare2, flex.par = c(1, 1, 0, 0), cut.level=cut.level)# (1, 1, 0, 0 parameters in gaverage is the same as method = "average")
-#singles <- draw_dendro_split(unit.compare3, cut.level=cut.level)# (1, 1, 0, 0 parameters in gaverage is the same as method = "average")
-
+similar_pairs <- result$similar_pairs
+similarity_matrix <- result$similarity_matrix
 
 ```
+
+
+```{r joint distribution between unit edatopic comparison}
+# Convert similarity matrix to dissimilarity (distance)
+edaphic_matrix <- as.dist(1 - similarity_matrix)
+
+# Perform hierarchical clustering
+edaphic.dist <- hclust(distance_matrix, method = "average")  # You can also try "ward.D2", "complete", etc.
+
+draw_edaphic_dendro <- function(dist.mtrx = edaphic_matrix, subass.level = .1, assoc.level = .2, alliance.level = .4, cut.level = .5){
+  singles.count = 0
+  singles.list = data.frame(SiteUnit = character(), stringsAsFactors = FALSE)
+  eda_clst <- agnes(dist.mtrx,
+                   diss = TRUE, stand = TRUE,
+                   method = "average")
+    dendro_hc <- as.hclust(eda_clst)
+  dendro_hc.dend <- as.dendrogram(dendro_hc)
+
+  if (!is.null(cut)){
+    dendro_hc.dend <- cut(dendro_hc.dend, h = cut.level)
+  }
+  n <- length(dendro_hc.dend$lower)
+  for (i in 1:n){
+    dendro_hc.dend.i <- dendro_hc.dend$lower[[i]]
+    n2 <- length(dendro_hc.dend.i)
+    if (n2 == 1) {singles.count = singles.count + 1}
+    if (n2 == 1) {singles.list <- rbind(singles.list, x = setNames(as.data.frame(partition_leaves(dendro_hc.dend.i)), names(singles.list)))}
+    if (n2 == 1) next
+    # plot(dendro_hc.dend.i, main = paste0("Cluster Dendrogram of Site Units: branch ", i, " at hcut = ", h))
+    # }
+    #   dend.co <- stats::cophenetic(dendro_hc.i)
+    # dend.dis <- as.dist(dis.matrix)
+    # cophenetic <- cor(dend.dis, dend.co) %>% round(2)
+    # cophenetic ## shows how well the clusters align with the data >0.7 is considered good
+    # coph_annotation <- data.frame(x = 9, y=.85, label = paste0("Cophenetic:",cophenetic))
+    hcdata <- dendro_data(dendro_hc.dend.i, type = "rectangle")
+    yy <- ggplot() +
+      # Draw cluster segments
+      geom_segment(data = segment(hcdata), 
+                   aes(x = x, y = y, xend = xend, yend = yend)) +
+      
+      # Label leaves
+      geom_text(data = label(hcdata), 
+                aes(x = x, y = y, label = label, hjust = 0), 
+                size = 3) +
+      
+      # Add shaded band between 0.07 and 0.10
+      annotate("rect", xmin = -Inf, xmax = Inf, ymin = subass.level - .03, ymax = subass.level,
+               fill = "red", alpha = 0.15) +
+      annotate("rect", xmin = -Inf, xmax = Inf, ymin = assoc.level - .02, ymax = assoc.level + .02,
+               fill = "darkgreen", alpha = 0.15) +
+      annotate("rect", xmin = -Inf, xmax = Inf, ymin = alliance.level - .02, ymax = alliance.level + .02,
+               fill = "purple", alpha = 0.15) +
+      # Additional horizontal lines
+      # geom_hline(yintercept = assoc.level + .02, linetype = "dashed", color = "green") +
+      # geom_hline(yintercept = assoc.level - .02, linetype = "dashed", color = "green") +
+      # geom_hline(yintercept = subass.level - .03, linetype = "dashed", color = "red") +
+      # geom_hline(yintercept = subass.level, linetype = "dashed", color = "red") +
+      # geom_hline(yintercept = alliance.level +2, linetype = "dashed", color = "purple") +
+      # geom_hline(yintercept = alliance.level -2, linetype = "dashed", color = "purple") +
+      # Add labels
+      geom_text(aes(x = 0, y = subass.level - .015, label = "Subassociation", hjust = 0),
+                angle = 90, color = "grey30", size = 3) +
+      geom_text(aes(x = 0, y = assoc.level, label = "Association", hjust = 0),
+                angle = 90, color = "grey30", size = 3) +
+      geom_text(aes(x = 0, y = alliance.level, label = "Alliance", hjust = 0),
+                angle = 90, color = "grey30", size = 3)+
+      # add label to graph 
+      # geom_text(data=coph_annotation, aes( x=x, y=y, label=label), 
+      #           color="black", 
+      #           size=3 , angle=0, fontface="bold" ) +
+      # annotate(cophenetic, x = .1, y = .1,
+      #      label = "Cophonetic" , color="orange",
+      #       size=7 , angle=0, fontface="bold")+
+      coord_flip()+
+      scale_y_reverse(limits = c(1, -.3))+
+      labs(x = "", y = "Difference")+
+      theme_minimal()+
+      theme(axis.text.y=element_blank(), axis.title.y = element_blank())+
+      ggtitle(paste0("Cluster Dendrogram of Site Units: branch ", i, " at hcut = ", cut.level))
+    print(yy)
+  }
+  #print(paste0("The total number of site units is ", ss.count))
+  print(paste0("The number of singles at hcut ", cut.level, " is ", singles.count))
+ return(singles.list)
+}
+
+draw_edaphic_dendro(dist.mtrx = edaphic_matrix, subass.level = 0.07, assoc.level = 0.2, alliance.level = 0.4, cut.level = 0.5)
+
+```
+
 
 ```{r}
 

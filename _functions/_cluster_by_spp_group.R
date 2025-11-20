@@ -1,6 +1,7 @@
-cluster_by_spp_group <- function(zonal.compare,
-                                 anal.groups = NULL,
-                                 spp.groups = NULL,
+cluster_by_spp_group <- function(unit.compare,
+                                 analysis_tab = NULL,
+                                 group_var = NULL,
+                                 group = NULL,
                                  cut.level = 0.7,
                                  combine.level = 0.5,
                                  include.low.diag = FALSE,
@@ -67,9 +68,9 @@ cluster_by_spp_group <- function(zonal.compare,
     ))
   }
   
-  if (is.null(anal.groups)) {
+  if (is.null(analysis_tab)) {
     message("🔄 No anal.groups provided — clustering all available units together...")
-    unit_subset <- zonal.compare
+    unit_subset <- unit.compare
     unit.compare2 <- process_unit_compare(unit_subset)
     remaining_units <- unique(c(unit.compare2$Unit1, unit.compare2$Unit2))
     if (length(remaining_units) < 2) return(NULL)
@@ -78,18 +79,18 @@ cluster_by_spp_group <- function(zonal.compare,
     all_memberships[[1]] <- compute_membership(unit.compare2, "All_Units")
   } else {
     if (is.null(spp.groups)) {
-      spp.groups <- unique(anal.groups$Spp.group)
+      spp.groups <- unique(analysis_tab$group_var)
     }
     
     for (grp in spp.groups) {
-      unit.choose <- anal.groups %>%
-        filter(Spp.group == grp) %>%
+      unit.choose <- analysis_tab %>%
+        filter(group_var == group) %>%
         pull(SiteUnit) %>%
         unique()
       
       if (length(unit.choose) < 2) next
       
-      unit_subset <- zonal.compare %>%
+      unit_subset <- unit.compare %>%
         filter(Unit1 %in% unit.choose, Unit2 %in% unit.choose)
       
       unit.compare2 <- process_unit_compare(unit_subset)
@@ -102,7 +103,7 @@ cluster_by_spp_group <- function(zonal.compare,
     }
   }
   
-  membership_df <- do.call(rbind, all_memberships) %>% mutate(Step1_Group = NA)
+  membership_df <- do.call(rbind, all_memberships)# %>% mutate(Step1_Group = NA)
   write.csv(membership_df, file = output.file, row.names = FALSE)
   message("✅ Cluster membership file saved to: ", output.file)
   

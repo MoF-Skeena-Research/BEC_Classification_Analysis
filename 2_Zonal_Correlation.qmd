@@ -87,7 +87,7 @@ y = veg.dat2 %>% filter(PlotNumber %in% "PSEUMEN2")
 veglump <- dbConnect(
   odbc::odbc(),
   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
-lump <- dbReadTable(veglump, "CorrelationZonal_Lump")
+lump <- dbReadTable(veglump, "CorrelationII_Zonal_Lump")
 dbDisconnect(veglump)
 veg.dat2 <- lump_species(vegdata = veg.dat2, lump, use.subtaxa = TRUE)
 
@@ -103,7 +103,7 @@ Project SU tables (e.g. BGC_SU for a LMH) are read-in from regional databases an
 
 ```{r read in SU data}
 db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
-su <- combined_su(db)
+su1 <- combined_su(db)
 db <- "D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb"
 su2 <- combined_su(db)
 db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Cariboo_LMH39_Sorts.accdb"
@@ -118,14 +118,23 @@ db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/ThompsonOK_Sorts.accdb"
 su7 <- combined_su(db)
 db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/LMH65_Boreal_Sorts.accdb"
 su8 <- combined_su(db)
-db <- "D:/BC_Correlation2_Vpro_2023/Cassiar_SUs.accdb"
-su9 <- combined_su(db)
-su <- rbind(su, su2, su3, su4, su5, su6, su7, su8, su9)
+#db <- "D:/BC_Correlation2_Vpro_2023/Cassiar_SUs.accdb"
+#su9 <- combined_su(db)
+db <- "D:/BC_Correlation2_Vpro_2023/TOR_FG_draft.accdb"
+su10 <- combined_su(db)
+
+su <- rbind(su1, su2, su3, su4, su5, su6, su7, su8,  su10) %>%
+  filter(!grepl('moved', SiteUnit))
+
+# Identify duplicated PlotNumbers (both first and subsequent occurrences)
+dups <- su[duplicated(su$PlotNumber) | duplicated(su$PlotNumber, fromLast = TRUE), ]
+
+
 #xx <- su %>% filter(PlotNumber == "K780448")
 su <- su %>%
-  filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|01.2|X|support', SiteUnit))
+  filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|support|101b|Y', SiteUnit)) %>% distinct
 fwrite(su, "./clean_data/combined_SU.csv")
-#|101b|101.2
+#|
 su <- su %>%   filter(grepl('01', SiteUnit)) ###zonal specific
 su <- su %>% select(-SiteUnit.orig) %>% mutate(SiteUnit = str_replace(SiteUnit, "b$|a$|c$", "")) %>% distinct() %>% mutate(zone = str_extract(bgc, "([A-Z]+)"))
 bgc.unique <- su %>% distinct(bgc) 
@@ -136,10 +145,11 @@ no.su <- anti_join(bgcv13, bgc.unique, by = c("BGC_NoSpace" = "bgc")) %>% filter
 # dbWriteTable(master_su, "All_BC_zonals2_SU",  su, overwrite = TRUE, batch_rows = 1)
 # dbDisconnect(master_su)
 xx <- su %>% distinct(SiteUnit)
-su <- su %>%
-filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|MHwh', SiteUnit))###BGC specific|CWHms
+# su <- su %>%
+# filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|MHwh', SiteUnit))###BGC specific|CWHms
 
-su <- su %>% filter(grepl('CWH|CDF|MH|IDFww', SiteUnit))###BGC specific|CWHms
+#su <- su %>% filter(grepl('ICH|ESSF', SiteUnit))###BGC specific|CWHms
+su <- su %>% filter(grepl('ESSF', SiteUnit))###BGC specific|CWHms
 su <- su %>% mutate(SiteUnit = bgc)
 ## remove units that are not yet currently mapped zz is from the scripts clustering climate below
 #su <- su %>% filter(!bgc %in% zz$.)
@@ -151,13 +161,13 @@ su <- su %>% mutate(SiteUnit = bgc)
 Performed on base site units or hierarchical units. The function 'do_pairwise' applies a new similarity measure that balances the value of constancy and mean cover differences between units. This comparison starts with previously classification and reviewed site series as working units. Only species with high constancy in one of the units is used in the analysis. Key site indicators can be given higher importance The diagnostic value of non-vasculars is reduced but taxonomy exceptions can be assigned Returns a table of units with high similarity. Produce output table for review where units have low diagnostic potential (usually a function of heterogenous units in forest types) or high variability in plot membership
 
 ```{r build pair.wise}
-key.site.indicators <- c("CALLNOO","PICESIT","PSEUMEN2", "TSUGMER",
+key.site.indicators <- c("CALLNOO","PICESIT","PSEUMEN2", 
                          "ELLIPYR","GAULSHA", "VACCPAR", "PAXIMYR", "CLADPYR", 
-                         "STRUSPI", ## coast
-                         "ACERGLA", "GEOCLIV", "CALARUB",## interior
-                          "PICEGLA", "VACCVIT","MERTPAN",##boreal
-                         "RHODALB",## ESSF
-                        "TSUGHET", "THUJPLI" ) ##rain forest
+                         # "STRUSPI", ## coast
+                         # "ACERGLA", "GEOCLIV", "CALARUB",## interior
+                         # "PICEGLA", "VACCVIT","MERTPAN",##boreal
+                         #"RHODALB", "VALESIT", # ESSF
+                         "TSUGMER","TSUGHET", "THUJPLI", "ABIEAMA" ) ##rain forest
 
 
                          # "TSUGHET", "THUJPLI",  "ABIEGRA", "PSEUMEN1",  
@@ -172,17 +182,22 @@ key.site.indicators <- c("CALLNOO","PICESIT","PSEUMEN2", "TSUGMER",
                          # "CALARUB", "PSEUSPI",    "GYMNDRY"
                          #  ) 
 #key.site.indicators <- taxon.all %>% filter(Lifeform %in% c(1,2)) %>% pull(Code)
-#reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR")
+reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "NEOORTHO")
 #reduced.lifeforms <- c(3, 4, 5, 6, 7, 8, 9,10, 11, 12)
-reduced.lifeforms <- c(9,10, 11)
+reduced.lifeforms <- c(9, 10, 11)
 # reduced.lifeforms <- c(9,10)
+ #bgc.choose = c('ESSFwh1', 'ESSFwh2', 'ESSFwh3','ESSFwh4', 'ESSFwh5',  'ESSFwh6', 'ESSFvm2', 'ESSFvm1')
+  #bgc.choose = c('ESSFmw1', 'ESSFmw2')
+bgc.list <- su %>% distinct(bgc) %>% pull(bgc)
+su.reduced <- su %>% filter(bgc %in% bgc.list) 
+fwrite(su.reduced, "./outputs/combined_SU_zonal_ESSF.csv")
 vegsum.pairs <- do_pairwise(veg.dat2,
-  su = su, minimportance = 0.1, minconstancy = 60,
+  su = su.reduced, minimportance = 0.1, minconstancy = 60,
   noiseconstancy = 10,
   minplots = 3,
   minor = 1,
-  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 2,
-  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .5,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .2,
   reduced.exceptions = NULL
 )
 
@@ -231,7 +246,7 @@ create_dendro_all(unit.compare = vegsum.pairs, cut.level = 0.2)
 
 ```{r split dendrogram, echo=FALSE}
 
-xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.5)
+xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.3)
 xx
 ```
 
@@ -250,7 +265,7 @@ add_cluster_membership <- function(unit.compare, cut.level = .7){
   return(groups)
   }
 
-groups <- add_cluster_membership(vegsum.pairs, cut.level = .5)
+groups <- add_cluster_membership(vegsum.pairs, cut.level = .2)
 
 ```
 
@@ -264,10 +279,11 @@ data.path = "D:/OneDrive - Government of BC/GitHub_data"
 # tab.split = c('CDFmm_101', 'CDFmm_110', 'CDFmm_111', 'CDFmm_112',
 #                  'CWHxm2_110', 'CWHxm2_111','CWHxm2_112.1','CWHxm2_112.2', 'CWHxm2_113')
 # author = "zonal_table1"
-# bgc.choose = c('CWHmm1', 'CWHmm2',  'CWHms1')
-# su.zonal <- su
-# su.zonal <- su %>% filter(bgc %in% bgc.choose) 
-# bgc.list <- unique(su.zonal$bgc)
+ bgc.choose = c('ESSFwk1', 'ESSFwk2', 'ESSFvk', 'ESSFvc','ESSFwh4', 'ESSFwh5',  'ESSFwh6', 'ESSFvm2', 'ESSFvm1')
+  bgc.choose = c('ESSFmw1', 'ESSFmw2')
+su.zonal <- su
+su.zonal <- su %>% filter(bgc %in% bgc.choose) 
+#bgc.list <- unique(su.zonal$bgc)
 
 vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
 veg.dat2 <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE)
@@ -275,21 +291,21 @@ veg.dat2 <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE)
 # author = "zonal_table1"
 # bgc.list = c("CDFmm", "CWHxm1", "CWHxm2", "CWHxm3", "CWHmm1", "CWHmm2", "CWHvm1", "CWHvm2")
 author = "zonal_table2"
-bgc.list = c("CWHds1", "CWHds2", "CWHms1", "CWHms2", "CWHms3","CWHws1", "CWHws2", "CWHws3", "CWHxs", "IDFww1")
+#bgc.list = c("CWHds1", "CWHds2", "CWHms1", "CWHms2", "CWHms3","CWHws1", "CWHws2", "CWHws3", "CWHxs", "IDFww1")
 # author = "zonal_table3"
 # bgc.list = c("CWHvh1", "CWHvh2",  "CWHvm3", "CWHvm4", "CWHwm", "MHmm1", "MHmm2", "MHws", "MHvh")
 
- su.zonal <- su %>% filter(bgc %in% bgc.list) %>% mutate(SiteUnit = recode(SiteUnit, "CWHxm3" = "CWHdm3", "CWHxm2" = "CWHdm2", "CWHxm1" = "CWHdm1", "CWHms4" = "CWHws3", "MHws" = "MHms", "IDFww1"= "IDFww"))
+ # su.zonal <- su %>% filter(bgc %in% bgc.list) %>% mutate(SiteUnit = recode(SiteUnit, "CWHxm3" = "CWHdm3", "CWHxm2" = "CWHdm2", "CWHxm1" = "CWHdm1", "CWHms4" = "CWHws3", "MHws" = "MHms", "IDFww1"= "IDFww"))
 vegsum.wbk <- createWorkbook()
 vegSum <- 
   create_veg_sum_all(vdat = veg.dat2, siteUnits = su.zonal , minconstancy = 50, noiseconstancy = 25, strata.by = "Layer")
 ##determine order of species by unit
-indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su.zonal, BGC = bgc.list)
+indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum,  siteUnits = su.zonal, BGC = bgc.choose)
 veg.sum.table <- format_veg_table(vsum = vegSum, spp=taxon.lifeform, type = "zonal")
 openxlsx::addWorksheet(vegsum.wbk, sheetName = author)
 openxlsx::writeData(vegsum.wbk, sheet = author, veg.sum.table) 
 
-saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_veg_tables_", author, ".xlsx"), overwrite = TRUE)
+saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/ESSF_draft_veg_tables_", author, ".xlsx"), overwrite = TRUE)
 
 ```
 
@@ -310,13 +326,13 @@ Some individual unit issues: BWBSwk1 zonal plots are largely Pl leading due to a
 # grid.climr <- fread("./clean_data/climr_WNAv13_5kmgrid.csv") %>% as.data.table %>% mutate(BGC = `_newBGC`) %>% select(-'_newBGC') %>% mutate(zone = str_trim(str_extract(BGC, "([:upper:]|[:space:]){2,}")))
 # fwrite(grid.climr, "./clean_data/climr_WNAv13_5kmgrid.csv")
 
-grid.climr <- fread("./clean_data/climr_WNAv13_5kmgrid.csv") %>% as.data.table %>% mutate(BGC = recode(BGC, "CWHdm" = "CWHxm3", "CWHms4" = "CWHws3", "MHws" = "MHms", "MHwsp" = "MHmsp"))
+grid.climr <- fread("./clean_data/climr_WNAv13_5kmgrid.csv") %>% as.data.table #%>% mutate(BGC = recode(BGC, "CWHdm" = "CWHxm3", "CWHms4" = "CWHws3", "MHws" = "MHms", "MHwsp" = "MHmsp"))
 #coast.climr<- fread("./clean_data/climr_coastv13_2_5kmgrid.csv")  %>%  mutate(zone = str_extract(BGC_2, "([A-Z]+)"))%>% as.data.table
 #xx <- unique(grid.climr$BGC) %>% data.frame() %>% rename(BGC = 1)
 #grid.climr[coast.climr, "BGC" := BGC_2, on = c("xcoord" = "xcoord", "ycoord" = "ycoord")]
  
 #grid.test <- grid.climr   %>% filter(zone %in% c("CWH","IDF", "ICH")) %>% mutate(zone = ifelse(BGC %in% c("IDFww", "IDFww1", "IDFmw2", "ICHxm1", "ICHxw") , "NewICH", zone))
-grid.test <- grid.climr   %>% filter(grepl("CWH", BGC))
+grid.test <- grid.climr  %>% filter(BGC %in% bgc.choose)# %>% mutate(zone = str_trim(str_extract(BGC, "([:upper:]|[:space:]){2,}")
 
 # grid.test <- grid.climr   %>% filter(zone %in% c("CDF", "CWH", "MH", "IDFww")) %>% mutate(zone = ifelse(BGC %in% c("CWHxm1", "CWHxm2", "CWHxm3") , "CWHdm-xm", zone)) %>%
 #   mutate(BGC = as.factor(BGC), zone = as.factor(zone)) #%>%
@@ -333,10 +349,10 @@ ggplot(grid.test, aes(x=BGC, y=MSP, colour = zone))+
 
 grid.test <- grid.test %>%  mutate(BGC = fct_reorder(BGC, CMD.total, .fun='median'))
 ggplot(grid.test, aes(x=BGC, y=CMD.total, colour = zone))+
-  geom_boxplot()+
- scale_colour_manual(values=c("darkgreen", "lightgreen", "orange", "red"))+
-  theme(legend.position = 'left')+ ggtitle("CMD.total for subzones of CWH, ICH, & IDF with new ICH subzones from wet IDF")+
-  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size=8))
+  geom_boxplot()#+
+ # scale_colour_manual(values=c("darkgreen", "lightgreen", "orange", "red"))+
+ #  theme(legend.position = 'left')+ ggtitle("CMD.total for subzones of CWH, ICH, & IDF with new ICH subzones from wet IDF")+
+ #  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size=8))
 
 grid.test <- grid.test %>%  mutate(BGC = fct_reorder(BGC, MWMT, .fun='median'))
 

@@ -1,7 +1,6 @@
 assign_manual_cluster <- function(su.tab,
                                   cluster.file,
-                                  siteunit_col = "SiteUnit",
-                                  new_name_col = "Association",
+                                  group_col = "Association",
                                   use_last_step = FALSE) {
   # Load cluster membership data
   if (is.character(cluster.file) && file.exists(cluster.file)) {
@@ -23,18 +22,18 @@ assign_manual_cluster <- function(su.tab,
   }
   
   # Ensure required columns exist
-  if (!all(c(siteunit_col, new_name_col) %in% colnames(membership))) {
+  if (!all(c("SiteUnit", group_col) %in% colnames(membership))) {
     stop("Required columns not found in cluster data.")
   }
   
   # Rename for clarity
-  membership <- membership %>%
-    dplyr::rename(SiteUnit = all_of(siteunit_col),
-                  Association = all_of(new_name_col))
+  # membership <- membership %>%
+  #   dplyr::rename(SiteUnit = all_of(siteunit_col),
+  #                 Association = all_of(group_col))
   
   # Join and preserve original SiteUnit
   updated_data <- su.tab %>%
-    dplyr::left_join(membership, by = "SiteUnit") %>% select(PlotNumber, siteunit_col, new_name_col) %>% rename(SiteUnit = 2, Step1_Group = 3) %>%  mutate(Step1_Group = ifelse(is.na(Step1_Group), SiteUnit, Step1_Group))
+    dplyr::left_join(membership, by = "SiteUnit") %>% select(PlotNumber, "SiteUnit", all_of(group_col)) %>% rename(SiteUnit = 2, Step1_Group = 3) %>%  mutate(Step1_Group = ifelse(is.na(Step1_Group), SiteUnit, Step1_Group))
   
   return(updated_data)
 }

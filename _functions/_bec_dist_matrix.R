@@ -20,7 +20,9 @@ bec_dist_matrix <- function(vegsum.pairs, distance = "BEC.sim.min") {
     tidyr::pivot_wider(id_cols = Unit1, names_from = Unit2, values_from = diss,
                 names_sort = TRUE) |>
     tibble::column_to_rownames("Unit1") |>
-    dplyr::mutate_all(~ replace(., is.na(.), 1)) |>
+    dplyr::mutate_all(~ replace(., is.na(.), 0)) |>
     as.matrix()
+  dis.matrix <- dis.matrix[rownames(dis.matrix), rownames(dis.matrix)]
+  
     return(dis.matrix)
 }
