@@ -123,7 +123,7 @@ filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specif
 bgc.unique <- unique(su2$bgc)
 ss.unique <- su2 %>% select(SiteUnit, bgc) %>% distinct
 ss.count <- length(ss.unique$SiteUnit)
- becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;")
+ becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/working/BECMaster_fixing.accdb;")
 plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
 plot.edatope <- dbReadTable(becmaster, "BECMaster_fixing_edatopic")
 dbDisconnect(becmaster)
@@ -170,7 +170,13 @@ dbDisconnect(bgc.units)
 bgcv13 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% select(BGC_NoSpace, SiteClassificationStatus)
 
 ```
-
+add in other summary tables (e.g. USA)
+```{r}
+usa_units <- read.xlsx("./usa.summary.units/CEGL007332_ARBMEN_PSEMEN_GAUSHA.xlsx") %>%
+  mutate(SiteUnit = gsub("/", "_", SiteUnit)) %>%
+  select(SiteUnit, USA_Series, USA_Subseries, USA_Series_Name, USA_Subseries_Name) %>%
+  distinct()
+```
 
 ## Cluster analysis and dendrogram of all site units
 

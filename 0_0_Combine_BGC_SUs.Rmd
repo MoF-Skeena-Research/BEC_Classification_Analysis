@@ -131,7 +131,7 @@ buildSU <- function(db){
 
 CariboonewSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/Cariboo_SUs.accdb")
 CassiarnewSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/Cassiar_SUs.accdb")
-CoastnewSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb")
+CoastSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/CoastArea_Sorts.accdb")
 ColumbianewSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb")
 KBSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/KootenayBoundary_Sorts.accdb")
 OKSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/ThompsonOK_Sorts.accdb")
@@ -141,10 +141,16 @@ OminecaSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/OminecaP
 AllBGC_SU <- rbind(CariboonewSU, CassiarnewSU, CoastnewSU,  KBSU, OKSU, SkeenaSU, BorealSU, OminecaSU)
 ##need to build a check for duplicates in here
 AllBGC_SU <- AllBGC_SU %>% distinct(PlotNumber, .keep_all = TRUE) %>% arrange(desc(PlotNumber))
+
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
 dbWriteTable(master_su, "All_BGC12DEC2024_SU",  AllBGC_SU, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
 dbDisconnect(master_su)
+
+LMH_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+DBQ=D:/BC_Correlation2_Vpro_2023/published_sorts/LMH_SU_Tables.accdb;")
+dbWriteTable(LMH_su, "LMH77_Published_SU",  CoastSU, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+dbDisconnect(LMH_su)
 ```
 
 

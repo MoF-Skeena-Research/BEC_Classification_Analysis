@@ -165,5 +165,59 @@ openxlsx::writeData(vegsum.wbk, sheet = assoc.choose, veg.sum.table)
 saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_assoc_tables_", author, ".xlsx"), overwrite = TRUE)
 
 ```
+# Polished Ecosystem Unit Summary Report scripts from a copilot session
+```{r}
+# Load required packages
+library(dplyr)
+library(readr)
+library(sf)
+library(ggplot2)
+library(glue)
 
+# 1. Import species abundance data
+species_abundance <- read_csv("species_abundance.csv")
+
+# 2. Import distribution map (shapefile or GeoJSON)
+distribution_map <- st_read("distribution_map.shp")
+
+# 3. Import environmental summary table
+environment_summary <- read_csv("environment_summary.csv")
+
+# 4. Summarize species abundance
+top_species <- species_abundance %>%
+  arrange(desc(Abundance)) %>%
+  slice_head(n = 5)
+
+dominant_species <- paste(top_species$Species, collapse = ", ")
+
+# 5. Spatial summary (example: count occurrences per species)
+spatial_summary <- distribution_map %>%
+  st_drop_geometry() %>%
+  count(Species, name = "Occurrences") %>%
+  arrange(desc(Occurrences))
+
+# 6. Environmental drivers
+env_vars <- paste(environment_summary$Variable, collapse = ", ")
+
+# 7. Generate polished ecosystem summary
+ecosystem_summary <- glue(
+  "Ecosystem Unit Summary:\n\n",
+  "The community is dominated by {dominant_species}, ",
+  "with {top_species$Species[1]} showing the highest abundance. ",
+  "Spatial distribution analysis indicates that {spatial_summary$Species[1]} ",
+  "is most widespread, with {spatial_summary$Occurrences[1]} mapped occurrences. ",
+  "Environmental drivers shaping this unit include {env_vars}, ",
+  "suggesting strong ecological gradients influencing species composition.\n\n",
+  "Together, these patterns highlight the interplay between biological dominance, ",
+  "spatial distribution, and environmental context in structuring the ecosystem."
+)
+
+cat(ecosystem_summary)
+
+# 8. Optional visualization
+ggplot(distribution_map) +
+  geom_sf(aes(color = Species)) +
+  theme_minimal() +
+  labs(title = "Species Distribution Map")
+```
 
