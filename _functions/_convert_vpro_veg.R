@@ -28,13 +28,28 @@ create_veg_reports_dataset <- function(plot.veg, taxon.lifeform){
   vegdat <- vegdat  %>% filter(!Species %in% tree_seedlings)
   vegdat <- vegdat  %>% filter(!(Species %in% trees & Layer == "Moss"))
   # change value"Total A" in Layer to "Tree" using dplyr
-  setDT(vegdat)[, Layer := fcase(
-    Layer == "TotalA", "Tree",
-    Layer == "TotalB", "Shrub",
-    Layer == "Cover6", "Herb",
-    Layer == "Cover7", "Moss",
-    default = "Layer"
-  )]
+  setDT(vegdat)[
+    ,
+    Layer := fcase(
+      # Regen: tree lifeform + TotalB
+      Lifeform %in% c("1", "2") & Layer == "TotalB", "Regen",
+      
+      # Normal layer recoding
+      Layer == "TotalA", "Tree",
+      Layer == "TotalB", "Shrub",
+      Layer == "Cover6", "Herb",
+      Layer == "Cover7", "Moss",
+      
+      default = Layer
+    )
+  ]
+  # setDT(vegdat)[, Layer := fcase(
+  #   Layer == "TotalA", "Tree",
+  #   Layer == "TotalB", "Shrub",
+  #   Layer == "Cover6", "Herb",
+  #   Layer == "Cover7", "Moss",
+  #   default = "Layer"
+  # )]
   # vegdat2 <- vegdat %>% mutate(Layer = ifelse(Layer == "TotalA", "Tree",
   #                                            ifelse(Layer == "TotalB", "Shrub",
   #                                                   ifelse(Layer == "Cover6", "Herb",

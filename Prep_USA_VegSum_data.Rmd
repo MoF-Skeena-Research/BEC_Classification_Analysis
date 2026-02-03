@@ -1,0 +1,209 @@
+---
+title: "Prep_USA_VegSummary_Data"
+author: "WHMackenzie"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(DBI)
+require(data.table)
+require(gtable)
+require(gtsummary)
+require(openxlsx)
+require(tictoc)
+library(purrr)
+library(stringr)
+source("../BEC_R_working/_functions/_read_sppmaster.R")
+```
+
+```{r}
+taxon.all <- read_sppmaster()
+#taxon.all <- read_sppmaster(database = "C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb")
+
+taxon.lifeform <- taxon.all %>%
+  #filter(Codetype == "U" | Codetype == "X" | Codetype == "D") %>%
+  dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
+  distinct()
+ tree_seedlings <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% mutate(Code = paste0(Code, "D")) %>% pull(Code)
+trees <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% pull(Code)
+```
+
+add in other summary tables (e.g. USA)
+```{r load tables}
+# usa_units <- read.xlsx("./usa.summary.units/USA_vegsummary_workbook.xlsx") %>% rename(ScientificName = 1) %>% 
+#   left_join(taxon.lifeform, by = c("ScientificName")) %>% mutate(MeanCov = Constancy * Cover / 100) %>% mutate(SiteUnit = "ARBMEN_PSEMEN_GAUSHA", nplots = 22) %>% select(SiteUnit, Species = Code, MeanCov, Constancy, nplots)
+# 
+
+read_usa_unit <- function(sheet) {
+
+  # Read first 3 rows for metadata
+  meta <- read.xlsx(wb_path, sheet = sheet, rows = 1:3, colNames = FALSE)
+
+  siteunit <- meta[1, 2] |> as.character()
+  nplots   <- meta[2, 2] |> as.numeric()
+
+  # Read vegetation table (starting at row 3 header)
+  dat <- read.xlsx(wb_path, sheet = sheet, startRow = 3)
+
+  dat %>%
+    rename(
+      ScientificName = 1,
+      Constancy      = 2,
+      Cover          = 3
+    ) %>%
+    mutate(
+      # Clean whitespace in ScientificName
+      ScientificName = ScientificName |> 
+        trimws() |> 
+        gsub("\\s+", " ", x = _)
+    ) %>%
+    left_join(taxon.lifeform, by = "ScientificName") %>%
+    mutate(
+      MeanCov  = Constancy * Cover / 100,
+      SiteUnit = siteunit,
+      nplots   = nplots
+    ) %>%
+    select(SiteUnit, ScientificName, Species = Code, MeanCov, Constancy,  nplots)
+}
+
+
+# Path to workbook
+wb_path <- "./usa.summary.units/USA_vegsummary_workbook.xlsx"
+
+# Get sheet names
+sheets <- getSheetNames(wb_path)
+
+# # Function to process one sheet
+# read_usa_unit <- function(sheet) {
+# 
+#   # Read first 3 rows for metadata
+#   meta <- read.xlsx(wb_path, sheet = sheet, rows = 1:3, colNames = FALSE)
+# 
+#   siteunit <- meta[1, 2] |> as.character()
+#   nplots   <- meta[2, 2] |> as.numeric()
+# 
+#   # Read vegetation table (starting at row 3 header)
+#   dat <- read.xlsx(wb_path, sheet = sheet, startRow = 3)
+# 
+#   dat %>%
+#     rename(
+#       ScientificName = 1,
+#       Constancy      = 2,
+#       Cover          = 3
+#     ) %>%
+#     
+#     left_join(taxon.lifeform, by = "ScientificName") %>%
+#     mutate(
+#       MeanCov  = Constancy * Cover / 100,
+#       SiteUnit = siteunit,
+#       nplots   = nplots
+#     ) %>%
+#     select(SiteUnit, ScientificName, Species = Code, Constancy, MeanCov, nplots)
+# }
+
+# Apply to all sheets and combine
+usa_units <- map_dfr(sheets, read_usa_unit)## Check table for NA Species and fix data
+usa_units2 <- usa_units %>% select(-ScientificName)
+fwrite(usa_units2, "./usa.summary.units/USA_prepped_units.csv")
+```
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+# ## --------Create the analysis set
+#   vegsum <- as.data.frame(vegsum)
+#   vegsum$MeanCov[vegsum$MeanCov > 100] <- 100
+#   vegsum$spp_importance <- vegsum$MeanCov^1 / 2
+#   vegsum <- vegsum %>%
+#     dplyr::mutate(spp_importance = spp_importance * (Constancy / 100)) %>%
+#     dplyr::filter(spp_importance > minimportance)
+#   ### remove species where the maximum constancy for species is < contancy
+#   speciesmax <- vegsum %>%
+#     dplyr::group_by(Species) %>%
+#     dplyr::summarise(maxcons = max(Constancy)) %>%
+#     dplyr::filter(maxcons >= minconstancy)
+#   ### remove species with no constancy > minconstancy in any unit, 
+#   #where a unit has less than minplots, or
+#   #any unit species constancy is < noiseconstancy
+#   vegsum <- vegsum %>%
+#     dplyr::filter(Species %in% speciesmax$Species) %>%
+#     dplyr::filter(nplots >= minplots) %>%
+#     filter(Constancy > noiseconstancy)
+# 
+#   # vegsum <- create_diagnostic_veg(vegsum)
+#   ## --------assign potential diagnostics before pairwise-----------------
+#   vegsum <- vegsum %>%
+#     rowwise() %>%
+#     mutate(constant_type = ifelse((Constancy >= minconstancy & MeanCov >= 10), "cd",
+#       ifelse((Constancy >= minconstancy & MeanCov <= minor), "cm",
+#         ifelse(Constancy >= minconstancy, "c", NA)
+#       )
+#     ))
+#   ### Calculate differential potential
+#  ##reduce value for constancy within 10% of minimum
+#    vegsum <- vegsum %>%
+#     mutate(d.potential = ifelse(Constancy >= minconstancy & Constancy < minconstancy+10,
+#               (Constancy^(1 / 3)) * (Constancy / 100) * ((Constancy - (minconstancy-1)) / 10),##mincons-1 so that 50 recieves some value
+#                   ifelse(Constancy >= (minconstancy+10), (Constancy^(1 / 3) * (Constancy / 100)), 0))) 
+#         #ifelse(constant_type %in% c("c", "cd"), (Constancy^(1 / 3) * (Constancy / 100)),
+#         #ifelse(constant_type %in% c("cm"), (Constancy^(1 / 3) * (Constancy / 100) * 0.5), 0)
+# 
+#   vegsum <- vegsum %>% mutate(d.potential = ifelse(d.potential < 0, 0,
+#     ifelse(d.potential > 4, 4, d.potential)
+#   ))
+# 
+#   ### Calculate dominant differential potential
+#   ### for cover between 5-10 * value by mean cover/10
+#   vegsum <- vegsum %>% 
+#     mutate(dd.potential = ifelse(MeanCov >= 10 & (Constancy >= minconstancy), (MeanCov^(1 / 3)),
+#     ifelse((MeanCov >= 5 & MeanCov < 10 & (Constancy >= minconstancy)), (MeanCov^(1 / 3) * ((MeanCov) / 10)), 0)
+#   ))
+#   vegsum <- vegsum %>% mutate(dd.potential = ifelse(dd.potential > 4, 4,
+#     ifelse(dd.potential < mindd, 0, dd.potential)
+#   ))
+# ## If species is both diff and domdiff increases max potential from 8 to 10 by *1.25
+#   vegsum <- vegsum %>%
+#     mutate(diagnostic.potential = ifelse((d.potential > 0 & dd.potential > 0),
+#       ((d.potential + dd.potential) * 1.25),
+#       (d.potential + dd.potential)
+#     ))
+#   
+#   ## reduce potential value of species with minor cover
+#   vegsum <- vegsum %>%
+#     mutate(diagnostic.potential = ifelse(MeanCov <= minor, diagnostic.potential * (MeanCov/(minor)),diagnostic.potential))
+#   ## set to zero if less than mindiff
+#   vegsum <- vegsum %>%
+#     mutate(diagnostic.potential = ifelse(diagnostic.potential <= mindiff, 0, diagnostic.potential))  
+#   
+#   setDT(vegsum)
+#   vegsum <- merge(vegsum, taxon.lifeform, by.x = c("Species"), by.y = c("Code"))
+#   # Adjust points for reduced.lifeforms (moss layer)
+#   if (isTRUE(reduce.lifeform)) {
+#     vegsum[,  diagnostic.potential := ifelse(Lifeform %in% reduced.lifeforms & !Species %in% reduced.exceptions, 
+#                           diagnostic.potential * reduction, diagnostic.potential)
+#            ]
+#   }
+#   
+#   ## adjust points for key indicators
+#   if (isTRUE(use.ksi)) {
+#     vegsum[, diagnostic.potential := ifelse(Species %in% ksi, diagnostic.potential * ksi.value, diagnostic.potential)
+#            ]
+#   }
+#  vegsum <- vegsum %>% dplyr::select(-ScientificName, -EnglishName, -Lifeform)
+#    ### unit summary of diagnostic potential
+#   vegsum <- vegsum %>%
+#     dplyr::group_by(SiteUnit) %>%
+#     mutate(unit.diag.sum = sum(diagnostic.potential))
+#   vegsum <- vegsum %>%
+#     dplyr::group_by(SiteUnit) %>%
+#     mutate(n_constants = sum(!is.na(constant_type)))
+#   fwrite(vegsum, "./usa.summary.units/USA_prepped_units.csv")
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

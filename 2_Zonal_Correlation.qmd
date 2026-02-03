@@ -1,12 +1,33 @@
 ---
 title: "ESSF Zonal Correlation Analysis"
-author: "William H. MacKenzie"
+author: "William H MacKenzie"
 date: "`r format(Sys.Date(), '%d %B %Y')`"
 format:
-  pdf:
-    documentclass: scrartcl
-    papersize: letter
+  typst:
+    toc: true
+    toc-depth: 2
+    toc-title: Contents
+    section-numbering: 1.1.1
+    columns: 1
 editor: source
+execute:
+  echo: false
+  error: false
+  warning: false
+  message: false
+  fig.width: 6
+  fig.height: 4
+  fig.align: 'left'
+  fig.cap: true
+  fig.pos: H
+  out.width: '100%'
+  dev: pdf
+  fig.ext: pdf
+  cache: false
+  fig.retina: 2
+  dpi: 600
+  fig.asp: 1.5
+  fig.path: "./figures/"
 ---
 
 
@@ -31,29 +52,32 @@ require(purrr)
 require(ggplotify)
 require(grid)
 set.seed(1279)
-source("./_functions/_bec_dist.R")
-source("./_functions/_bec_dist_matrix.R")
-source("./_functions/_lump_species.R")
-source("./_functions/_lump_species2.R")
-source("./_functions/_create_su_vegdata.R")
-source("./_functions/_create_analysis_vegsum.R")
-source("./_functions/_TabletoTree.R")
-source("./_functions/_TreetoTable.R")
-source("./_functions/_add_vars.R")
-source("./_functions/_do_pairwise.R")
-source("./_functions/_create_diagnostic_veg.R")
-source("./_functions/_return_similar_pairs.R")
-source("./_functions/_read_sppmaster.R")
-source("./_functions/_combined_su.R")
-source('./_functions/_create_dendro_all.R')
-source('./_functions/_create_dendro_bybgc.R')
-source('./_functions/_draw_dendro_split.R')
-source('./_functions/_create_veg_sum_all.R')
-source('./_functions/_build_species_ordering_hier.R')
-source('./_functions/_build_species_ordering.R')
-source('./_functions/_format_veg_table.R')
-source('./_functions/_encode_veg_sum.R')
-source('./_functions/_create_veg_sum.R')
+source("../BEC_R_working/_functions/_bec_dist.R")
+source("../BEC_R_working/_functions/_bec_dist_matrix.R")
+source("../BEC_R_working/_functions/_combine_taxa.R")
+source("../BEC_R_working/_functions/_combine_taxa_strata.R")
+source("../BEC_R_working/_functions/_create_su_vegdata.R")
+source("../BEC_R_working/_functions/_create_analysis_vegsum.R")
+source("../BEC_R_working/_functions/_TabletoTree.R")
+source("../BEC_R_working/_functions/_TreetoTable.R")
+source("../BEC_R_working/_functions/_add_vars.R")
+source("../BEC_R_working/_functions/_do_pairwise.R")
+source("../BEC_R_working/_functions/_create_diagnostic_veg.R")
+source("../BEC_R_working/_functions/_return_similar_pairs.R")
+source("../BEC_R_working/_functions/_read_sppmaster.R")
+source("../BEC_R_working/_functions/_combined_su.R")
+source("../BEC_R_working/_functions/_create_veg_sum.R")
+source("./_functions/_create_veg_sum_all.R")
+#source('../BEC_R_working/_functions/_create_veg_sum2.R')
+source('../BEC_R_working/_functions/_build_species_ordering.R')
+source('../BEC_R_working/_functions/_format_veg_table.R')
+source('../BEC_R_working/_functions/_format_veg_table_strata.R')
+source('../BEC_R_working/_functions/_encode_veg_sum.R')
+source('../BEC_R_working/_functions/_create_dendro.R')
+source('../BEC_R_working/_functions/_create_dendro_all.R')
+source('../BEC_R_working/_functions/_create_dendro_bybgc.R')
+source('../BEC_R_working/_functions/_draw_ss_edatope.R')
+source('../BEC_R_working/_functions/_draw_dendro_split.R')
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
 ```
 
@@ -73,7 +97,7 @@ Need to factor in USA 'zonal' ecosystems for cross-border correlation.
 
 Vegetation data is read in from saved .RDS file generated from the BECMaster cleaning scripts. Taxonomy is read-in from the species taxonomy database. A species lumping table is read-in from a Vpro database and applied to the vegetation data. The species taxonomy is joined to the vegetation data.
 
-```{r load data, warning=FALSE, message=FALSE}}
+```{r load data, warning=FALSE, message=FALSE}
 veg.dat <- readRDS(file.path(data.path, "BEC_veg_data/Analysis_BECMaster_Veg.rds")) ### named veg.dat
 veg.dat2 <- veg.dat
 taxon.all <- read_sppmaster()
@@ -96,7 +120,7 @@ veglump <- dbConnect(
   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
 lump <- dbReadTable(veglump, "CorrelationII_Zonal_Lump") %>% filter(!LumpCode == "FEATHERM")
 dbDisconnect(veglump)
-veg.dat2 <- lump_species(vegdata = veg.dat2, lump, use.subtaxa = TRUE) %>% filter(!Species == "UNKNOWN")
+veg.dat2 <- combine_taxa(vegdata = veg.dat2, lump, use.subtaxa = TRUE) %>% filter(!Species == "UNKNOWN")
 
 bgc.units<- dbConnect(
   odbc::odbc(),
@@ -109,10 +133,10 @@ bgcv13 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% select(BGC_NoSpace, SiteC
 Project SU tables (e.g. BGC_SU for a LMH) are read-in from regional databases and combined into a project specific table. Then the zonal units are selected for the analysis.
 
 ```{r read in SU data}
-db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
+db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/CoastArea_Sorts.accdb"
 su1 <- combined_su(db)
-db <- "D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb"
-su2 <- combined_su(db)
+db <- "D:/OneDrive - Government of BC/Cariboo BEC Correlation/Cariboo_SU_2.accdb"
+ su2 <- combined_su(db)
 db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Cariboo_LMH39_Sorts.accdb"
 su3 <- combined_su(db)
 db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/KootenayBoundary_Sorts.accdb"
@@ -127,11 +151,19 @@ db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/LMH65_Boreal_Sorts.accdb"
 su8 <- combined_su(db)
 #db <- "D:/BC_Correlation2_Vpro_2023/Cassiar_SUs.accdb"
 #su9 <- combined_su(db)
-db <- "D:/BC_Correlation2_Vpro_2023/TOR_FG_draft.accdb"
+db <- "D:/OneDrive - Government of BC/LMH81_NorthColumbia_Review_Nov2025/NorthThompson_FG_draft.accdb"
+#db <- "D:/BC_Correlation2_Vpro_2023/working/Lillooet_FG_draft.accdb"
 su10 <- combined_su(db)
-
-su <- rbind(su1, su2, su3, su4, su5, su6, su7, su8,  su10) %>%
+db <- "D:/OneDrive - Government of BC/LMH81_NorthColumbia_Review_Nov2025/Columbia_FG_draft.accdb"
+#db <- "D:/BC_Correlation2_Vpro_2023/working/NorthThompson_FG_draft.accdb"
+su11 <- combined_su(db)
+db <- "D:/BC_Correlation2_Vpro_2023/working/Lillooet_FG_draft.accdb"
+#db <- "D:/BC_Correlation2_Vpro_2023/working/NorthThompson_FG_draft.accdb"
+su12 <- combined_su(db)
+su <- rbind(su1, su2, su3, su4, su5, su6, su7, su8,  su10, su11, su12) %>% 
   filter(!grepl('moved', SiteUnit))
+ #su <- rbind(su2,su10, su11) %>%
+#   filter(!grepl('moved', SiteUnit))
 
 # Identify duplicated PlotNumbers (both first and subsequent occurrences)
 dups <- su[duplicated(su$PlotNumber) | duplicated(su$PlotNumber, fromLast = TRUE), ]
@@ -139,7 +171,7 @@ dups <- su[duplicated(su$PlotNumber) | duplicated(su$PlotNumber, fromLast = TRUE
 
 #xx <- su %>% filter(PlotNumber == "K780448")
 su <- su %>%
-  filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|support|101b', SiteUnit)) %>% distinct
+  filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|support|Y', SiteUnit)) %>% distinct
 fwrite(su, "./clean_data/combined_SU.csv")
 #|
 su <- su %>%   filter(grepl('01', SiteUnit)) ###zonal specific
@@ -155,8 +187,8 @@ xx <- su %>% distinct(SiteUnit)
 # su <- su %>%
 # filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|MHwh', SiteUnit))###BGC specific|CWHms
 
-#su <- su %>% filter(grepl('ICH|ESSF', SiteUnit))###BGC specific|CWHms
-su <- su %>% filter(grepl('ICH|IDFmw2|MS|SBS', SiteUnit)) #%>% 
+su <- su %>% filter(grepl('ESSF', SiteUnit))# %>%  mutate(bgc = ifelse(grepl('101.2', SiteUnit), paste0(bgc, "var2"), bgc))###BGC specific|CWHms
+#su <- su %>% filter(grepl('ICH|IDFmw2|MS|SBS', SiteUnit)) #%>% 
   #filter(!grepl('ICHmm|ICHdm', SiteUnit))###BGC specific|CWHms
 su <- su %>% mutate(SiteUnit = bgc)
 ## remove units that are not yet currently mapped zz is from the scripts clustering climate below
@@ -251,7 +283,7 @@ gt::gt(cophonentic) %>% gt::fmt_number(decimals = 2)
 #| fig-width: 7
 #| fig-height: 11
 #| fig-dpi: 600
-create_dendro_all(unit.compare = vegsum.pairs, cut.level = 0.2)
+create_dendro_all(unit.compare = vegsum.pairs, cut.level = 0.2, method = "average", parameter = 1)
 
 #bgc.unique <- c("CDFmm", "CWHvm3")
 # for (bgc.choose in bgc.unique){
@@ -263,7 +295,7 @@ create_dendro_all(unit.compare = vegsum.pairs, cut.level = 0.2)
 
 ```{r split dendrogram, echo=FALSE}
 
-xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.4)
+xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.2)
 xx
 ```
 
@@ -284,6 +316,9 @@ add_cluster_membership <- function(unit.compare, cut.level = .7){
 
 groups <- add_cluster_membership(vegsum.pairs, cut.level = .2)
 
+xx <- vegsum.pairs %>% 
+  filter(Unit1 %in% "ESSFxv2")#,
+
 ```
 
 ## Export summary table to excel
@@ -295,7 +330,7 @@ library(stringr)
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
 # tab.split = c('CDFmm_101', 'CDFmm_110', 'CDFmm_111', 'CDFmm_112',
 #                  'CWHxm2_110', 'CWHxm2_111','CWHxm2_112.1','CWHxm2_112.2', 'CWHxm2_113')
-# author = "zonal_table1"
+author = "zonal_table1"
  # bgc.choose = c('ESSFwk1', 'ESSFwk2', 'ESSFvk', 'ESSFvc','ESSFwh4', 'ESSFwh5',  'ESSFwh6', 'ESSFvm2', 'ESSFvm1')
  #  bgc.choose = c('ESSFmw1', 'ESSFmw2')
 bgc.choose <- bgc.list
@@ -304,30 +339,211 @@ su.zonal <- su %>% filter(bgc %in% bgc.choose)
 #bgc.list <- unique(su.zonal$bgc)
 
 vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
-veg.dat2 <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE) %>% filter(!Species == "UNKNOWN")
+veg.dat2 <- combine_taxa_strata(vegdata = vegdata, lump, use.subtaxa = FALSE) %>% filter(!Species == "UNKNOWN")
 
-xx <- vegSum %>% filter(SiteUnit %in% c("ICHmk3", "ICHwk2"))
+#xx <- vegSum %>% filter(SiteUnit %in% c("ICHmk3", "ICHwk2"))
 ###table 1
 # author = "zonal_table1"
 # bgc.list = c("CDFmm", "CWHxm1", "CWHxm2", "CWHxm3", "CWHmm1", "CWHmm2", "CWHvm1", "CWHvm2")
-author = "zonal_table2"
+author = "zonal_table3"
 #bgc.list = c("CWHds1", "CWHds2", "CWHms1", "CWHms2", "CWHms3","CWHws1", "CWHws2", "CWHws3", "CWHxs", "IDFww1")
 # author = "zonal_table3"
 # bgc.list = c("CWHvh1", "CWHvh2",  "CWHvm3", "CWHvm4", "CWHwm", "MHmm1", "MHmm2", "MHws", "MHvh")
 
  # su.zonal <- su %>% filter(bgc %in% bgc.list) %>% mutate(SiteUnit = recode(SiteUnit, "CWHxm3" = "CWHdm3", "CWHxm2" = "CWHdm2", "CWHxm1" = "CWHdm1", "CWHms4" = "CWHws3", "MHws" = "MHms", "IDFww1"= "IDFww"))
-vegsum.wbk <- createWorkbook()
-vegSum <-
-  create_veg_sum_all(vdat = veg.dat2, siteUnits = su.zonal , minconstancy = 50, noiseconstancy = 25, strata.by = "Layer")
-##determine order of species by unit
-# indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum,  siteUnits = su.zonal, BGC = bgc.choose)
-veg.sum.table <- format_veg_table(vsum = vegSum, spp=taxon.lifeform, type = "zonal")
-openxlsx::addWorksheet(vegsum.wbk, sheetName = author)
-openxlsx::writeData(vegsum.wbk, sheet = author, veg.sum.table)
+# vegsum.wbk <- createWorkbook()
+# vegSum <-
+#   create_veg_sum_all(vdat = veg.dat2, siteUnits = su.zonal , minconstancy = 50, noiseconstancy = 25, strata.by = "Layer")
+# ##determine order of species by unit
+# # indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum,  siteUnits = su.zonal, BGC = bgc.choose)
+# veg.sum.table <- format_veg_table_strata(vsum = vegSum, spp=taxon.lifeform)#, type = "zonal")
+# openxlsx::addWorksheet(vegsum.wbk, sheetName = author)
+# openxlsx::writeData(vegsum.wbk, sheet = author, veg.sum.table)
+# 
+# saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/ESSF_zonal_tables_", author, ".xlsx"), overwrite = TRUE)
 
-saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/ICH_draft_veg_tables_", author, ".xlsx"), overwrite = TRUE)
+
+vegsum.wbk <- createWorkbook()
+
+# Loop over each cluster
+for (g in sort(unique(groups$groups))) {
+
+  # SiteUnits in this group
+  su_group <- groups %>% 
+    filter(groups == g) %>% 
+    pull(SiteUnit)
+
+  # Filter your siteUnits table
+  su_sub <- su.zonal %>% 
+    filter(SiteUnit %in% su_group)
+
+  # Build vegetation summary for this group
+  vegSum_sub <- create_veg_sum_all(
+    vdat = veg.dat2,
+    siteUnits = su_sub,
+    minconstancy = 50,
+    noiseconstancy = 25,
+    strata.by = "Layer"
+  )
+
+  # Format table
+  veg.sum.table_sub <- format_veg_table_strata(
+    vsum = vegSum_sub,
+    spp = taxon.lifeform
+  )
+
+  # Name the sheet
+  sheet_name <- paste0("Group_", g)
+
+  # Add worksheet
+  addWorksheet(vegsum.wbk, sheetName = sheet_name)
+
+  # Write data
+  writeData(vegsum.wbk, sheet = sheet_name, veg.sum.table_sub)
+}
+
+saveWorkbook(
+  vegsum.wbk,
+  paste0("./vegsum.tables/ESSF_zonal_tables_", author, ".xlsx"),
+  overwrite = TRUE
+)
 
 ```
+## Generate formatted table summary report for BGC
+Does not render to report only in interactive in RStudio
+
+```{r}
+# veg.sum.gt <- gt::gt(veg.sum.table) |> gt::tab_options(table.font.size = 8)|> gt::tab_style(
+#     style = gt::cell_text(font = "Wingdings"),
+#     locations = gt::cells_body(columns = 4:(ncol(veg.sum.table))-1, rows = 2:nrow(veg.sum.table))) |>
+#   gt::tab_options(page.orientation = "landscape")|>
+# gt::tab_style(
+#     style = gt::cell_text(weight = "bold"),
+#     locations = gt::cells_body(rows =1)) |>
+#   gt::tab_header(
+#       title = paste("ESSF_zonal_Summary Vegetation Table")
+#   )
+#  veg.sum.gt
+```
+
+
+
+```{r association sum table, echo=FALSE}
+# symbolize_veg <- function(df) {
+#   df[] <- lapply(df, function(col) {
+#     if (!is.character(col)) return(col)
+# 
+#     col <- gsub("n", "\u25A0", col)  # black square
+#     col <- gsub("v", "\u25A0", col)  # grey square (we recolor in Typst)
+#     col <- gsub("l", "\u25CF", col)  # light grey circle
+# 
+#     col
+#   })
+#   df
+# }
+# 
+# symbolize_veg_typst <- function(df) {
+#   df[] <- lapply(df, function(col) {
+#     if (!is.character(col)) return(col)
+# 
+#     col <- gsub("n", "#text(fill: black)[■]", col)
+#     col <- gsub("v", "#text(fill: gray60)[■]", col)
+#     col <- gsub("l", "#text(fill: gray80)[●]", col)
+# 
+#     col
+#   })
+#   df
+# }
+# 
+# veg.sum.table.sym <- symbolize_veg_typst(veg.sum.table)
+# 
+# 
+# 
+# df_to_typst_table <- function(df, table_name = "vegtable") {
+# 
+#   escape <- function(x) {
+#     x <- gsub("\\|", "\\\\|", x)
+#     x <- gsub("#", "\\\\#", x)
+#     x
+#   }
+# 
+#   # Header
+#   header <- paste(escape(names(df)), collapse = " | ")
+# 
+#   # Body rows
+#   body_rows <- apply(df, 1, function(row) {
+#     paste(escape(as.character(row)), collapse = " | ")
+#   })
+# 
+#   # Build Typst table
+#   typst <- c(
+#     sprintf("#let %s = table(", table_name),
+#     "  columns: auto,",
+#     "  align: left,",
+#     "  stroke: 0.5pt + gray80,",
+#     "  header: true,",
+#     "  [",
+#     paste0("    ", header),
+#     "  ],"
+#   )
+# 
+#   # Add each row as its own bracketed block
+#   for (r in body_rows) {
+#     typst <- c(typst, "  [", paste0("    ", r), "  ],")
+#   }
+# 
+#   # Close table
+#   typst <- c(typst, ")")
+# 
+#   paste(typst, collapse = "\n")
+# }
+# 
+# 
+# typst_code <- df_to_typst_table(veg.sum.table.sym)
+# writeLines(typst_code, "veg_sum_table.typ")
+
+
+# bgc.list <- unique(su$bgc)
+# for(bgc.choose in bgc.list){
+# vegdata <- readRDS('./clean_data/Reports_BECMaster_Veg.rds')
+# tree_seedlings <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% mutate(Code = paste0(Code, "D")) %>% pull(Code)
+# trees <- taxon.lifeform %>% filter(Lifeform %in% c("1", "2")) %>% pull(Code)
+# vegdata <- vegdata  %>% filter(!Species %in% tree_seedlings)
+# vegdata <- vegdata  %>% filter(!(Species %in% trees & Layer == "Moss"))
+# 
+# veg.dat2 <- lump_species2(vegdata = vegdata, lump, use.subtaxa = FALSE)
+# BGC <- "MHmm1"
+# for(bgc.choose in bgc.unique){
+#   vegSum <-
+#   create_veg_sum(vdat = veg.dat2, siteUnits = su , BGC = bgc.choose, strata.by = "Layer")
+# ##determine order of species by unit
+# indic.order <- build_species_ordering(vdat = veg.dat2, vsum = vegSum, code.lump=lump, siteUnits = su, BGC = bgc.choose)
+# veg.sum.table <- format_veg_table(vsum = vegSum, spp = taxon.lifeform)
+
+# veg.sum.gt <- gt::gt(veg.sum.table) |> gt::tab_options(table.font.size = 8)|> gt::tab_style(
+#     style = gt::cell_text(font = "Wingdings"),
+#     locations = gt::cells_body(columns = 4:(ncol(veg.sum.table))-1, rows = 2:nrow(veg.sum.table))) |> 
+#   gt::tab_options(page.orientation = "landscape")|>
+# gt::tab_style(
+#     style = gt::cell_text(weight = "bold"),
+#     locations = gt::cells_body(rows =1)) |>
+#   gt::tab_header(
+#       title = paste("ESSF_zonal_Summary Vegetation Table")
+#   )
+#  veg.sum.gt
+# veg.sum.gt2 <- gt::as_latex(veg.sum.gt)
+# veg.sum.gt2
+
+```
+
+#```{=typst}
+#import "veg_sum_table.typ": vegtable
+#```
+
+#```{=typst}
+#vegtable
+#```
+
 
 ## Review of BGCs
 
