@@ -37,5 +37,5 @@ veg.dat <- create_veg_reports_dataset (plot.veg, taxon.lifeform)
 saveRDS(veg.dat, "./clean_data/Reports_BECMaster_Veg.rds")
 saveRDS(veg.dat, file.path(data.path, "BEC_veg_data/Reports_BECMaster_Veg.rds"))
 
-#xx <- veg.dat %>% filter(Species == "PSEUMEN")
+xx <- veg.dat %>% filter(Layer == "Regen")
 ```
