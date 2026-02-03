@@ -17,12 +17,12 @@ source("./_functions/_TabletoTree.R")
 #### Import becdb
 ```{r set folders, include=FALSE}
 require(DBI) #loads odbc as well
- becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2024.accdb;")
+ becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2026.accdb;")
 
-BGCs <- dbReadTable(becdb, "tblBGC_UnitsWorkingandArchive")%>% filter(!is.na(VersionRetired)) %>% select(BGC_Label, BGC_NoSpace, BGC_Zone) 
-SiteSeries<- dbReadTable(becdb, "tblBEC_SiteSeries_v13_compiled")# %>% filter(Status == "Current") %>% select(BGC_NoSpace, SS_NoSpace, SS_Label)
+BGCs <- dbReadTable(becdb, "tblBGC_UnitsWorkingandArchive")%>% filter(is.na(VersionRetired)) %>% select(BGC_Label, BGC_NoSpace, BGC_Zone) 
+SiteSeries<- dbReadTable(becdb, "tblBEC_SiteSeriesWorkingandArchive") %>% filter(!Status == "Retire") %>% select(BGC_NoSpace, SS_NoSpace, SS_Label)
 dbDisconnect(becdb)
-BGCs_noSS <- anti_join(BGCs , SiteSeries)
+BGCs_noSS <- anti_join(BGCs , SiteSeries) %>% drop_na
 
 # becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECdb_Working/BECdb_ver12_2021_reduced.accdb;")
 # dbWriteTable(becdb, "BGCs_NoSS",  BGCs_noSS, overwrite = TRUE, batch_rows = 1)
@@ -35,14 +35,43 @@ require(DBI) #loads odbc as well
  becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;")
 
 plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env") %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude))
-# ADMIN<- dbReadTable(becmaster, "BECMaster_fixing_Admin")
+plot.admin <- dbReadTable(becmaster, "BECMaster_fixing_Admin")
 # VEG <- dbReadTable(becmaster, "BECMaster_fixing_Veg")
 env.fields <- colnames(plot.env)
 odbc::odbcListColumns(becmaster, table = "BECMaster_fixing_ENV")
 dbDisconnect(becmaster)
 
+site.units<- dbConnect(
+  odbc::odbc(),
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2026.accdb;")
+siteseries <- dbReadTable(site.units, "tblBEC_SiteSeriesWorkingandArchive")
+dbDisconnect(site.units)
+ssv13 <- siteseries %>% filter(!Status %in% "Retire") %>% select(SS_Label) %>% distinct
+
 ```
 
+#### add BGC to association codes in SU
+```{r}
+# source("../BEC_R_working/_functions/_combined_su.R")
+# db <- "D:/BC_Correlation2_Vpro_2023/SUs_to_fix.accdb"
+# #db <- "D:/BC_Correlation2_Vpro_2023/Coast_Association_Exercise.accdb"
+# su <- combined_su(db)
+# library(dplyr)
+# library(stringr)
+# 
+# su <- left_join(su, plot.admin, by = c("PlotNumber" = "Plot")) %>%
+#   mutate(
+#     GIS_BGC_pad = str_pad(GIS_BGC, width = 9, side = "right"),
+#     SiteUnit2   = paste0(GIS_BGC_pad, " /", SiteUnit)
+#   ) %>%
+#   select(PlotNumber, SiteUnit2)
+# 
+# fwrite(su, "./clean_tabs/SU_with_BGC_added.csv")
+
+```
+
+
+### Combine all published SUs
 ```{r function to create provincial SU table}
 library(odbc)
 library(dplyr)
@@ -74,7 +103,7 @@ buildSU <- function(db) {
 }
 
 # Process all .accdb files in a folder
-process_all_databases <- function(folder_path) {
+process_all_SU_databases <- function(folder_path) {
   db_files <- list.files(folder_path, pattern = "\\.accdb$", full.names = TRUE)  # Get all Access files
   
   SU_combined <- bind_rows(lapply(db_files, buildSU), .id = "source_db")  # Merge results
@@ -83,8 +112,8 @@ process_all_databases <- function(folder_path) {
 }
 
 # Example usage (modify folder path as needed)
-folder_path <- "D:/BC_Correlation2_Vpro_2023/published_sorts/"  # Path to folder containing .accdb files
-SU_all <- process_all_databases(folder_path)
+folder_path <- "D:/BC_Correlation2_Vpro_2023/Sorts_published_LMH/"  # Path to folder containing .accdb files
+SU_all <- process_all_SU_databases(folder_path)
 SU_all <- SU_all %>% distinct(PlotNumber, SiteUnit) #%>% arrange(desc(PlotNumber))
 duplicates <- SU_all %>%
   group_by(PlotNumber) %>%
@@ -93,12 +122,14 @@ duplicates <- SU_all %>%
 
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
-dbWriteTable(master_su, "All_BGC13_May2025_SU",  SU_all, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+dbWriteTable(master_su, "All_BECv13_published_SU",  SU_all, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
 dbDisconnect(master_su)
-fwrite(SU_all, "./clean_tabs/All_BGC13_May2025_SU.csv")
+fwrite(SU_all, "./clean_tabs/All_BECv13_published_SU.csv")
 # update the BEC
 # View output
 head(SU_all)
+
+missing_ss <- anti_join(ssv13, SU_all, by = c("SS_Label" = "SiteUnit"))
 ```
 
 ### Combine all current SU tables into a single AllBGC SU table
@@ -132,25 +163,35 @@ buildSU <- function(db){
 CariboonewSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/Cariboo_SUs.accdb")
 CassiarnewSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/Cassiar_SUs.accdb")
 CoastSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/CoastArea_Sorts.accdb")
-ColumbianewSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb")
+#ColumbianewSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/Columbia_FG_draft.accdb")
 KBSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/KootenayBoundary_Sorts.accdb")
 OKSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/ThompsonOK_Sorts.accdb")
 SkeenaSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/Skeena_LMH26_Sorts.accdb")
 BorealSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/LMH65_Boreal_Sorts.accdb")
 OminecaSU <- buildSU(db = "D:/BC_Correlation2_Vpro_2023/published_sorts/OminecaPeace_SU_Tables.accdb")
-AllBGC_SU <- rbind(CariboonewSU, CassiarnewSU, CoastnewSU,  KBSU, OKSU, SkeenaSU, BorealSU, OminecaSU)
+AllBGC_SU <- rbind(CariboonewSU, CassiarnewSU, CoastSU,  KBSU, OKSU, SkeenaSU, BorealSU, OminecaSU)
 ##need to build a check for duplicates in here
 AllBGC_SU <- AllBGC_SU %>% distinct(PlotNumber, .keep_all = TRUE) %>% arrange(desc(PlotNumber))
 
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
-dbWriteTable(master_su, "All_BGC12DEC2024_SU",  AllBGC_SU, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+dbWriteTable(master_su, "All_BGCv13_SU",  AllBGC_SU, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
 dbDisconnect(master_su)
 
 LMH_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/published_sorts/LMH_SU_Tables.accdb;")
 dbWriteTable(LMH_su, "LMH77_Published_SU",  CoastSU, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
 dbDisconnect(LMH_su)
+```
+Compare to BECdb list of units
+```{r}
+site.units<- dbConnect(
+  odbc::odbc(),
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2026.accdb;")
+siteseries <- dbReadTable(site.units, "tblBEC_SiteSeriesWorkingandArchive")
+dbDisconnect(site.units)
+ssv13 <- siteseries %>% filter(!Status %in% "Retire") %>% select(SS_Label) %>% distinct
+missing_ss <- anti_join(ssv13, AllBGC_SU, by = c("SS_Label" = "SiteUnit"))
 ```
 
 
