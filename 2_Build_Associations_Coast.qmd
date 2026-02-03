@@ -53,34 +53,35 @@ require(grid)
 require(data.tree)
 library(stats)
 set.seed(1279)
-source("./_functions/_bec_dist.R")
-source("./_functions/_bec_dist_matrix.R")
-source("./_functions/_lump_species.R")
-source("./_functions/_lump_species2.R")
-source("./_functions/_create_su_vegdata.R")
-source("./_functions/_create_analysis_vegsum.R")
-source("./_functions/_TabletoTree.R")
-source("./_functions/_TreetoTable.R")
-source("./_functions/_add_vars.R")
-source("./_functions/_do_pairwise.R")
-source("./_functions/_create_diagnostic_veg.R")
-source("./_functions/_return_similar_pairs.R")
-source("./_functions/_read_sppmaster.R")
-source("./_functions/_combined_su.R")
-source("./_functions/_create_veg_sum.R")
-source('./_functions/_create_veg_sum_all.R')
-source('./_functions/_build_species_ordering.R')
-source('./_functions/_format_veg_table.R')
-source('./_functions/_format_veg_table2.R')
-source('./_functions/_encode_veg_sum.R')
-source('./_functions/_create_dendro.R')
-source('./_functions/_create_dendro_all.R')
-source('./_functions/_create_dendro_bybgc.R')
-source('./_functions/_draw_dendro_split.R')
-source('./_functions/_cluster_groups.R')
-source('./_functions/_TabletoTree.R')
-source('./_functions/_build_species_ordering_hier.R')
-source("./_functions/_cluster_by_spp_group.R")
+source("../BEC_R_working/_functions/_bec_dist.R")
+source("../BEC_R_working/_functions/_bec_dist_matrix.R")
+source("../BEC_R_working/_functions/_combine_taxa.R")
+source("../BEC_R_working/_functions/_combine_taxa_strata.R")
+#source("../BEC_R_working/_functions/_lump_species2.R")
+source("../BEC_R_working/_functions/_create_su_vegdata.R")
+source("../BEC_R_working/_functions/_create_analysis_vegsum.R")
+source("../BEC_R_working/_functions/_TabletoTree.R")
+source("../BEC_R_working/_functions/_TreetoTable.R")
+source("../BEC_R_working/_functions/_add_vars.R")
+source("../BEC_R_working/_functions/_do_pairwise.R")
+source("../BEC_R_working/_functions/_create_diagnostic_veg.R")
+source("../BEC_R_working/_functions/_return_similar_pairs.R")
+source("../BEC_R_working/_functions/_read_sppmaster.R")
+source("../BEC_R_working/_functions/_combined_su.R")
+source("../BEC_R_working/_functions/_create_veg_sum.R")
+#source('../BEC_R_working/_functions/_create_veg_sum_all.R')
+source('../BEC_R_working/_functions/_build_species_ordering.R')
+source('../BEC_R_working/_functions/_format_veg_table.R')
+source('../BEC_R_working/_functions/_format_veg_table_strata.R')
+source('../BEC_R_working/_functions/_encode_veg_sum.R')
+source('../BEC_R_working/_functions/_create_dendro.R')
+source('../BEC_R_working/_functions/_create_dendro_all.R')
+source('../BEC_R_working/_functions/_create_dendro_bybgc.R')
+source('../BEC_R_working/_functions/_draw_dendro_split.R')
+source('../BEC_R_working/_functions/_cluster_groups.R')
+source('../BEC_R_working/_functions/_TabletoTree.R')
+source('../BEC_R_working/_functions/_build_species_ordering_hier.R')
+source("../BEC_R_working/_functions/_cluster_by_spp_group.R")
 ```
 
 # Introduction
@@ -110,27 +111,31 @@ veglump <- dbConnect(
   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
 lump <- dbReadTable(veglump, "CorrelationII_Lump")
 dbDisconnect(veglump)
-veg.dat2 <- lump_species(vegdata = veg.dat, lump, use.subtaxa = FALSE)
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/CoastGuide_Forested.accdb"
+veg.dat2 <- combine_taxa(vegdata = veg.dat, lump, use.subtaxa = FALSE)
+db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/CoastArea_Sorts.accdb"
 #db <- "D:/BC_Correlation2_Vpro_2023/Coast_Association_Exercise.accdb"
 su <- combined_su(db)
 su <- su %>%
-  filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|unplaced|omit|support', SiteUnit))  %>% arrange(SiteUnit)#
+  filter(!grepl('X|unplaced|omit|support|nudum', SiteUnit))  %>% arrange(SiteUnit)#
+su <- su %>%
+  filter(grepl('CWH|CDF|MH', bgc))  %>% arrange(SiteUnit)
 #   filter(grepl('01', SiteUnit)) ###zonal specific
 su2 <- su %>% select(-SiteUnit.orig) %>%
-filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh'))###BGC specific|CWHms
+filter(!bgc %in% c('CWHvh3', 'CWHwh1', 'CWHwh2', 'CWHvh3', 'MHwh')) %>%
+  mutate(SiteUnit = str_replace(SiteUnit, "[ab]$", ""))
+###BGC specific|CWHms
 
 bgc.unique <- unique(su2$bgc)
 ss.unique <- su2 %>% select(SiteUnit, bgc) %>% distinct
 ss.count <- length(ss.unique$SiteUnit)
- becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/working/BECMaster_fixing.accdb;")
+ becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;")
 plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
 plot.edatope <- dbReadTable(becmaster, "BECMaster_fixing_edatopic")
 dbDisconnect(becmaster)
 
 #asmr.codes <- fread("./inputs/asmr_codes.csv")
 remove = c("Gg", "Ro", "Gs", "Rt", "Gb", "00", "/x", "Bb", "Br", "/Fm", "Fl")
-becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2024.accdb;")
+becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2026.accdb;")
 BGC_all <- dbReadTable(becdb, "tblBGC_UnitsWorkingandArchive") %>% 
   filter(is.na(VersionRetired)) %>% select(FSRegion, BGC_NoSpace)
 edatopic <- dbReadTable(becdb, "Edatopic_v13_3") %>% #filter(is.na(Ignore)) %>% 
@@ -164,7 +169,7 @@ SS.edatopic.range <- SS.edatopic %>% group_by(SiteUnit) %>%
 
 bgc.units<- dbConnect(
   odbc::odbc(),
-  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2024.accdb;")
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2026.accdb;")
 bgcv12 <- dbReadTable(bgc.units, "tblBGC_UnitsWorkingandArchive")
 dbDisconnect(bgc.units)
 bgcv13 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% select(BGC_NoSpace, SiteClassificationStatus)
@@ -172,10 +177,7 @@ bgcv13 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% select(BGC_NoSpace, SiteC
 ```
 add in other summary tables (e.g. USA)
 ```{r}
-usa_units <- read.xlsx("./usa.summary.units/CEGL007332_ARBMEN_PSEMEN_GAUSHA.xlsx") %>%
-  mutate(SiteUnit = gsub("/", "_", SiteUnit)) %>%
-  select(SiteUnit, USA_Series, USA_Subseries, USA_Series_Name, USA_Subseries_Name) %>%
-  distinct()
+usa_units <- fread("./usa.summary.units/USA_prepped_units.csv")
 ```
 
 ## Cluster analysis and dendrogram of all site units
@@ -211,12 +213,13 @@ vegsum.pairs <- do_pairwise(veg.dat2,
   su = su_working, minimportance = 0.1, minconstancy = 60,
   noiseconstancy = 10,
   minplots = 1,  minor = 1,
-  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
-  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .1,
-  reduced.exceptions = reduced.exceptions
+  use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .01,
+  reduced.exceptions = reduced.exceptions,
+  add_vegsum_table = usa_units
 )
 toc()
-
+xx <- vegsum.pairs %>%  dplyr::filter(Unit1 == "ARBMEN_PSEMEN_GAUSHA")
 unit.compare <- vegsum.pairs %>%
   select(Unit1, Unit2, BEC.sim.min, BEC.sim.mean , BEC.sim.max, diff.ratio.x, diff.ratio.y, diff.ratio, nplots.x, nplots.y, unit.diag.sum.x, unit.diag.sum.y) %>% filter(nplots.x>0) %>% mutate(metric.diff = BEC.sim.max - BEC.sim.min) %>%
  distinct()
@@ -228,7 +231,7 @@ unit.compare <- vegsum.pairs %>% filter(nplots.x > 0, Unit1 != Unit2) %>%
   distinct()
 
 bec_dist_matrix <- bec_dist_matrix(vegsum.pairs, distance = "BEC.sim.min") %>% data.frame
-write.csv(bec_dist_matrix, "./clean_tabs/LMH77_Forest_Distance_matrix.csv")
+write.csv(bec_dist_matrix, "./clean_tabs/Coast_Forest_Distance_matrix.csv")
 
 ```
 
@@ -291,15 +294,71 @@ col_label <- paste0("Site Unit (", num_units, ")")
   gt::cols_label(`Site Unit` = col_label) %>% 
   gt::tab_options(table.font.size = 10)
 ```
+```{r site units that are too similar, echo=FALSE}
+#| label: tab-sites-similar
+#| tbl-cap: paste0("Site Series pairs with poor differentiation (BEC.sim >= .90)")
+#| tbl-cap-location: top
+#| warning: false
+#| tbl-align: "left"
+ss_similar <- compared %>%
+  select(Unit1, Unit2, BEC.sim.min) %>%
+  dplyr::filter(BEC.sim.min >= .85) %>% mutate(Units = paste0(Unit1, " vs ", Unit2)) %>%
+  select(-Unit2, -Unit1) %>% 
+  rename("Similarity" = BEC.sim.min, "Site Units" = Units) %>%
+  distinct() 
+# low.diff <- gt::as_gtable((gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) |> gt::cols_width(Site.Units ~ gt::px(250))), plot = TRUE, text_grob = gridtext::richtext_grob)
+gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) 
+```
+
+
 Probably the best approach is separate site units into already defined Orders or SubOrders based on tree species composition, then cluster within hierarchical unit. 
 ```{r}
-
-source("./_functions/_evaluate_clustering_by_group2.R")
+source("../BEC_R_working/_functions/_evaluate_clustering_by_group2.R")
 
 ### Chunk here could feed in major analysis groups such as Orders
-hierarchy <- fread("./hierarchy/coast_siteunits_hierarchy_membership.csv") %>% mutate_if(is.logical, as.character) # from ML upper hierarchy
-group.table <- hierarchy %>% select(SiteUnit, Order)
+hierarchy <- fread("./hierarchy/coast_siteunits_hierarchy_membership.csv") %>% mutate_if(is.logical, as.character)
+#### Code for checking the list of units in the hierarchy and updating if required################
 
+missing_in_hierarchy <- su2 %>%
+  distinct(SiteUnit) %>%
+  anti_join(hierarchy %>% distinct(SiteUnit), by = "SiteUnit") %>%
+  mutate(flag = "in_su2_not_hierarchy")
+
+extra_in_hierarchy <- hierarchy %>%
+  distinct(SiteUnit) %>%
+  anti_join(su2 %>% distinct(SiteUnit), by = "SiteUnit") %>%
+  mutate(flag = "in_hierarchy_not_su2")
+
+hierarchy_updated <- hierarchy %>%
+  left_join(extra_in_hierarchy, by = "SiteUnit") %>%
+  bind_rows(
+    missing_in_hierarchy %>%
+      mutate(across(everything(), as.character))  # ensure type consistency
+  )
+
+hierarchy_updated2 <- hierarchy_updated %>%
+  mutate(
+unit_working = ifelse(
+  grepl("_[A-Za-z]", SiteUnit),
+  sub(".*_(.*)$", "\\1", SiteUnit),
+  unit_working# Extract the trailing letter only when present
+    )
+  )
+
+#fwrite(hierarchy_updated2, "./hierarchy/coast_siteunits_hierarchy_membership.csv")
+# from ML upper hierarchy
+### add in working units from within bgc clustering
+
+within.bgc.clst <-  fread("./hierarchy/within_bgc_clusters.csv")
+
+hierarchy_updated2[within.bgc.clst, unit_working := group_unit1, on = c("SiteUnit" = "unit1")]
+
+fwrite(hierarchy_updated2, "./hierarchy/coast_siteunits_hierarchy_membership.csv")
+```
+
+
+```{r}
+group.table <- hierarchy %>% select(SiteUnit, Order)
 
 
 clustering_results <- evaluate_clustering_by_group(
@@ -323,7 +382,7 @@ gt::gt(clustering_results) %>%
 Zonal groups from independent scripts
 Some 102 groups are from a manual merge in the intial correlation work. Most site units have low plot numbers and were grouped on major indicators and 'logical' climatic grouping 
 ```{r merge reviewed singles, echo=FALSE}
-source("./_functions/_assign_manual_cluster.R")
+source("../BEC_R_working/_functions/_assign_manual_cluster.R")
 zonal.groups = fread("./hierarchy/LMH77_zonal_assoc_memberships.csv")
 # su_zonal <- assign_manual_cluster(su.tab = su2, cluster.file = zonal.groups ,
 #                                  group_col = "assigned_assoc",
@@ -369,7 +428,7 @@ unit.compare <- vegsum.pairs %>% filter(nplots.x > 0, Unit1 != Unit2) %>%
 
 ### flag units with few plots or low diagnostics to remove before running clustering or to view within dendrogram.
 ```{r site dendrogram split, echo=FALSE}
-source("./_functions/_bec_dist_matrix.R")
+source("../BEC_R_working/_functions/_bec_dist_matrix.R")
 few.plots.threshold = 7
 low.diag.threshold = 30
 
@@ -403,7 +462,7 @@ low.diag.threshold = 30
 Successively merges units at a specified dissimilarity threshold.
 
 ```{r}
-source("./_functions/_stepwise_cluster_lumping.R")
+source("../BEC_R_working/_functions/_stepwise_cluster_lumping.R")
 su_order <- su_updated %>% filter(Order == "CWH") %>% arrange(SiteUnit)
 order_siteunits <- su_order  %>% select(SiteUnit) %>% distinct() %>% pull(SiteUnit)
 unit.compare.anal <- unit.compare.good %>% filter(Unit1 %in% order_siteunits, Unit2 %in% order_siteunits)
@@ -463,7 +522,7 @@ su3 <- merge(su2, su_update[, .(PlotNumber, Working)], by = "PlotNumber", all.x 
 
 #assoc.list <- coast.units %>% filter(!is.na(Association_clst)) %>% group_by(Association_clst) %>% mutate(n=n()) %>% filter(n>2) %>% distinct(Association_clst) %>% pull(Association_clst)
 unit.list <- su3 %>% filter(!is.na(Working)) %>%  select(SiteUnit, Working) %>% distinct() %>% group_by(Working) %>% mutate(n=n()) %>% filter(n > 0) %>% arrange(desc(n)) %>%  distinct(Working) %>% pull(Working)
-#assoc.choose = "Step3_Grp1"
+assoc.choose = "Step1_Grp5"
 vegsum.wbk <- createWorkbook()
 for(unit.choose in unit.list){
 #assoc.choose = "assoc-MC102"
@@ -474,10 +533,11 @@ veg.dat.assoc <- veg.dat2 %>% filter(PlotNumber %in% su.assoc$PlotNumber)
 # #bgc.choose = "CDFmmtab2"
 # #for(bgc.choose in bgc.list){
 vegSum <-
-  create_veg_sum_all(vdat = veg.dat.assoc, siteUnits = su.assoc, strata.by = "Lifeform")
+  create_veg_sum(vegdata = veg.dat.assoc, siteunit.tbl = su.assoc, siteunit.var = "Working", minconstancy = 60, noiseconstancy = 10, strata.by = "Lifeform", lumpfile = NULL)
+
 
 #indic.order <- build_species_ordering_hier(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc, hier.level = "Working")
-veg.sum.table <- format_veg_table2(vsum = vegSum, spp=taxon.lifeform)
+veg.sum.table <- format_veg_table(vsum = vegSum, spp=taxon.lifeform, strata.by = "Lifeform") #, species.order = indic.orderstrat)
 ## add in aSMR and SNR from edatopic tables conversion and climate summary data
 su.units <- su.assoc %>% select(SiteUnit) %>% distinct %>% pull(SiteUnit)
 #  mutate(SiteUnit = str_replace(SiteUnit, "\\.(1|2)$", "")) %>% 

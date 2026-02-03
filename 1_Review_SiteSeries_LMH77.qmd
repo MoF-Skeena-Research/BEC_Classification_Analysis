@@ -54,32 +54,34 @@ require(ggplotify)
 require(grid)
 require(webshot2)
 set.seed(1279)
-source("./_functions/_bec_dist.R")
-source("./_functions/_bec_dist_matrix.R")
-source("./_functions/_lump_species_lifeform.R")
-source("./_functions/_lump_species_strata.R")
-source("./_functions/_create_su_vegdata.R")
-source("./_functions/_create_analysis_vegsum.R")
-source("./_functions/_TabletoTree.R")
-source("./_functions/_TreetoTable.R")
-source("./_functions/_add_vars.R")
-source("./_functions/_do_pairwise.R")
-source("./_functions/_create_diagnostic_veg.R")
-source("./_functions/_return_similar_pairs.R")
-source("./_functions/_read_sppmaster.R")
-source("./_functions/_combined_su.R")
-source("./_functions/_create_veg_sum.R")
-source("./_functions/_create_veg_sum.R")
-#source('./_functions/_create_veg_sum2.R')
-source('./_functions/_build_species_ordering.R')
-source('./_functions/_format_veg_table.R')
-source('./_functions/_format_veg_table2.R')
-source('./_functions/_encode_veg_sum.R')
-source('./_functions/_create_dendro.R')
-source('./_functions/_create_dendro_all.R')
-source('./_functions/_create_dendro_bybgc.R')
-source('./_functions/_draw_ss_edatope.R')
-source('./_functions/_create_VGS_table.R')
+source("../BEC_R_working/_functions/_bec_dist.R")
+source("../BEC_R_working/_functions/_bec_dist_matrix.R")
+source("../BEC_R_working/_functions/_combine_taxa.R")
+#source("../BEC_R_working/_functions/_lump_species2.R")
+source("../BEC_R_working/_functions/_create_su_vegdata.R")
+source("../BEC_R_working/_functions/_create_analysis_vegsum.R")
+source("../BEC_R_working/_functions/_TabletoTree.R")
+source("../BEC_R_working/_functions/_TreetoTable.R")
+source("../BEC_R_working/_functions/_add_vars.R")
+source("../BEC_R_working/_functions/_do_pairwise.R")
+source("../BEC_R_working/_functions/_create_diagnostic_veg.R")
+source("../BEC_R_working/_functions/_return_similar_pairs.R")
+source("../BEC_R_working/_functions/_read_sppmaster.R")
+source("../BEC_R_working/_functions/_combined_su.R")
+source("../BEC_R_working/_functions/_create_veg_sum.R")
+#source('../BEC_R_working/_functions/_create_veg_sum_all.R')
+source('../BEC_R_working/_functions/_build_species_ordering.R')
+source('../BEC_R_working/_functions/_format_veg_table.R')
+#source('../BEC_R_working/_functions/_format_veg_table2.R')
+source('../BEC_R_working/_functions/_encode_veg_sum.R')
+source('../BEC_R_working/_functions/_create_dendro.R')
+source('../BEC_R_working/_functions/_create_dendro_all.R')
+source('../BEC_R_working/_functions/_create_dendro_bybgc.R')
+source('../BEC_R_working/_functions/_draw_dendro_split.R')
+source('../BEC_R_working/_functions/_cluster_groups.R')
+source('../BEC_R_working/_functions/_TabletoTree.R')
+source('../BEC_R_working/_functions/_build_species_ordering_hier.R')
+source("../BEC_R_working/_functions/_cluster_by_spp_group.R")
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
 
 ```
@@ -106,8 +108,8 @@ veglump <- dbConnect(
   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;")
 lump <- dbReadTable(veglump, "CorrelationII_Lump")
 dbDisconnect(veglump)
-veg.dat2 <- lump_species_lifeform(vegdata = veg.dat, lump, use.subtaxa = FALSE)
-db <- "D:/BC_Correlation2_Vpro_2023/CoastGuide_Forested.accdb"
+veg.dat2 <- combine_taxa(vegdata = veg.dat, lump, use.subtaxa = FALSE)
+db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/CoastArea_Sorts.accdb"
 su <- combined_su(db)
 su.nf <- su %>%
   filter(grepl('_[[:alpha:]]', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
@@ -260,14 +262,32 @@ This section is to identify site series that do not differentiate adequately and
 The dendrogram is an approximate representation of the similarity matrix. It is constructed using agglomerative hierarchical clustering which merges site units from the bottom up. The red line represents the minimal dissimilarity required to separate units into different site series. Any splits to the right of the red line should be considered for merging into the same site series (possibly as phases). Current threshold is set at 7% but assessment is required. Splits that occur between the green association threshold and the red minimum threshold will likely be merged at the subassociation level in the hierarchy. The green line represents the dissimilarity threshold for an association. Site unit 'leaves' to the right of this threshold will fall under the same association in the hierarchy. Current threshold is set at 17% but assessment is required.
 
 ```{r cluster analysis, echo=FALSE}
-#bgc.unique <- c("CDFmm", "CWHvm3")
+bgc.unique <- c("CDFmm", "CWHvm3")
+bgc.unique <- unique(su2$bgc[startsWith(su2$bgc, "CWH")])
+
 # singles <- for (bgc.choose in bgc.unique){
-#   create_dendro_bybgc(bgc.choose, unit.compare, threshold.low = .10, threshold.high = .20)
+#   create_dendro_bybgc(bgc.choose, unit.compare, threshold.low = .07, threshold.high = .15)
 # }
+singles <- lapply(
+  bgc.unique,
+  function(bgc.choose) {
+    create_dendro_bybgc(
+      bgc.choose,
+      unit.compare,
+      threshold.low = .07,
+      threshold.high = .15
+    )
+  }
+)
+
+library(dplyr)
+singles.tables <- bind_rows(lapply(singles, `[[`, "similar_units"))
+
+fwrite(singles.tables, "./hierarchy/within_bgc_clusters.csv")
 
 # singles.poor <- as.data.frame(singles) %>% filter(grepl('nplot|lowdiag', SiteUnit))
 # singles.good <- as.data.frame(singles) %>% filter(!grepl('nplot|lowdiag', SiteUnit))
-# 
+# #
 # gt::gt(singles.good) %>%
 #   gt::tab_header(
 #     title = paste0(md("Units ungrouped at cut.level = "), cut.level),
