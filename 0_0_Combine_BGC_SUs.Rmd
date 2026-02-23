@@ -43,10 +43,31 @@ dbDisconnect(becmaster)
 
 site.units<- dbConnect(
   odbc::odbc(),
-  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2026.accdb;")
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; 
+DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2026.accdb;")
 siteseries <- dbReadTable(site.units, "tblBEC_SiteSeriesWorkingandArchive")
 dbDisconnect(site.units)
 ssv13 <- siteseries %>% filter(!Status %in% "Retire") %>% select(SS_Label) %>% distinct
+```
+
+## check for missing SUs in published LMH SU table
+```{r set folders, include=FALSE}
+###Add in nplots per site unit
+SU <- dbConnect(
+  odbc::odbc(),
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
+sorts.LMH <- dbReadTable(SU, "All_BECv13_published_SU")
+dbDisconnect(SU)
+# Ensure both sides are character vectors
+su_all <- sorts.LMH$SiteUnit %>% unique()
+ss_v13 <- ssv13$SS_Label %>% unique()
+
+# Find SUs in sorts.LMH that are missing from the v13 site-series table
+missing_su <- setdiff(su_all, ss_v13) %>% as.data.frame()
+missing_su
+
+missing_ss <- setdiff(ss_v13, su_all) %>% as.data.frame()
+missing_ss
 
 ```
 
@@ -118,8 +139,16 @@ SU_all <- SU_all %>% distinct(PlotNumber, SiteUnit) #%>% arrange(desc(PlotNumber
 duplicates <- SU_all %>%
   group_by(PlotNumber) %>%
   filter(n() > 1) %>%  # Keep only duplicate PlotNumbers
-  arrange(PlotNumber)  # Sort for clarity
+  arrange(PlotNumber) 
+plots_per_SU <- SU_all %>%
+  distinct(PlotNumber, SiteUnit) %>%
+  count(SiteUnit, name = "n_plots") %>%
+  arrange(desc(n_plots))
+# Sort for clarity
+```
 
+
+```{r function to create provincial SU table}
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
 dbWriteTable(master_su, "All_BECv13_published_SU",  SU_all, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
@@ -128,7 +157,6 @@ fwrite(SU_all, "./clean_tabs/All_BECv13_published_SU.csv")
 # update the BEC
 # View output
 head(SU_all)
-
 missing_ss <- anti_join(ssv13, SU_all, by = c("SS_Label" = "SiteUnit"))
 ```
 

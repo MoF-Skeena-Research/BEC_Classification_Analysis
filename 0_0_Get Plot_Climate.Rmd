@@ -16,6 +16,7 @@ source("_functions/_add_vars.R")
 source("_functions/_add_vars_climr.R")
 require(ClimateNAr)
 require(tictoc)
+require(sf)
 ```
 
 ## Call climr and attach climate data to plot data
@@ -152,21 +153,34 @@ dbDisconnect(becmaster)
 #make dataframe for extracting climate data
 my_points <- plot.env  %>% select(Longitude, Latitude, Elevation, PlotNumber, ProjectID) %>%
   rename(lon = Longitude,   lat = Latitude, 
-  elev = Elevation, id = PlotNumber)%>% mutate(lon = 0-lon) %>% na.omit() #remove NAs
+  elev = Elevation, id = PlotNumber)%>% mutate(lon = 0-lon) %>% na.omit() 
 
-## climr query for the historic data - only using 1961-1990 for now 
-## what is the resolution/scale of these data? PRISM 800m downscaled to plot-level (accuracy of GPS points and elevation- double checks elev vals make bigger difference)
-tic()
-#cache_clear()
-clim_dat <- downscale(
-  xyz = my_points, which_refmap = "auto", 
- vars=var_names)
+coords_sf <- st_as_sf(my_points, coords = c("lon","lat"), crs = 4326)
+
+coords <- as.data.frame(my_points) %>% distinct# %>% dplyr::rename(long = 1, lat = 2)
+setcolorder(coords, c("lon","lat","elev","id"))
+coords.bgc <- coords %>% dplyr::select(id, lon,lat,elev)# %>% dplyr::rename(ID = id)
+tic()#remove NAs
+
+plot.climate <- downscale(xyz = setDT(coords)[,.(id,lon,lat,elev, id)],
+          vars = list_vars(set = c("Annual", "Seasonal", "Monthly")), 
+          return_refperiod = TRUE, 
+          #ensemble_mean = FALSE,
+          #gcms = c("ACCESS-ESM1-5","CNRM-ESM2-1", "EC-Earth3", "GFDL-ESM4", "GISS-E2-1-G", "MIROC6",  "MPI-ESM1-2-HR", "MRI-ESM2-0" ),
+          #ssps = c("ssp245", "ssp370", "ssp585"),           
+          #gcm_ssp_years = c(2025:2045),
+          #run_nm = list_runs_ssp(gcm = list_gcms(), ssp = list_ssps()[2]),#[12][2]
+          max_run = 3,
+          #gcm_periods = list_gcm_periods()[2],
+          db_option = "local",
+          cache=TRUE
+          )
 toc()
-clim_dat2 <- addVarsclimr(clim_dat)
 
 #merge back with plot data 
-plot_dat<- rename(clim_dat2, PlotNumber=id)
-fwrite(plot_dat, "./clean_data/plot_dat_climr.csv")
+plot.climate <- rename(plot.climate, PlotNumber=id)
+saveRDS(plot.climate, "./clean_data/BECMaster_climr.rds")
+#fwrite(plot_dat, "./clean_data/plot_dat_climr.csv")
 
 ```
 
