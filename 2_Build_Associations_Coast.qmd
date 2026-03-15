@@ -1,7 +1,7 @@
 ---
 title: "Build Associations for LMH77"
 author: "William H MacKenzie"
-date: "06/09/2024"
+date: today
 format:
   typst:
     toc: false
@@ -110,9 +110,11 @@ A species lumping code table is read in from the Correlation2_Spp_lump.accdb dat
 #------------------------------------------------------------
 # 1. Load vegetation data + taxon lifeform classifications
 #------------------------------------------------------------
-
-veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds")
 taxon.all <- read_sppmaster()
+taxon.exotic <- taxon.all %>%
+  filter(Native == "E") %>%
+  select(Code) %>%
+  pull()
 
 taxon.lifeform <- taxon.all %>%
   filter(Codetype %in% c("U", "X", "D")) %>%
@@ -127,7 +129,7 @@ tree_seedlings <- taxon.lifeform %>%
   filter(Lifeform %in% c("1", "2")) %>% 
   mutate(Code = paste0(Code, "D")) %>% 
   pull(Code)
-
+veg.dat <- readRDS("./clean_data/Analysis_BECMaster_Veg.rds") %>% filter(!Species %in% taxon.exotic, !startsWith(Species, "POA_PRA"))
 #------------------------------------------------------------
 # 2. Read lump table and apply combine_taxa()
 #------------------------------------------------------------
@@ -140,7 +142,8 @@ veglump <- dbConnect(
 lump <- dbReadTable(veglump, "CorrelationII_Lump")
 dbDisconnect(veglump)
 
-veg.dat2 <- combine_taxa(vegdata = veg.dat, lump, use.subtaxa = FALSE)
+veg.dat2 <- combine_taxa(vegdata = veg.dat, lump, use.subtaxa = FALSE)%>% 
+   filter(!Species %in% taxon.exotic)
 
 #------------------------------------------------------------
 # 3. Load SiteUnit data from two LMH databases
@@ -256,7 +259,7 @@ SS.edatopic.range <- SS.edatopic %>%
   select(SiteUnit, SNR.range, rSMR, aSMR)
 
 #------------------------------------------------------------
-# 8. Plot climate data
+# 9. Plot climate data
 #------------------------------------------------------------
 plot.climate <- readRDS("./clean_data/BECMaster_climr.rds")
 ```
@@ -283,6 +286,9 @@ plot.climate <- readRDS("./clean_data/BECMaster_climr.rds")
 This code links Site Units to their BEC hierarchy classifications and determines the most appropriate level for analysis. After joining hierarchy metadata to the Site Unit table, the script walks down the predefined hierarchy—from broad classes to fine Site Units—to identify the first available non‑missing classification for each record. This resolved level becomes the analytical grouping (anal.test). Finally, the script assigns a working hierarchy label (SiteUnit.hier) based on a user‑selected grouping level (e.g., Association), falling back to the root Site Unit name when no Association designation has been provided. The result is a clean, consistent hierarchy assignment ready for downstream ecological analysis.
 
 ```{r choose level, echo=FALSE}
+## Limit the analysis based on Analysis_Group column in the hierarchy table. 
+anal.set <- c("Forest-Coast")#, "Deciduous-Coast", 
+#Order.set <- c("Qg")
 #------------------------------------------------------------
 # 1. Define hierarchy (cleaned)
 #------------------------------------------------------------
@@ -294,7 +300,7 @@ hierarchy <- c(
 )
 
 group.to.test <- "Association"
-anal.set <- "Forest"
+
 
 #------------------------------------------------------------
 # 2. Prepare hierarchy table
@@ -309,7 +315,8 @@ BEC.hier2 <- BEC.hier %>%
 
 su.anal1 <- su2 %>%
   left_join(BEC.hier2, by = c("SiteUnit.orig" = "SS_Label")) %>%
-  filter(Analysis_Group %in% anal.set)
+  filter(Analysis_Group %in% anal.set) #%>%   filter(Order %in% Order.set)
+  
 
 #------------------------------------------------------------
 # 4. Compute anal.test by walking down the hierarchy
@@ -349,11 +356,24 @@ su.anal1 <- su.anal1 %>%
 ## Add in summary data from adjacent areas for comparison
 Other summary tables for comparison (e.g. USA) table can be added to the analysis for comparison in do.pairwise function.
 ```{r}
-usa_units <- fread("./usa.summary.units/USA_prepped_units.csv")
+usa_units <- fread("./usa.summary.units/USA_prepped_units3.csv") %>% select(-ScientificName) %>% 
+   filter(!Species %in% taxon.exotic,!startsWith(Species, "POA_PRA")) %>% filter(startsWith(SiteUnit, "Q"))
+usa_units <- usa_units %>%
+  mutate(Species = recode(Species,
+                          POLYGLY = "POLYPODI",
+                          SELAWAL = "SELAGINE"))
+
+#veg.dat2 <- combine_taxa(vegdata = usa_units, lump, use.subtaxa = FALSE)
+#usa_units <- readRDS("./usa.summary.units/usa_assocs_vegdat.rds")
+# dups <- veg.comb %>%
+#   group_by(SiteUnit, Species) %>%
+#   filter(n() > 1) %>%
+#   arrange(SiteUnit, Species)
 ```
 
 ## Run pairwise vegetation similarity analysis
-This code prepares Site Units for vegetation similarity analysis by assigning each plot to its working hierarchical unit and defining key indicator species and reduction rules. It then runs a pairwise vegetation comparison using do_pairwise(), producing similarity metrics for all Site Unit combinations. From these results, the script extracts a clean comparison table and generates a full BEC similarity distance matrix based on minimum similarity values. The resulting matrix is exported for downstream clustering, ordination, or classification work
+This code prepares Site Units for vegetation similarity analysis by assigning each plot to its working hierarchical unit and defining key indicator species and reduction rules. It then runs a pairwise vegetation comparison using do_pairwise(), producing similarity metrics for all Site Unit combinations. From these results, the script extracts a clean comparison table and generates a full BEC similarity distance matrix based on minimum similarity values. The resulting matrix is exported for downstream clustering, ordination, or classification work.
+One possible option here is to adjust pair-wise similarity downward where environmental differences are significant.
 
 ```{r build pair.wise similarity matrix, echo=FALSE, message=FALSE, warning=FALSE}
 
@@ -379,24 +399,59 @@ su_working <- su.anal1 %>%   rename(SiteUnit.base = SiteUnit, SiteUnit = SiteUni
 #------------------------------------------------------------
 # 3. Run pairwise vegetation similarity analysis
 #------------------------------------------------------------
-
-vegsum.pairs <- do_pairwise(
-  veg.dat2,
-  su = su_working,
-  minimportance   = 0.1,
-  minconstancy    = 60,
-  noiseconstancy  = 10,
-  minplots        = 1,
-  minor           = 1,
-  use.ksi         = FALSE,
-  ksi             = key.site.indicators,
-  ksi.value       = 1.5,
-  reduce.lifeform = TRUE,
-  reduced.lifeforms = reduced.lifeforms,
-  reduction       = 0.1,
-  reduced.exceptions = reduced.exceptions,
-  add_vegsum_table = NULL
+pairwise.params <- list(
+  su                = su_working,
+  minimportance         = 0.1,
+  minconstancy          = 60,
+  noiseconstancy        = 10,
+  minplots              = 1,
+  minor                 = 1,
+  use.ksi               = FALSE,
+  ksi   = key.site.indicators,
+  ksi.value             = 1.5,
+  reduce.lifeform       = TRUE,
+  reduced.lifeforms     = reduced.lifeforms,
+  reduction             = 0.1,
+  reduced.exceptions    = reduced.exceptions,
+  add_vegsum_table      = NULL
 )
+
+vegsum.pairs <- do.call(
+  do_pairwise,
+  c(list(veg.dat2), pairwise.params)
+)
+
+# Start with everything except `su`
+print.params <- pairwise.params[setdiff(names(pairwise.params), "su")]
+
+# Remove ksi if use.ksi == FALSE
+if (!pairwise.params$use.ksi) {
+  print.params <- print.params[setdiff(names(print.params), c("ksi", "ksi.value"))]
+}
+
+# Remove reduction-related fields if reduce.lifeform == FALSE
+if (!pairwise.params$reduce.lifeform) {
+  print.params <- print.params[setdiff(names(print.params),
+                                       c("reduced.lifeforms", "reduction", "reduced.exceptions"))]
+}
+library(tibble)
+library(knitr)
+
+param.table <- tibble(
+  parameter = names(print.params),
+  value = sapply(print.params, function(x) paste(x, collapse = ", "))
+)
+
+param.table %>%
+  gt() %>%
+  tab_header(title = "Parameter Settings for do_pairwise()") %>%
+  tab_options(
+    table.font.size = px(8),
+    table.border.top.width = px(1),
+    table.border.bottom.width = px(1)
+  )
+
+
 
 #------------------------------------------------------------
 # 4. Extract comparison table
@@ -423,7 +478,7 @@ bec_dist_matrix <- bec_dist_matrix(
 write.csv(
   bec_dist_matrix,
   "./clean_tabs/Coast_Forest_Distance_matrix.csv",
-  row.names = FALSE
+  row.names = TRUE
 )
 ```
 
@@ -439,7 +494,7 @@ Some units with few plots or low diagnostics fall out as singles in the first pa
 List of site series with too few plots or low diagnostic potential for reliable analysis 
 ```{r, echo=FALSE}
 #| label: tab-too-few-plots
-#| tab-cap: "Site Units with Fewer than 5 Plots"
+#| tab-cap: "Site Units with Fewer than 6 Plots"
 #| tbl-cap-location: top
 #| warning: false
 #| tab-align: "left"
@@ -447,7 +502,7 @@ List of site series with too few plots or low diagnostic potential for reliable 
 # Identify Site Units with fewer than 8 plots
 ss_too.few <- unit.compare %>%
   select(Unit1, nplots.x) %>%
-  filter(nplots.x < 8) %>%
+  filter(nplots.x < 6) %>%
   distinct() %>%
   rename(
     "Site Unit"      = Unit1,
@@ -533,12 +588,72 @@ dendro_hc <- create_dendro_all(unit.compare)
 ```
 ### Draw cluster diagram subsets from tree split at set dissimilarity level
 ```{r}
+source("../BEC_R_working/_functions/_bec_dist_matrix.R")
 xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.2)
+```
+Compare vegetation summaries for these units to see if they are similar enough to consider merging into the same association.
+```{r}
+# require(openxlsx)
+# require(tictoc)
+# library(stringr)
+# 
+# #su.singles <- su.anal.new %>% filter(SiteUnit %in% check.match$SiteUnit | groups %in% check.match$group)
+# #su.zonal <- su %>% filter(bgc %in% bgc.choose)
+# #bgc.list <- unique(su.zonal$bgc)
+# data.path = "D:/OneDrive - Government of BC/GitHub_data"
+# vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
+# veg.dat2 <- combine_taxa_strata(vegdata = vegdata, lump, use.subtaxa = FALSE) %>% filter(!Species == "UNKNOWN")
+# author = "Qg"
+#  
+#  veg_all <- create_veg_sum_all(
+#     vdat = veg.dat2,
+#     siteUnits = su_working,
+#     minconstancy = 50,
+#     noiseconstancy = 25,
+#     strata.by = "Lifeform"
+#   )
+#  veg_all$Group = "All"
+#  veg_all <- veg_all %>% select(SiteUnit, Species, Lifeform, MeanCov, Constancy, nplots, Group)
+#  
+# usa_units2 <- usa_units %>%
+#   mutate(
+#     Lifeform = 0,
+#     Group = "All"
+#   ) %>%
+#   select(SiteUnit, Species, Lifeform, MeanCov, Constancy, nplots, Group)# %>%
+#   # left_join(
+#   #   taxon.lifeform %>% select(Code, Lifeform),
+#   #   by = c("Species" = "Code")
+#   # ) %>%
+#   # mutate(
+#   #   Lifeform = ifelse(is.na(Lifeform.y), Lifeform.x, Lifeform.y)
+#   # ) %>%
+#   # select(-Lifeform.x, -Lifeform.y)
+# 
+#  veg.comb <- rbind(veg_all, usa_units2) %>% distinct %>% drop_na %>% mutate(Lifeform = 0, Group= "All") %>% 
+#    filter(!Species %in% taxon.exotic)
+# veg_all_tbl <- format_veg_table(vsum = veg.comb, spp = taxon.lifeform)
+# 
+# 
+# vegsum.wbk <- createWorkbook()
+# 
+#   addWorksheet(vegsum.wbk, "All")
+#   
+#   # Write combined table
+#   writeData(vegsum.wbk, sheet = "All", veg_all_tbl, startCol = 1, startRow = 1)
+# 
+# saveWorkbook(
+#   vegsum.wbk,
+#   paste0("./vegsum.tables/Compare_tables_", author, ".xlsx"),
+#   overwrite = TRUE
+# )
+
 ```
 ### Create initial associations from clusters to group and write into BECdb
 In the BECdb query to write the initial units in the the tempAssoc_Code field of tblBECHierarchy_Class table for subsequent use in analytics
 ```{r cluster analysis, echo=FALSE, results= 'hide'}
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
+fig.show='hide'
 dendro_hc <- create_dendro_all(unit.compare)
 clusters <- cutree(dendro_hc, h = 0.20)
 cluster_dt <- data.table(
@@ -595,7 +710,7 @@ BEC.hier.temp <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") #%>% select(-SiteU
 dbDisconnect(becdb)
 
 group.to.test <- "tempAssoc_Code"
-anal.set <- "Forest"
+anal.set <- anal.set
 su.anal.new <- left_join (su.anal1, BEC.hier.temp , by = c("SiteUnit.orig" = "SS_Label"))%>%
   filter(Analysis_Group %in% anal.set)
 
@@ -703,7 +818,7 @@ write.csv(
 )
 ```
 ## Second cluster dendrogram
-Using updated tempAssoc_Code and initial predefined groups as working associations to group remaining singletons with low diagnostic potential or few plots into working associations for review and editing.
+Using updated tempAssoc_Code and initial previously defined Associations as working associations to group remaining singletons with low diagnostic potential or few plots into working associations for review and editing.
 
 ```{r}
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
@@ -786,7 +901,7 @@ source("../BEC_R_working/_functions/_find_edaphic_similarity.R")
 assoc_edatope <- plot.edatope %>%
   left_join(su2, by = "PlotNumber") %>%
   left_join(BEC.hier, by = c("SiteUnit" = "SiteUnit")) %>%
-  filter(Analysis_Group == "Forest") %>%
+  filter(Analysis_Group == anal.set) %>%
   select(SiteUnit, aSMR, SNR, groups = tempAssoc_Code) %>%
   filter(!is.na(SiteUnit)) %>%
 #  filter(groups %in% select.groups) %>%
@@ -831,12 +946,11 @@ edatopic_outlier_gt <- edatopic_outlier %>%
     SNR_Flag = flag_SNR
   ) 
 
-  gt(edatopic_outlier_gt) %>%
+gt(edatopic_outlier_gt) %>%
   gt::tab_header(
     title = "Edatopic Outlier Summary",
     subtitle = "SiteUnits flagged as edaphic outliers based on median and range diagnostics"
   ) %>%
-  #fmt_flag(columns = c(aSMR_Flag, SNR_Flag)) %>%
   gt::cols_label(
     Group = "Association Group",
     SiteUnit = "Site Unit",
@@ -852,10 +966,13 @@ edatopic_outlier_gt <- edatopic_outlier %>%
     locations = cells_body(
       columns = c(aSMR_Flag, SNR_Flag),
       rows = aSMR_Flag == TRUE | SNR_Flag == TRUE
-    )) %>%
+    )
+  ) %>%
+  cols_width(everything() ~ px(1)) %>%   # <— auto-fit trick
   tab_options(
     table.font.size = px(7),
-    data_row.padding = px(0)
+    data_row.padding = px(0),
+    table.layout = "auto"
   )
 
 ```
@@ -908,7 +1025,7 @@ univariate_outliers <- climate_compared$climate_outliers %>% select(SiteUnit, gr
     SU_Mean = mean_su,
     Group_Mean = mean_grp
   )
-  gt(univariate_outliers) %>%
+gt(univariate_outliers) %>%
   tab_header(
     title = "Climate Outliers: Univariate Deviations",
     subtitle = "SiteUnits with mean climate values outside group envelopes"
@@ -917,11 +1034,14 @@ univariate_outliers <- climate_compared$climate_outliers %>% select(SiteUnit, gr
     columns = c(SU_Mean, Group_Mean),
     decimals = 2
   ) %>%
+  cols_width(
+    everything() ~ px(1)   # auto-fit trick
+  ) %>%
   tab_options(
-    table.font.size = px(8),
-    data_row.padding = px(1)
+    table.font.size = px(7),
+    data_row.padding = px(0),
+    table.layout = "auto"
   )
-
 
 #mahalabobis_outliers <- climate_compared$mahal_all  %>% arrange(group, SiteUnit) %>% drop_na(group)
 #mahal_dist<- mahal_results$within_group_mahal %>% drop_na(groups)
@@ -1077,6 +1197,7 @@ saveWorkbook(
 
 ```
 ## Create prospective Alliances from last round of Associations
+Set the cut level to 40% dissimilarity to generate preliminary alliances for review and editing. This will be used to review the proposed alliances and make decisions about which site units should be merged into associations, which should be separated into new associations, and which should be left as singletons. The vegetation summary tables will also be used to identify potential diagnostic species for each alliance and to compare the vegetation composition of different alliances.
 ```{r echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
 #single.units <- draw_dendro_split(unit.compare = vegsum.pairs.new, cut.level=.4)
@@ -1132,7 +1253,7 @@ BEC.hier.temp <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") #%>% select(-SiteU
 dbDisconnect(becdb)
 
 group.to.test <- "tempAlliance"
-anal.set <- "Forest"
+anal.set <- anal.set
 su.alliances <- left_join (su2, BEC.hier.temp , by = c("SiteUnit.orig" = "SS_Label")) %>%
   filter(Analysis_Group %in% anal.set)
 
@@ -1249,13 +1370,11 @@ veg_all_tbl <- rbindlist(
 writeData(vegsum.wbk, sheet_name, veg_all_tbl,                 startCol = 1, startRow = 1)
 
 }
-
 # Save workbook
 saveWorkbook(
   vegsum.wbk,
   paste0("./vegsum.tables/Group_Summary_tables_", author, ".xlsx"),
   overwrite = TRUE
 )
-
 ```
 
