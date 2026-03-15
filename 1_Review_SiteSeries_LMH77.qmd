@@ -82,6 +82,7 @@ source('../BEC_R_working/_functions/_cluster_groups.R')
 source('../BEC_R_working/_functions/_TabletoTree.R')
 source('../BEC_R_working/_functions/_build_species_ordering_hier.R')
 source("../BEC_R_working/_functions/_cluster_by_spp_group.R")
+source("../BEC_R_working/_functions/_draw_ss_edatope.R")
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
 
 ```
@@ -377,8 +378,8 @@ saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_", author, ".xlsx"), over
 
 ```{r build edatopic table, echo=FALSE}
 
-#bgc.choose <- "CWHvm1"
-#draw_ss_edatope(plot.env, su2, bgc.choose = bgc.unique)
+bgc.choose <- "CWHvm1"
+draw_ss_edatope(plot.env, su2, bgc.choose = bgc.unique)
 ```
 
 ## Generate formatted table summary report for BGC
