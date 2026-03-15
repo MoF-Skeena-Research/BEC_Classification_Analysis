@@ -30,7 +30,8 @@ taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
 dbDisconnect(sppmaster)
 taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X"|Codetype == "D") %>% dplyr::select(Code, Lifeform) %>% distinct
 
-veg.dat <- create_veg_analysis_dataset (plot.veg, taxon.lifeform)
+veg.dat <- create_veg_analysis_dataset (plot.veg, taxon.lifeform)# %>% filter(Lifeform <3)
+#saveRDS(veg.dat, "./clean_data/BECMaster_trees.rds")
 saveRDS(veg.dat, "./clean_data/Analysis_BECMaster_Veg.rds")
 saveRDS(veg.dat, file.path(data.path, "BEC_veg_data/Analysis_BECMaster_Veg.rds"))
 veg.dat <- create_veg_reports_dataset (plot.veg, taxon.lifeform)
