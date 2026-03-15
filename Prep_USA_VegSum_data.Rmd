@@ -106,8 +106,8 @@ sheets <- getSheetNames(wb_path)
 
 # Apply to all sheets and combine
 usa_units <- map_dfr(sheets, read_usa_unit)## Check table for NA Species and fix data
-usa_units2 <- usa_units %>% select(-ScientificName)
-fwrite(usa_units2, "./usa.summary.units/USA_prepped_units.csv")
+usa_units2 <- usa_units #%>% select(-ScientificName)
+fwrite(usa_units2, "./usa.summary.units/USA_prepped_units3.csv")
 ```
 
 
