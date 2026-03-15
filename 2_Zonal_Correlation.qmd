@@ -124,7 +124,7 @@ veg.dat2 <- combine_taxa(vegdata = veg.dat2, lump, use.subtaxa = TRUE) %>% filte
 
 bgc.units<- dbConnect(
   odbc::odbc(),
-  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2024.accdb;")
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2026.accdb;")
 bgcv12 <- dbReadTable(bgc.units, "tblBGC_UnitsWorkingandArchive")
 dbDisconnect(bgc.units)
 bgcv13 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% select(BGC_NoSpace, SiteClassificationStatus)
@@ -133,38 +133,41 @@ bgcv13 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% select(BGC_NoSpace, SiteC
 Project SU tables (e.g. BGC_SU for a LMH) are read-in from regional databases and combined into a project specific table. Then the zonal units are selected for the analysis.
 
 ```{r read in SU data}
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/CoastArea_Sorts.accdb"
-su1 <- combined_su(db)
-db <- "D:/OneDrive - Government of BC/Cariboo BEC Correlation/Cariboo_SU_2.accdb"
- su2 <- combined_su(db)
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Cariboo_LMH39_Sorts.accdb"
-su3 <- combined_su(db)
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/KootenayBoundary_Sorts.accdb"
-su4 <- combined_su(db)
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/OminecaPeace_SU_Tables.accdb"
-su5 <- combined_su(db)
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Skeena_LMH26_Sorts.accdb"
-su6 <- combined_su(db)
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/ThompsonOK_Sorts.accdb"
-su7 <- combined_su(db)
-db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/LMH65_Boreal_Sorts.accdb"
-su8 <- combined_su(db)
-#db <- "D:/BC_Correlation2_Vpro_2023/Cassiar_SUs.accdb"
-#su9 <- combined_su(db)
-db <- "D:/OneDrive - Government of BC/LMH81_NorthColumbia_Review_Nov2025/NorthThompson_FG_draft.accdb"
+# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/CoastArea_Sorts.accdb"
+# su1 <- combined_su(db)
+# db <- "D:/OneDrive - Government of BC/Cariboo BEC Correlation/Cariboo_SU_2.accdb"
+#  su2 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Cariboo_LMH39_Sorts.accdb"
+# su3 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/KootenayBoundary_Sorts.accdb"
+# su4 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/OminecaPeace_SU_Tables.accdb"
+# su5 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Skeena_LMH26_Sorts.accdb"
+# su6 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/ThompsonOK_Sorts.accdb"
+# su7 <- combined_su(db)
+# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/LMH65_Boreal_Sorts.accdb"
+# su8 <- combined_su(db)
+# #db <- "D:/BC_Correlation2_Vpro_2023/Cassiar_SUs.accdb"
+# #su9 <- combined_su(db)
+#db <- "D:/OneDrive - Government of BC/LMH81_NorthColumbia_Review_Nov2025/NorthThompson_FG_draft.accdb"
+db <- "C:/Users/whmacken/Dropbox/NorthThompson_LMH/NorthThompson_FG_draft.accdb"
 #db <- "D:/BC_Correlation2_Vpro_2023/working/Lillooet_FG_draft.accdb"
 su10 <- combined_su(db)
 db <- "D:/OneDrive - Government of BC/LMH81_NorthColumbia_Review_Nov2025/Columbia_FG_draft.accdb"
-#db <- "D:/BC_Correlation2_Vpro_2023/working/NorthThompson_FG_draft.accdb"
+# #db <- "D:/BC_Correlation2_Vpro_2023/working/NorthThompson_FG_draft.accdb"
 su11 <- combined_su(db)
-db <- "D:/BC_Correlation2_Vpro_2023/working/Lillooet_FG_draft.accdb"
-#db <- "D:/BC_Correlation2_Vpro_2023/working/NorthThompson_FG_draft.accdb"
-su12 <- combined_su(db)
-su <- rbind(su1, su2, su3, su4, su5, su6, su7, su8,  su10, su11, su12) %>% 
-  filter(!grepl('moved', SiteUnit))
+# db <- "D:/BC_Correlation2_Vpro_2023/working/Lillooet_FG_draft.accdb"
+# db <- "D:/BC_Correlation2_Vpro_2023/working/NorthThompson_FG_draft.accdb"
+# su12 <- combined_su(db)
+# su <- rbind(su1, su2, su3, su4, su5, su6, su7, su8,  su10, su11, su12) %>% 
+#   filter(!grepl('moved', SiteUnit))
  #su <- rbind(su2,su10, su11) %>%
 #   filter(!grepl('moved', SiteUnit))
-
+db <- "D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb"
+su <- combined_su(db)
+su <- rbind(su,su10, su11)
 # Identify duplicated PlotNumbers (both first and subsequent occurrences)
 dups <- su[duplicated(su$PlotNumber) | duplicated(su$PlotNumber, fromLast = TRUE), ]
 
@@ -236,7 +239,7 @@ vegsum.pairs <- do_pairwise(veg.dat2,
   noiseconstancy = 10,
   minplots = 3,
   minor = 1,
-  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
+  use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 1.5,
   reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .2,
   reduced.exceptions = NULL
 )
@@ -295,12 +298,12 @@ create_dendro_all(unit.compare = vegsum.pairs, cut.level = 0.2, method = "averag
 
 ```{r split dendrogram, echo=FALSE}
 
-xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.2)
+xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.4)
 xx
 ```
 
 ```{r add cut level as group}
-add_cluster_membership <- function(unit.compare, cut.level = .7){
+add_cluster_membership <- function(unit.compare, cut.level = .4){
   compared <- unit.compare 
   dis.matrix <- bec_dist_matrix(compared) 
   ss_clst <- agnes(dis.matrix,
@@ -314,7 +317,7 @@ add_cluster_membership <- function(unit.compare, cut.level = .7){
   return(groups)
   }
 
-groups <- add_cluster_membership(vegsum.pairs, cut.level = .2)
+groups <- add_cluster_membership(vegsum.pairs, cut.level = .4)
 
 xx <- vegsum.pairs %>% 
   filter(Unit1 %in% "ESSFxv2")#,
