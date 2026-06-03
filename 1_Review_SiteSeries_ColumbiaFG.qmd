@@ -171,7 +171,7 @@ yy <- vegsum.pairs %>%
 ```
 
 ```{r site series with too few plots, echo=FALSE}
-#| label: tab-too-few-plots
+##| label: tab-too-few-plots
 #| tbl-cap: "Site Units with Fewer than 5 Plots"
 #| tbl-cap-location: top
 #| warning: false
@@ -195,7 +195,7 @@ gt::gt(ss_too.few) %>% gt::fmt_number(decimals = 0)|> gt::tab_options(table.font
 ```
 
 ```{r site series with low diagnostic potential, echo=FALSE}
-#| label: tab-low-diagnostic
+##| label: tab-low-diagnostic
 #| tbl-cap: "Site Units with Low Diagnostic Potential"
 #| tbl-cap-location: top
 #| warning: false
@@ -218,7 +218,7 @@ gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.fon
 ```
 
 ```{r site units that are too similar, echo=FALSE}
-#| label: tab-sites-similar
+##| label: tab-sites-similar
 #| tbl-cap: paste0("Site Series pairs with poor differentiation (BEC.sim >= .93)")
 #| tbl-cap-location: top
 #| warning: false

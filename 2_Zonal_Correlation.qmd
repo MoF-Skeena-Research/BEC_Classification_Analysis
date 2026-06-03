@@ -1,5 +1,5 @@
 ---
-title: "ESSF Zonal Correlation Analysis"
+title: "Zonal Correlation Analysis"
 author: "William H MacKenzie"
 date: "`r format(Sys.Date(), '%d %B %Y')`"
 format:
@@ -124,19 +124,21 @@ veg.dat2 <- combine_taxa(vegdata = veg.dat2, lump, use.subtaxa = TRUE) %>% filte
 
 bgc.units<- dbConnect(
   odbc::odbc(),
-  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2026.accdb;")
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;")
 bgcv12 <- dbReadTable(bgc.units, "tblBGC_UnitsWorkingandArchive")
 dbDisconnect(bgc.units)
-bgcv13 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% select(BGC_NoSpace, SiteClassificationStatus)
+bgcv13 <- bgcv12 %>% filter(is.na(BGCVersionRetired)) %>% select(BGC_NoSpace, SiteClassificationStatus)
 ```
 
 Project SU tables (e.g. BGC_SU for a LMH) are read-in from regional databases and combined into a project specific table. Then the zonal units are selected for the analysis.
 
 ```{r read in SU data}
+## choose zone to compare
+zone.choose = "ICH"
 # db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/CoastArea_Sorts.accdb"
 # su1 <- combined_su(db)
-# db <- "D:/OneDrive - Government of BC/Cariboo BEC Correlation/Cariboo_SU_2.accdb"
-#  su2 <- combined_su(db)
+db <- "D:/OneDrive - Government of BC/Cariboo BEC Correlation/Cariboo_SU_2.accdb"
+# su2 <- combined_su(db)
 # db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Cariboo_LMH39_Sorts.accdb"
 # su3 <- combined_su(db)
 # db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/KootenayBoundary_Sorts.accdb"
@@ -152,22 +154,22 @@ Project SU tables (e.g. BGC_SU for a LMH) are read-in from regional databases an
 # #db <- "D:/BC_Correlation2_Vpro_2023/Cassiar_SUs.accdb"
 # #su9 <- combined_su(db)
 #db <- "D:/OneDrive - Government of BC/LMH81_NorthColumbia_Review_Nov2025/NorthThompson_FG_draft.accdb"
-db <- "C:/Users/whmacken/Dropbox/NorthThompson_LMH/NorthThompson_FG_draft.accdb"
+db <- "C:/Users/whmacken/Dropbox/NorthThompson_LMH/NorthThompson_FG_Sorts.accdb"
 #db <- "D:/BC_Correlation2_Vpro_2023/working/Lillooet_FG_draft.accdb"
 su10 <- combined_su(db)
 db <- "D:/OneDrive - Government of BC/LMH81_NorthColumbia_Review_Nov2025/Columbia_FG_draft.accdb"
 # #db <- "D:/BC_Correlation2_Vpro_2023/working/NorthThompson_FG_draft.accdb"
 su11 <- combined_su(db)
 # db <- "D:/BC_Correlation2_Vpro_2023/working/Lillooet_FG_draft.accdb"
-# db <- "D:/BC_Correlation2_Vpro_2023/working/NorthThompson_FG_draft.accdb"
-# su12 <- combined_su(db)
+db <- "D:/OneDrive - Government of BC/Omineca BEC/Robson Valley/RobsonValley_SU_working.accdb"
+su12 <- combined_su(db)
 # su <- rbind(su1, su2, su3, su4, su5, su6, su7, su8,  su10, su11, su12) %>% 
 #   filter(!grepl('moved', SiteUnit))
  #su <- rbind(su2,su10, su11) %>%
 #   filter(!grepl('moved', SiteUnit))
 db <- "D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb"
 su <- combined_su(db)
-su <- rbind(su,su10, su11)
+su <- rbind(su, su10, su11, su12)
 # Identify duplicated PlotNumbers (both first and subsequent occurrences)
 dups <- su[duplicated(su$PlotNumber) | duplicated(su$PlotNumber, fromLast = TRUE), ]
 
@@ -177,7 +179,15 @@ su <- su %>%
   filter(!grepl('101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|support|Y', SiteUnit)) %>% distinct
 fwrite(su, "./clean_data/combined_SU.csv")
 #|
-su <- su %>%   filter(grepl('01', SiteUnit)) ###zonal specific
+su <- su %>%   filter(grepl('01', SiteUnit)) 
+su <- su %>% filter(grepl(zone.choose, bgc))
+SU <- su %>% select(PlotNumber, SiteUnit)
+###write combined SU to database
+master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+DBQ=D:/BC_Correlation2_Vpro_2023/Zonal_Comparisons.accdb;")
+dbWriteTable(master_su, paste0("All_", zone.choose, "_zonals_SU"),  SU, overwrite = TRUE, batch_rows = 1)
+dbDisconnect(master_su)
+###zonal specific
 su <- su %>% select(-SiteUnit.orig) %>% mutate(SiteUnit = str_replace(SiteUnit, "b$|a$|c$", "")) %>% distinct() %>% mutate(zone = str_extract(bgc, "([A-Z]+)"))
 bgc.unique <- su %>% distinct(bgc) 
 no.su <- anti_join(bgcv13, bgc.unique, by = c("BGC_NoSpace" = "bgc")) %>% filter(!SiteClassificationStatus == "none")
@@ -190,7 +200,7 @@ xx <- su %>% distinct(SiteUnit)
 # su <- su %>%
 # filter(!grepl('CWHvh3|CWHwh1|CWHwh2|CWHvh3|MHwh', SiteUnit))###BGC specific|CWHms
 
-su <- su %>% filter(grepl('ESSF', SiteUnit))# %>%  mutate(bgc = ifelse(grepl('101.2', SiteUnit), paste0(bgc, "var2"), bgc))###BGC specific|CWHms
+#su <- su %>% filter(grepl(zone.choose, SiteUnit))# %>%  mutate(bgc = ifelse(grepl('101.2', SiteUnit), paste0(bgc, "var2"), bgc))###BGC specific|CWHms
 #su <- su %>% filter(grepl('ICH|IDFmw2|MS|SBS', SiteUnit)) #%>% 
   #filter(!grepl('ICHmm|ICHdm', SiteUnit))###BGC specific|CWHms
 su <- su %>% mutate(SiteUnit = bgc)
@@ -204,17 +214,17 @@ su <- su %>% mutate(SiteUnit = bgc)
 Performed on base site units or hierarchical units. The function 'do_pairwise' applies a new similarity measure that balances the value of constancy and mean cover differences between units. This comparison starts with previously classification and reviewed site series as working units. Only species with high constancy in one of the units is used in the analysis. Key site indicators can be given higher importance The diagnostic value of non-vasculars is reduced but taxonomy exceptions can be assigned Returns a table of units with high similarity. Produce output table for review where units have low diagnostic potential (usually a function of heterogenous units in forest types) or high variability in plot membership
 
 ```{r build pair.wise, echo=FALSE, warning=FALSE, message=FALSE}
-key.site.indicators <- c("CALLNOO","PICESIT","PSEUMEN2", 
+key.site.indicators <- c("CALLNOO","PICESIT","PSEUMEN", 
                          #"ELLIPYR","GAULSHA", "VACCPAR", "PAXIMYR", "CLADPYR", 
                          # "STRUSPI", ## coast
                          # "ACERGLA", "GEOCLIV", "CALARUB",## interior
                          # "PICEGLA", "VACCVIT","MERTPAN",##boreal
                          #"RHODALB", "VALESIT", # ESSF
-                         "TSUGMER","TSUGHET", "THUJPLI", "ABIEAMA", ##rain forest
-                         "ABIEGRA", "PSEUMEN1","CALARUB", "PICEENE", "PINUCON",
-                         "OPLOHOR", "GYMNDRY")
+                         "TSUGMER","TSUGHET", "THUJPLI", "ABIEAMA" ##rain forest
+#                         "ABIEGRA", "PSEUMEN1","CALARUB", "PICEENE", #"PINUCON",
+                         #"OPLOHOR", "GYMNDRY")
                          # "RHODALB", "MENZFER",   
-                         
+)                         
 #, "MERTPAN", "VACCVIT", "BALSSAG")
 
 ### Try Lump codes for zonal indicators Coast vs Interior, then by CWH, MH, CDF for coast and Boreal (SBS, BWBS, SWB, SBPS, MS) Rainforest (ICH), Temperate (IDF, PP), Subalpine (ESSF)
@@ -239,7 +249,7 @@ vegsum.pairs <- do_pairwise(veg.dat2,
   noiseconstancy = 10,
   minplots = 3,
   minor = 1,
-  use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 1.5,
+  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
   reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .2,
   reduced.exceptions = NULL
 )
@@ -252,7 +262,7 @@ yy <- vegsum.pairs %>%
   filter(Unit1== "SBSmz_101", Unit2 == "MSdc2_01")
 
 vegsum.pairs <- vegsum.pairs %>% filter(!is.na(Unit1), !is.na(Unit2))
-xx <- vegsum.pairs %>% filter(Unit1 == "ICHxm1_101")
+xx <- vegsum.pairs %>% filter(Unit1 == "ESSFwh4" | Unit2 == "ESSFwh4") %>% select(Unit1, Unit2, BEC.sim.min, BEC.sim.mean, BEC.sim.max) %>% distinct
 units.low.diagnostics <- vegsum.pairs %>% 
   select(Unit1, unit.diag.sum.x) %>% 
   group_by(Unit1) %>%  mutate(diagnostic.sum = max(unit.diag.sum.x)) %>% select(-unit.diag.sum.x) %>% distinct %>%  filter(diagnostic.sum < 25) %>% ungroup()
@@ -298,12 +308,12 @@ create_dendro_all(unit.compare = vegsum.pairs, cut.level = 0.2, method = "averag
 
 ```{r split dendrogram, echo=FALSE}
 
-xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.4)
+xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.3)
 xx
 ```
 
 ```{r add cut level as group}
-add_cluster_membership <- function(unit.compare, cut.level = .4){
+add_cluster_membership <- function(unit.compare, cut.level = .3){
   compared <- unit.compare 
   dis.matrix <- bec_dist_matrix(compared) 
   ss_clst <- agnes(dis.matrix,
@@ -317,7 +327,7 @@ add_cluster_membership <- function(unit.compare, cut.level = .4){
   return(groups)
   }
 
-groups <- add_cluster_membership(vegsum.pairs, cut.level = .4)
+groups <- add_cluster_membership(vegsum.pairs, cut.level = .3)
 
 xx <- vegsum.pairs %>% 
   filter(Unit1 %in% "ESSFxv2")#,

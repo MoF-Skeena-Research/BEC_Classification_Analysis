@@ -11,3 +11,4 @@
 *.pdf
 /vegsum.tables/
 *.gpkg
+.positai
