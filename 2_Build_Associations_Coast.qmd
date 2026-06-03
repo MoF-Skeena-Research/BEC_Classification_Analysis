@@ -370,7 +370,7 @@ su.anal1 <- su.anal1 %>%
 
 Other summary tables for comparison (e.g. USA) table can be added to the analysis for comparison in do.pairwise function.
 
-```{r}
+```{r add extra summary units}
 usa_units <- fread("./usa.summary.units/USA_prepped_units3.csv") %>% select(-ScientificName) %>% 
    filter(!Species %in% taxon.exotic,!startsWith(Species, "POA_PRA")) %>% filter(startsWith(SiteUnit, "Q"))
 usa_units <- usa_units %>%
@@ -507,7 +507,7 @@ write.csv(
 
 Some units with few plots or low diagnostics fall out as singles in the first pass cluster analysis. These are reviewed and merging rules applied before re-running the cluster analysis. List of site series with too few plots or low diagnostic potential for reliable analysis
 
-```{r, echo=FALSE}
+```{r, too few, echo=FALSE}
 #| label: tab-too-few-plots
 #| tab-cap: "Site Units with Fewer than 6 Plots"
 #| tbl-cap-location: top
@@ -539,7 +539,7 @@ gt::gt(ss_too.few) %>%
 
 ```
 
-```{r, echo=FALSE}
+```{r, low diagnostic, echo=FALSE}
 #| label: tab-low-diagnostic
 #| tbl-cap-location: top
 #| tbl-cap: "Site Units with Low Diagnostic Potential"
@@ -566,7 +566,7 @@ col_label <- paste0("Site Unit (", num_units, ")")
 
 \## Identify units that are very similar and create merged unit before continuing to cluster analysis. Run once and transfer data into tblBEC_Hierarchy_Class field generated_SubAss
 
-```{r , echo=FALSE}
+```{r merge very similar, echo=FALSE}
 #| label: tab-sites-similar
 #| tbl-cap: paste0("Site Series pairs with poor differentiation (BEC.sim >= .90)")
 #| tbl-cap-location: top
@@ -632,7 +632,7 @@ col_label <- paste0("Site Unit (", num_units, ")")
 
 create new temporary sorts to run a new cluster analysis that excludes units with few plots or low diagnostic potential, and merges very similar units into numbered subass groups. A setting at 7% means that unit groups are unlikely to have individual members more than 14% difference.
 
-```{r}
+```{r remove for analysis}
 # remove units with few plots
 subass <- BEC.hier %>% select(SU_Label, generated_SubAss)
 su_working2 <- su_working %>%
@@ -652,7 +652,7 @@ su_working2 <- su_working2 %>%
 
 run new cluster with removed units, initial subassoc clusters, and previously assigned Associations
 
-```{r}
+```{r run cluster with subass merged}
 pairwise.params <- list(
   su                = su_working2,
   minimportance         = 0.1,
@@ -685,7 +685,7 @@ We chose to use the clustering method that maximizes the CCC. We tested a number
 
 In the dendrograms, the red line represents the minimum threshold for separating site units into separate site series. This is set at 10% dissimilarity, but in some BGCs we separate some site series to as low as 7% dissimilarity. The green line represents the preliminary dissimilarity threshold for an association. The initial threshold for an association is set at 20% (80% similar) based on review.
 
-```{r}
+```{r first cluster}
 #| label: fig-first-cluster
 #| fig-cap: ("Cluster of Site Units (including initial predefined groups)")
 #| fig-cap-location: bottom
@@ -701,7 +701,7 @@ dendro_hc <- create_dendro_all(vegsum.pairs)
 
 dissimilarity of 17-20% is an approximate threshold for association differentiation.
 
-```{r}
+```{r split first cluster}
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
 xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.4)
 ```
@@ -770,7 +770,7 @@ Compare vegetation summaries for these units to see if they are similar enough t
 
 In the BECdb query to write the initial units in the the tempAssoc_Code field of tblBECHierarchy_Class table for subsequent use in analytics Also return alternate possible site unit matches for review by returning other units with similarity that falls below threshold.
 
-```{r cluster analysis, echo=FALSE, results= 'hide'}
+```{r cluster analysis with existing units, echo=FALSE, results= 'hide'}
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
 fig.show='hide'
 #--------- do for associations
@@ -828,7 +828,7 @@ dbDisconnect(becdb)
 
 now add in generated Alliance
 
-```{r cluster analysis, echo=FALSE, results= 'hide'}
+```{r cluster analysis and return alliance, echo=FALSE, results= 'hide'}
 #-------------------------
 ## do for alliances
 dendro_hc <- create_dendro_all(vegsum.pairs)
@@ -867,7 +867,7 @@ dbDisconnect(becdb)
 
 Highlights other similar units that are not in the same association for review This will look for unit pairs that fall below a similarity threshold and then identify where they have not been put into the same Association
 
-```{r}
+```{r create altnerate su matches table}
 same.threshold = 0.8
 ss_similar <- vegsum.pairs %>%
 select(Unit1, Unit2, BEC.sim.min) %>%
@@ -907,7 +907,7 @@ fwrite(su_all_sim, "./review_materials/similar_su_cluster_review3.csv")
 
 Each sheet has all site units for a proposed alliance on a single sheet grouped, labelled, and colour-themed by Association (tempAssoc_Code) to help review and editing of membership. This will be used to review the proposed alliances and make decisions about which site units should be merged into associations, which should be separated into new associations, and which should be left as singletons. The vegetation summary tables will also be used to identify potential diagnostic species for each alliance and to compare the vegetation composition of different alliances.
 
-```{r}
+```{r summary table association within alliances}
 # compute anal.test
 becdb <- dbConnect(
   odbc::odbc(),
@@ -1040,7 +1040,7 @@ saveWorkbook(
 
 ## Summarize by Alliance
 
-```{r}
+```{r summary by alliances}
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
 author = "Coast_Forest_Alliance"
 becdb <- dbConnect(
@@ -1118,7 +1118,7 @@ Now look for environmental outliers of site units that have been merged into eac
 
 Compare the median aSMR and median SNR value for each site unit to the median value for the entire association and flag those that are more than 1 edatopic step difference from the group median. This is a simple way to identify site units that may be outliers in edaphic space and may need to be separated into a different association or matched to a different association. aSMR is generated using the modelled relationship between rSMR and aSMR for the coastal BGCs.
 
-```{r}
+```{r test for edaphic outliers}
 source("../BEC_R_working/_functions/_test_edaphic_outliers.R")
 source("../BEC_R_working/_functions/_find_edaphic_similarity.R")
 assoc_edatope <- plot.edatope %>%
@@ -1203,7 +1203,7 @@ gt(edatopic_outlier_gt) %>%
 
 Several approaches are applied. This first looks at univariate range of 4 climate variables (MCMT, DD5, MSP, PAS) for each site unit compared to the range of the rest of the association. This is a simple way to identify site units that may be outliers in climate space and may need to be separated into a different association or matched to a different association. However, this approach does not take into account the covariance between variables and may miss outliers that are extreme in combination but not in any one variable. The second approach is to use mahalanobis distance in multivariate climate space to identify site units that are outliers in climate space compared to the rest of the association. These units may be candidates for merging into a different association with more similar climate or for being separated into their own association if they are sufficiently different from all other associations.
 
-```{r}
+```{r test for climatic outliers}
 climate_vars <- c("MCMT", "DD5_an",  "PAS_an","MSP" ,"CMD_an")
 source("../BEC_R_working/_functions/_climate_outliers.R")
 source("../BEC_R_working/_functions/_climate_comparison.R")
