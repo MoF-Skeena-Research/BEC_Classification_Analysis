@@ -180,8 +180,15 @@ su <- su %>%
   filter(grepl("CWH|CDF|MH", bgc)) %>%
   arrange(SiteUnit)
 
+
 su2 <- su %>%
-  mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", ""))
+  mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", ""),# ignore phases
+         SiteUnit = if_else(
+           str_detect(SiteUnit, "101"),
+           str_replace(SiteUnit, "\\.[123]$", ""), # remove zonal variations
+           SiteUnit
+         ))
+
 
 #------------------------------------------------------------
 # 5. Load BECMaster environmental + edatopic tables
@@ -307,7 +314,7 @@ hierarchy <- c(
   "tempSubass_Code", "SiteUnit"
 )
 
-group.to.test <- "working_Assoc"## uses data for this field to initially group siteunits where applicablle
+group.to.test <- "Association"## uses data for this field to initially group siteunits where applicablle
 
 
 #------------------------------------------------------------
@@ -329,7 +336,7 @@ su.anal1 <- su2 %>%
 #------------------------------------------------------------
 # 4. Compute anal.test by walking down the hierarchy
 #------------------------------------------------------------
-group.to.test <- "working_Assoc"
+#group.to.test <- "working_Assoc"
 # vectorized helper: find first non-NA across hierarchy levels
 first_non_na <- function(df, cols) {
   apply(df[cols], 1, function(x) {
@@ -361,7 +368,7 @@ su.anal1 <- su.anal1 %>%
     !!sym(group.to.test), anal.test, SiteUnit.hier
   ) %>%
   group_by(SiteUnit.hier) %>%# 6. remove any hierarchy units with fewer than 6 plots
-  filter(n() >= 6) %>%
+  filter(n() >= 5 | !is.na(!!sym(group.to.test))) %>%
   ungroup()
 
 ```
@@ -507,7 +514,7 @@ write.csv(
 
 Some units with few plots or low diagnostics fall out as singles in the first pass cluster analysis. These are reviewed and merging rules applied before re-running the cluster analysis. List of site series with too few plots or low diagnostic potential for reliable analysis
 
-```{r, too few, echo=FALSE}
+```{r, echo=FALSE}
 #| label: tab-too-few-plots
 #| tab-cap: "Site Units with Fewer than 6 Plots"
 #| tbl-cap-location: top
@@ -539,7 +546,7 @@ gt::gt(ss_too.few) %>%
 
 ```
 
-```{r, low diagnostic, echo=FALSE}
+```{r,  echo=FALSE}
 #| label: tab-low-diagnostic
 #| tbl-cap-location: top
 #| tbl-cap: "Site Units with Low Diagnostic Potential"
@@ -566,8 +573,8 @@ col_label <- paste0("Site Unit (", num_units, ")")
 
 \## Identify units that are very similar and create merged unit before continuing to cluster analysis. Run once and transfer data into tblBEC_Hierarchy_Class field generated_SubAss
 
-```{r merge very similar, echo=FALSE}
-#| label: tab-sites-similar
+```{r , echo=FALSE}
+#| label: tab-sites-similar1
 #| tbl-cap: paste0("Site Series pairs with poor differentiation (BEC.sim >= .90)")
 #| tbl-cap-location: top
 #| warning: false
@@ -645,9 +652,11 @@ su_working2 <- su_working %>%
 su_working2 <- su_working2 %>%
   mutate(SiteUnit = coalesce(
     as.character(generated_SubAss), # very similar units from above
-    as.character(working_Assoc), # previously defined associations
+    as.character(!!sym(group.to.test)), # previously defined associations
     as.character(SiteUnit)
   ))
+
+
 ```
 
 run new cluster with removed units, initial subassoc clusters, and previously assigned Associations
@@ -685,7 +694,7 @@ We chose to use the clustering method that maximizes the CCC. We tested a number
 
 In the dendrograms, the red line represents the minimum threshold for separating site units into separate site series. This is set at 10% dissimilarity, but in some BGCs we separate some site series to as low as 7% dissimilarity. The green line represents the preliminary dissimilarity threshold for an association. The initial threshold for an association is set at 20% (80% similar) based on review.
 
-```{r first cluster}
+```{r }
 #| label: fig-first-cluster
 #| fig-cap: ("Cluster of Site Units (including initial predefined groups)")
 #| fig-cap-location: bottom
@@ -705,72 +714,18 @@ dissimilarity of 17-20% is an approximate threshold for association differentiat
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
 xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.4)
 ```
-
-Compare vegetation summaries for these units to see if they are similar enough to consider merging into the same association.
-
-```{r}
-# require(openxlsx)
-# require(tictoc)
-# library(stringr)
-# 
-# #su.singles <- su.anal.new %>% filter(SiteUnit %in% check.match$SiteUnit | groups %in% check.match$group)
-# #su.zonal <- su %>% filter(bgc %in% bgc.choose)
-# #bgc.list <- unique(su.zonal$bgc)
-# data.path = "D:/OneDrive - Government of BC/GitHub_data"
-# vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
-# veg.dat2 <- combine_taxa_strata(vegdata = vegdata, lump, use.subtaxa = FALSE) %>% filter(!Species == "UNKNOWN")
-# author = "Coastal_Assoc2"
-# 
-#  veg_all <- create_veg_sum_all(
-#     vdat = veg.dat2,
-#     siteUnits = su_working2 ,
-#     minconstancy = 50,
-#     noiseconstancy = 25,
-#     strata.by = "Lifeform"
-#   )
-#  veg_all$Group = "All"
-#  veg_all <- veg_all %>% select(SiteUnit, Species, Lifeform, MeanCov, Constancy, nplots, Group)
-# 
-# usa_units2 <- usa_units %>%
-#   mutate(
-#     Lifeform = 0,
-#     Group = "All"
-#   ) %>%
-#   select(SiteUnit, Species, Lifeform, MeanCov, Constancy, nplots, Group)# %>%
-#   # left_join(
-#   #   taxon.lifeform %>% select(Code, Lifeform),
-#   #   by = c("Species" = "Code")
-#   # ) %>%
-#   # mutate(
-#   #   Lifeform = ifelse(is.na(Lifeform.y), Lifeform.x, Lifeform.y)
-#   # ) %>%
-#   # select(-Lifeform.x, -Lifeform.y)
-# 
-#  veg.comb <- rbind(veg_all, usa_units2) %>% distinct %>% drop_na %>% mutate(Lifeform = 0, Group= "All") %>%
-#    filter(!Species %in% taxon.exotic)
-# veg_all_tbl <- format_veg_table(vsum = veg.comb, spp = taxon.lifeform)
-# 
-# 
-# vegsum.wbk <- createWorkbook()
-# 
-#   addWorksheet(vegsum.wbk, "All")
-# 
-#   # Write combined table
-#   writeData(vegsum.wbk, sheet = "All", veg_all_tbl, startCol = 1, startRow = 1)
-# 
-# saveWorkbook(
-#   vegsum.wbk,
-#   paste0("./vegsum.tables/Compare_tables_", author, ".xlsx"),
-#   overwrite = TRUE
-# )
-
-```
-
 ### Create initial hierarchy from clusters to group and write into BECdb
 
 In the BECdb query to write the initial units in the the tempAssoc_Code field of tblBECHierarchy_Class table for subsequent use in analytics Also return alternate possible site unit matches for review by returning other units with similarity that falls below threshold.
 
-```{r cluster analysis with existing units, echo=FALSE, results= 'hide'}
+```{r, echo=FALSE, results= 'hide'}
+#| label: fig-second-cluster
+#| fig-cap: ("Cluster of Site Units (including initial predefined groups)")
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 12
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
 fig.show='hide'
 #--------- do for associations
@@ -782,13 +737,13 @@ cluster_dt <- data.table(
 )
 
 ## merge back to retrieve SiteUnit for all and the coalesce.
-working.hier <- su_working2 %>% select(SiteUnit.base, generated_SubAss, working_Assoc) %>% distinct
+working.hier <- su_working2 %>% select(SiteUnit.base, generated_SubAss, Association) %>% distinct
 working.hier2 <- working.hier %>%
   left_join(cluster_dt, by = c("SiteUnit.base" = "SiteUnit")) %>%
   rename(tempAssoc_base = tempAssoc) %>%
   left_join(cluster_dt, by = c("generated_SubAss" = "SiteUnit")) %>%
   rename(tempAssoc_sub = tempAssoc) %>%
-  left_join(cluster_dt, by = c("working_Assoc" = "SiteUnit")) %>%
+  left_join(cluster_dt, by = c("Association" = "SiteUnit")) %>%
   rename(tempAssoc_assoc = tempAssoc) %>%
   mutate(
     tempAssoc = coalesce(
@@ -807,7 +762,14 @@ valid_clusters <- cluster_sizes[N > 1, tempAssoc]
 # Filter cluster_dt to only those units with > 1 unit in clusters
 cluster_dt_assoc <- temp_assoc[tempAssoc %in% valid_clusters]
 
-cluster_update_assoc <- merge(cluster_dt_assoc, su.anal1, by = c("SiteUnit"), all.x = TRUE) %>% select(SS_Label = SiteUnit.orig,  tempAssoc) %>% distinct %>% drop_na
+cluster_update_assoc <- merge(cluster_dt_assoc, su.anal1, by = c("SiteUnit"), all.x = TRUE) %>% select(SU_Label = SiteUnit.orig,  tempAssoc) %>%
+    mutate(SU_Label = str_replace(SU_Label, "[abc]$", ""),# ignore phases
+         SU_Label = if_else(
+           str_detect(SU_Label, "101"),
+           str_replace(SU_Label, "\\.[123]$", ""), # remove zonal variations
+           SU_Label
+         )) %>% 
+  distinct %>% drop_na
 
 ### write into BECdb a working file to update the tempAssoc field
 becdb <- dbConnect(
@@ -824,6 +786,8 @@ dbWriteTable(
   batch_rows = 1
 )
 dbDisconnect(becdb)
+
+#xx <- cluster_update_assoc %>% filter(SS_Label == "CWHds1_101a")
 ```
 
 now add in generated Alliance
@@ -831,20 +795,38 @@ now add in generated Alliance
 ```{r cluster analysis and return alliance, echo=FALSE, results= 'hide'}
 #-------------------------
 ## do for alliances
-dendro_hc <- create_dendro_all(vegsum.pairs)
+dendro_hc <- create_dendro_all(vegsum.pairs, output = FALSE)
 clusters <- cutree(dendro_hc, h = 0.4)
 cluster_dt_alli <- data.table(
   SiteUnit = names(clusters),
   generated_Alliance = paste0("coast_generated_Alli_", clusters)
 )
-working.hier3 <- su_working2 %>% select(SiteUnit.orig, SiteUnit.base, generated_SubAss, working_Assoc) %>% distinct %>% 
+working.hier3 <- su_working2 %>% select(SiteUnit.orig, SiteUnit.base, generated_SubAss, Association) %>% distinct %>% 
   mutate(highest = coalesce(
-    working_Assoc,
+    Association,
     generated_SubAss,
     SiteUnit.base
     
   )) %>% data.table
-cluster_update2 <- left_join(cluster_dt_alli, working.hier3, by = c("SiteUnit" = "highest")) %>% select(SiteUnit, SU_Label = SiteUnit.orig,  generated_Alliance) %>% distinct 
+
+
+cluster_update2 <- left_join(cluster_dt_alli, working.hier3, by = c("SiteUnit" = "highest")) %>% select(SiteUnit, SU_Label = SiteUnit.orig,  generated_Alliance) %>%  
+    mutate(SU_Label = str_replace(SU_Label, "[abc]$", ""),# ignore phases
+         SU_Label = if_else(
+           str_detect(SU_Label, "101"),
+           str_replace(SU_Label, "\\.[123]$", ""), # remove zonal variations
+           SU_Label
+         )) %>%  
+  distinct 
+
+# # Count members per cluster
+cluster_sizes <- cluster_update2[, .N, by = generated_Alliance]
+
+# Keep only clusters with >1 member
+valid_clusters <- cluster_sizes[N > 1, generated_Alliance]
+
+# Filter cluster_dt to only those units with > 1 unit in clusters
+cluster_update2 <- cluster_update2[generated_Alliance %in% valid_clusters]
 
 ### write into BECdb a working file to update the tempAssoc field
 becdb <- dbConnect(
@@ -861,6 +843,7 @@ dbWriteTable(
   batch_rows = 1
 )
 dbDisconnect(becdb)
+
 ```
 
 ### Review placement of site units with more than one possible pairing at Association level
@@ -876,7 +859,7 @@ select(Unit1, Unit2, BEC.sim.min) %>%
   rename("Similarity" = BEC.sim.min, "Site Units" = Units) %>%
   distinct()
  # low.diff <- gt::as_gtable((gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) |> gt::cols_width(Site.Units ~ gt::px(250))), plot = TRUE, text_grob = gridtext::richtext_grob)
-gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 8)
+#gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 8)
 
 
 ss_similar <- unit.compare %>%
@@ -884,26 +867,26 @@ ss_similar <- unit.compare %>%
   dplyr::filter(BEC.sim.min >= same.threshold) %>%
   distinct()
 
-cluster_update <- merge(cluster_dt, su.anal1, by = c("SiteUnit"), all.x = TRUE) %>% select(SiteUnit, tempAssoc) %>% distinct %>% drop_na
+cluster_update <- merge(cluster_dt, su.anal1, by = c("SiteUnit"), all.x = TRUE) %>% select(SiteUnit, generated_Assoc) %>% distinct %>% drop_na
 
 su_all_sim <- ss_similar %>%
   left_join(
-    cluster_update %>% rename(Unit1 = SiteUnit, tempAssoc1 = tempAssoc),
+    cluster_update %>% rename(Unit1 = SiteUnit, tempAssoc1 = generated_Assoc),
     by = "Unit1"
   ) %>%
   left_join(
-    cluster_update %>% rename(Unit2 = SiteUnit, tempAssoc2 = tempAssoc),
+    cluster_update %>% rename(Unit2 = SiteUnit, tempAssoc2 = generated_Assoc),
     by = "Unit2"
   ) %>%
   mutate(
     tempAssoc_match = tempAssoc1 == tempAssoc2,
     tempAssoc_diff  = tempAssoc1 != tempAssoc2
   )
-fwrite(su_all_sim, "./review_materials/similar_su_cluster_review3.csv")
+#fwrite(su_all_sim, "./review_materials/similar_su_cluster_review3.csv")
 
 ```
 
-## Generate vegetation summary output for all site units in each proposed alliance
+## Generate vegetation summary for all site units in each proposed alliance colour-themed by association
 
 Each sheet has all site units for a proposed alliance on a single sheet grouped, labelled, and colour-themed by Association (tempAssoc_Code) to help review and editing of membership. This will be used to review the proposed alliances and make decisions about which site units should be merged into associations, which should be separated into new associations, and which should be left as singletons. The vegetation summary tables will also be used to identify potential diagnostic species for each alliance and to compare the vegetation composition of different alliances.
 
@@ -919,8 +902,12 @@ dbDisconnect(becdb)
 group.to.test <- "generated_Alliance"
 
 su.anal.new <- su_working2 %>% select(PlotNumber, SiteUnit.orig) %>% left_join(BEC.hier.temp, by = c("SiteUnit.orig" = "SU_Label")) %>% rename(SiteUnit = SiteUnit.orig) %>%
-  mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", "")) 
-
+  mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", ""),# ignore phases
+         SiteUnit = if_else(
+           str_detect(SiteUnit, "101"),
+           str_replace(SiteUnit, "\\.[123]$", ""), # remove zonal variations
+           SiteUnit
+         ))
 # vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Analysis_BECMaster_Veg.rds"))
 # veg.dat2 <- combine_taxa(vegdata = vegdata, lump, use.subtaxa = FALSE) %>% filter(!Species == "UNKNOWN")
 veg.dat2 <- veg.dat2 %>% filter(!Species == "UNKNOWN")
@@ -955,7 +942,6 @@ veg_all <- create_veg_sum_all(
   noiseconstancy = 25,
   strata.by = "Lifeform"
 )
-
 
   # ------------------------------------------------------------
   # Format table with ordered SiteUnits
@@ -1039,6 +1025,7 @@ saveWorkbook(
 ```
 
 ## Summarize by Alliance
+Generate vegetation summary output for all proposed alliances on a single sheet
 
 ```{r summary by alliances}
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
@@ -1051,7 +1038,13 @@ BEC.hier.temp <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") %>%  filter(Analys
 dbDisconnect(becdb)
 
 su.anal.new <- su_working2 %>% select(PlotNumber, SiteUnit = SiteUnit.orig) %>%
-  mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", "")) %>% left_join(BEC.hier.temp, by = c("SiteUnit"= "SU_Label"))
+    mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", ""),# ignore phases
+         SiteUnit = if_else(
+           str_detect(SiteUnit, "101"),
+           str_replace(SiteUnit, "\\.[123]$", ""), # remove zonal variations
+           SiteUnit
+         )) %>% 
+  left_join(BEC.hier.temp, by = c("SiteUnit"= "SU_Label"))
 su_sub <- su.anal.new %>% mutate(SiteUnit = generated_Alliance) %>% select(PlotNumber, SiteUnit)
 
 # vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
@@ -1118,14 +1111,66 @@ Now look for environmental outliers of site units that have been merged into eac
 
 Compare the median aSMR and median SNR value for each site unit to the median value for the entire association and flag those that are more than 1 edatopic step difference from the group median. This is a simple way to identify site units that may be outliers in edaphic space and may need to be separated into a different association or matched to a different association. aSMR is generated using the modelled relationship between rSMR and aSMR for the coastal BGCs.
 
-```{r test for edaphic outliers}
+```{r test for edaphic outliers1}
 source("../BEC_R_working/_functions/_test_edaphic_outliers.R")
 source("../BEC_R_working/_functions/_find_edaphic_similarity.R")
+group = "Association"
+
+SU_edatope <- plot.edatope %>%
+  left_join(su2, by = "PlotNumber") %>%
+  #rename(SiteUnit_orig = SiteUnit) %>%   # keep original
+  left_join(BEC.hier, by = c("SiteUnit" = "SiteUnit")) %>%
+  mutate(SiteUnit = coalesce(Association, SiteUnit)) %>%  # fallback
+  filter(Analysis_Group == anal.set) %>%
+  select(SiteUnit, aSMR, SNR) %>%
+  filter(!is.na(SiteUnit)) %>%
+  mutate(
+    SNR = factor(SNR, levels = c("A", "B", "C", "D", "E"), ordered = TRUE),
+    SNR_num = as.numeric(SNR)
+  ) %>%
+  select(-SNR) %>%
+  filter(!is.na(SNR_num))
+
+
+
+median_by_site <- SU_edatope %>%
+  group_by(SiteUnit) %>%
+  summarise(across(where(is.numeric),
+                   \(x) median(x, na.rm = TRUE),
+                   .names = "median_{.col}"))
+
+
+su_all_sim2 <- su_all_sim %>% left_join(median_by_site, by = c("Unit1" = "SiteUnit")) %>% left_join(median_by_site, by = c("Unit2" = "SiteUnit")) %>% distinct %>% 
+  select(Unit1, Unit2, BEC.sim.min, tempAssoc1, tempAssoc2, smr1 = median_aSMR.x, smr2 = median_aSMR.y, snr1 = median_SNR_num.x, snr2 = median_SNR_num.y, tempAssoc_match )
+
+
+su_all_sim2_rev <- su_all_sim2 %>% 
+  select(Unit1 = Unit2, Unit2 = Unit1, BEC.sim.min, tempAssoc1 = tempAssoc2, tempAssoc2 = tempAssoc1, smr1 = smr2, smr2 = smr1, snr1 = snr2, snr2 = snr1, tempAssoc_match )
+
+# bind and sort
+su_all_sim2_full <- bind_rows(su_all_sim2, su_all_sim2_rev) %>%
+  arrange(Unit1, Unit2)
+
+write.xlsx(
+  su_all_sim2_full,
+  file = "./review_materials/other_similar_su_cluster_review_edatope.xlsx",
+  overwrite = TRUE
+)
+
+#fwrite(su_all_sim2_full, "./review_materials/other_similar_sus_cluster_review_edatope.")
+```
+
+
+```{r test for edaphic outliers2}
+group = "generated_Alliance"
+
+
+
 assoc_edatope <- plot.edatope %>%
   left_join(su2, by = "PlotNumber") %>%
   left_join(BEC.hier, by = c("SiteUnit" = "SiteUnit")) %>%
   filter(Analysis_Group == anal.set) %>%
-  select(SiteUnit, aSMR, SNR, groups = generated_Assoc) %>%
+  select(SiteUnit, aSMR, SNR, groups = group) %>%
   filter(!is.na(SiteUnit)) %>%
 #  filter(groups %in% select.groups) %>%
   mutate(
@@ -1271,421 +1316,6 @@ gt(univariate_outliers) %>%
 ```
 
 
-## Create hierarchical unit summary table report for review and editing of membership
-
-Output a Vpro summary style report for review. Formatting macro in Excel can be applied to format the tables for review and editing.
-
-```{r build veg guide summary and export to excel2, echo = FALSE, warning=FALSE, message=FALSE}
-# data.path = "D:/OneDrive - Government of BC/GitHub_data"
-# author = "Coast_Forest_Assocs"
-# becdb <- dbConnect(
-#   odbc::odbc(),
-#   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;"
-# )
-# BEC.hier.temp <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") %>%  filter(Analysis_Group %in% anal.set)
-# dbDisconnect(becdb)
-# 
-# su.anal.new <- su_working2 %>% select(PlotNumber, SiteUnit = SiteUnit.orig) %>%
-#   mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", "")) %>% left_join(BEC.hier.temp, by = c("SiteUnit"= "SU_Label"))
-# 
-# 
-# vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
-# veg.dat2 <- combine_taxa_strata(vegdata = vegdata, lump, use.subtaxa = FALSE) %>% filter(!Species == "UNKNOWN")
-# vegsum.wbk <- createWorkbook()
-# su.anal.new <- su.anal.new %>% mutate(groups = generated_Alliance)
-# # Loop over each cluster
-# for (g in sort(unique(su.anal.new$groups))) {
-# 
-#   # SiteUnits in this group
-#   su_group <- su.anal.new %>% 
-#     filter(groups == g) %>% 
-#     pull(SiteUnit)
-# 
-#   # Filter your siteUnits table
-#   su_sub <- su.anal.new %>% 
-#     filter(SiteUnit %in% su_group)
-# 
-#   # Build vegetation summary for this group
-#   vegSum_sub <- create_veg_sum_all(
-#     vdat = veg.dat2,
-#     siteUnits = su_sub,
-#     minconstancy = 50,
-#     noiseconstancy = 25,
-#     strata.by = "Layer"
-#   )
-# 
-#   # Format table
-#   veg.sum.table_sub <- format_veg_table_strata(
-#     vsum = vegSum_sub,
-#     spp = taxon.lifeform
-#   )
-# 
-#   # Name the sheet
-# sheet_name <- paste0("Group_", g)
-# 
-# # Trim to 25 chars, then add a 5‑char hash suffix
-# if (nchar(sheet_name) > 31) {
-#   suffix <- substr(digest::digest(sheet_name), 1, 5)
-#   sheet_name <- paste0(substr(sheet_name, 1, 25), "_", suffix)
-# }
-# 
-# addWorksheet(vegsum.wbk, sheetName = sheet_name)
-# 
-# 
-#   # Write data
-#   writeData(vegsum.wbk, sheet = sheet_name, veg.sum.table_sub)
-# }
-# 
-# saveWorkbook(
-#   vegsum.wbk,
-#   paste0("./vegsum.tables/", author, ".xlsx"),
-#   overwrite = TRUE
-# )
-
-```
-
-## Rerun cluster with generated Assocs to generate Alliances
-
-Use updated generated Assoc from BECdb which include working assocs from previous step and initial predefined groups to rerun the pairwise analysis and cluster analysis. This will help to group remaining singletons with low diagnostic potential or few plots into working associations for review and editing.
-
-```{r prep SU2, echo=FALSE, message=FALSE, warning=FALSE}
-# compute anal.test
-# becdb <- dbConnect(
-#   odbc::odbc(),
-#   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;"
-# )
-# BEC.hier.temp <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") %>%  filter(Analysis_Group %in% anal.set)
-# dbDisconnect(becdb)
-# 
-# group.to.test <- "generated_Assoc"
-# # anal.set <- anal.set
-# su.anal.new <- left_join (su_working2, BEC.hier.temp , by = c("SiteUnit.orig" = "SU_Label"))
-# 
-# 
-# #------------------------------------------------------------
-# # 4. Compute anal.test by walking down the hierarchy
-# #------------------------------------------------------------
-# 
-# # vectorized helper: find first non-NA across hierarchy levels
-# first_non_na <- function(df, cols) {
-#   apply(df[cols], 1, function(x) {
-#     x_no_na <- x[!is.na(x)]
-#     if (length(x_no_na) == 0) NA_character_ else x_no_na[1]
-#   })
-# }
-# 
-# # compute anal.test
-# su.anal.new <- su.anal.new %>%
-#   mutate(
-#     anal.test = ifelse(
-#       !is.na(Analysis_Group),
-#       Analysis_Group,
-#       first_non_na(., hierarchy)
-#     )
-#   )
-# 
-# su.anal.new <- su.anal.new %>%
-#   mutate(
-#     SiteUnit.hier = coalesce(.data[[group.to.test]], SiteUnit)
-#   ) %>%
-#   select(
-#     PlotNumber, SiteUnit, SiteUnit.orig,
-#     !!sym(group.to.test), anal.test, SiteUnit.hier
-#   )
-```
-
-## Now run another cluster with generated associations where applicable
-
-```{r build pair.wise similarity matrix2, echo=FALSE, message=FALSE, warning=FALSE}
-# 1. Define indicator species and reduction settings
-#------------------------------------------------------------
-
-# key.site.indicators <- c(
-#   "POPUTRI","LYSIAME","GAULSHA","OPLOHOR","ELLIPYR","ATHYFIL",
-#   "RUBUSPE","EQUIARV","GYMNDRY","VALESIT","CASSMER","LUETPEC",
-#   "POLYMUN","STRUSPI","RHODGRO","EMPENIG","NEPHCRI","PICESIT"
-# )
-# 
-# reduced.exceptions <- c("SPHAGNUM","CLADONIA","CLADINA","RACOMITR","MNIUM")
-# reduced.lifeforms  <- c(9, 10, 11)
-# 
-# #------------------------------------------------------------
-# # 2. Prepare SiteUnit table for analysis
-# #------------------------------------------------------------
-# 
-# su_working<- su.anal.new %>%   rename(SiteUnit.base = SiteUnit, SiteUnit = SiteUnit.hier)
-# 
-# #------------------------------------------------------------
-# # 3. Run pairwise vegetation similarity analysis
-# #------------------------------------------------------------
-# 
-# vegsum.pairs.new <- do_pairwise(
-#   veg.dat2,
-#   su = su_working,
-#   minimportance   = 0.1,
-#   minconstancy    = 60,
-#   noiseconstancy  = 10,
-#   minplots        = 1,
-#   minor           = 1,
-#   use.ksi         = FALSE,
-#   ksi             = key.site.indicators,
-#   ksi.value       = 1.5,
-#   reduce.lifeform = TRUE,
-#   reduced.lifeforms = reduced.lifeforms,
-#   reduction       = 0.1,
-#   reduced.exceptions = reduced.exceptions,
-#   add_vegsum_table = NULL
-# )
-# 
-# #------------------------------------------------------------
-# # 4. Extract comparison table
-# #------------------------------------------------------------
-# 
-# unit.compare.new <- vegsum.pairs.new %>%
-#   filter(nplots.x > 0, Unit1 != Unit2) %>%
-#   select(Unit1, Unit2, Species, BEC.sim.min, BEC.sim.max,
-#          nplots.x, unit.diag.sum.x) %>%
-#   distinct()
-# 
-# #------------------------------------------------------------
-# # 5. Build BEC distance matrix and export
-# #------------------------------------------------------------
-# 
-# source("../BEC_R_working/_functions/_bec_dist_matrix.R")
-# 
-# bec_dist_matrix <- bec_dist_matrix(
-#   vegsum.pairs.new,
-#   distance = "BEC.sim.min"
-# ) %>% 
-#   data.frame()
-# 
-# write.csv(
-#   bec_dist_matrix,
-#   "./clean_tabs/Coast_Forest_Distance_matrix.csv",
-#   row.names = FALSE
-# )
-```
-
-## Second cluster dendrogram
-
-Use generated associations and remaining singletons with low diagnostic potential or few plots into working associations for review and editing.
-
-```{r}
-# source("../BEC_R_working/_functions/_bec_dist_matrix.R")
-# single.units <- draw_dendro_split(unit.compare = vegsum.pairs.new, cut.level=.4)
-# ## write generated_Alliance to BECdb
-```
-
-```{r cluster analysis alliance, echo=FALSE, results= 'hide'}
-# source("../BEC_R_working/_functions/_bec_dist_matrix.R")
-# fig.show='hide'
-# 
-# dendro_hc <- create_dendro_all(vegsum.pairs.new)
-# clusters <- cutree(dendro_hc, h = 0.4)
-# cluster_dt <- data.table(
-#   SiteUnit = names(clusters),
-#   generated_alliance = paste0("coast_generated_alliance", clusters)
-# )
-# 
-# ## merge back to retrieve SiteUnit for all and the coalesce.
-# working.hier <- su_working2 %>% select(SiteUnit.base, generated_SubAss, generated_Assoc, generated_Alliance) %>% distinct
-# working.hier2 <- working.hier %>%
-#   left_join(cluster_dt, by = c("SiteUnit.base" = "SiteUnit")) %>%
-#   rename(tempAssoc_base = tempAssoc) %>%
-#   left_join(cluster_dt, by = c("generated_SubAss" = "SiteUnit")) %>%
-#   rename(tempAssoc_sub = tempAssoc) %>%
-#   left_join(cluster_dt, by = c("working_Assoc" = "SiteUnit")) %>%
-#   rename(tempAssoc_assoc = tempAssoc) %>%
-#   mutate(
-#     tempAssoc = coalesce(
-#       tempAssoc_base,
-#       tempAssoc_sub,
-#       tempAssoc_assoc
-#     )
-#   )
-# temp_assoc <- working.hier2 %>% select(SiteUnit = SiteUnit.base, tempAssoc) %>% data.table
-# # Count members per cluster
-# cluster_sizes <- temp_assoc[, .N, by = tempAssoc]
-# 
-# # Keep only clusters with >1 member
-# valid_clusters <- cluster_sizes[N > 1, tempAssoc]
-# 
-# # Filter cluster_dt to only those units with > 1 unit in clusters
-# cluster_dt <- temp_assoc[tempAssoc %in% valid_clusters]
-# 
-# # setDT(su.anal1)
-# # 
-# # # If joining new units to existing unit save the original association name instead to the cluster name
-# # assoc_lookup <- su.anal1[!is.na(Association), .(Association)] %>% distinct %>% pull
-# # cluster.assoc <- cluster_dt %>% filter(SiteUnit %in% assoc_lookup)
-# # 
-# # cluster_dt[cluster.assoc, on = "tempAssoc",
-# #            tempAssoc := i.SiteUnit]
-# 
-# cluster_update <- merge(cluster_dt, su.anal1, by = c("SiteUnit"), all.x = TRUE) %>% select(SS_Label = SiteUnit.orig,  tempAssoc) %>% distinct %>% drop_na
-# 
-# ### write into BECdb a working file to update the tempAssoc field
-# becdb <- dbConnect(
-#   odbc::odbc(),
-#   .connection_string =
-#     "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
-#      DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;"
-# )
-# dbWriteTable(
-#   becdb,
-#   "generated_Assoc",
-#   cluster_update, append=FALSE,
-#   overwrite = TRUE,
-#   batch_rows = 1
-# )
-# dbDisconnect(becdb)
-```
-
-## Generate vegetation summary output for all site units in each proposed alliance
-
-Each sheet has all site units for a proposed alliance on a single sheet grouped, labelled, and colour-themed by Association (tempAssoc_Code) to help review and editing of membership. This will be used to review the proposed alliances and make decisions about which site units should be merged into associations, which should be separated into new associations, and which should be left as singletons. The vegetation summary tables will also be used to identify potential diagnostic species for each alliance and to compare the vegetation composition of different alliances.
-
-```{r}
-# compute anal.test
-# becdb <- dbConnect(
-#   odbc::odbc(),
-#   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;"
-# )
-# BEC.hier.temp <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") #%>% select(-SiteUnit)
-# dbDisconnect(becdb)
-# 
-# group.to.test <- "generated_Alliance"
-# 
-# su.anal.new <- su_working2 %>% select(PlotNumber, SiteUnit.orig) %>% left_join(BEC.hier.temp, by = c("SiteUnit.orig" = "SU_Label")) %>% rename(SiteUnit = SiteUnit.orig)
-# #su.anal.new <- left_join(su_working3)
-# 
-# # anal.set <- anal.set
-# # su.alliances <- left_join (su2, BEC.hier.temp , by = c("SiteUnit.orig" = "SS_Label")) %>%
-# #   filter(Analysis_Group %in% anal.set)
-# 
-# #su.alliances <- su2
-# #su.zonal <- su %>% filter(bgc %in% bgc.choose)
-# #bgc.list <- unique(su.zonal$bgc)
-# 
-# vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
-# veg.dat2 <- combine_taxa_strata(vegdata = vegdata, lump, use.subtaxa = FALSE) %>% filter(!Species == "UNKNOWN")
-# author = "alliances"
-# 
-# # Replace NA groups with "Singles"
-# su.anal.new[[group.to.test]] <- ifelse(
-#   is.na(su.anal.new[[group.to.test]]),
-#   "Singles",
-#   su.anal.new[[group.to.test]]
-# )
-# 
-# groups <- unique(su.anal.new[[group.to.test]])
-# 
-# 
-# vegsum.wbk <- createWorkbook()
-# 
-# for (g_i in groups) {
-# #g_i = "All_4"
-#   # All SiteUnits belonging to this tempAlliance
-#   su_group <- su.anal.new %>%
-#     dplyr::filter(.data[[group.to.test]] == g_i)
-# 
-#   if (nrow(su_group) == 0) next
-# 
-#   # ------------------------------------------------------------
-#   # Build vegetation summary for ALL SUs in this group
-#   # ------------------------------------------------------------
-# veg_all <- create_veg_sum_all(
-#   vdat = veg.dat2,
-#   siteUnits = su_group,
-#   minconstancy = 50,
-#   noiseconstancy = 25,
-#   strata.by = "Layer"
-# )
-# 
-# 
-#   # ------------------------------------------------------------
-#   # Format table with ordered SiteUnits
-#   # ------------------------------------------------------------
-#   veg_all_tbl <- format_veg_table_strata(
-#     vsum = veg_all,
-#     spp = taxon.lifeform,
-#     reorder_units = NULL      # <-- enforce ordering in output
-#   )
-# 
-# # ------------------------------------------------------------
-#   # BUILD SECOND HEADER ROW WITH tempAssoc_Code
-#   # ------------------------------------------------------------
-#   # Identify which columns correspond to SiteUnits
-# #su_cols <- colnames(veg_all_tbl) %in% su_order
-# 
-# 
-# # Second header: alliance (tempAssoc_Code) for SiteUnit columns, blank otherwise
-#   # ------------------------------------------------------------
-#   # ORDER SITEUNITS BY tempAssoc_Code WITHIN THIS tempAlliance
-#   # ------------------------------------------------------------
-# # su_order_df has SiteUnit.orig and tempAssoc_Code in the right order
-# su_group_ord <- su_group %>% select(SiteUnit, generated_Assoc) %>%
-#   dplyr::arrange(generated_Assoc, SiteUnit) %>% distinct %>% replace_na(list(generated_Assoc = "No_Assoc")) # replace NA with "No_Assoc" for ordering
-# assoc_row_tbl <- su_group_ord %>%
-#   tidyr::pivot_wider(
-#     names_from  = SiteUnit,
-#     values_from = generated_Assoc
-#   )
-# #su_order <- colnames(assoc_row_tbl)
-# su_order <- su_group_ord$SiteUnit
-# 
-# all_cols <- colnames(veg_all_tbl)
-# # Identify descriptor columns (everything NOT a SiteUnit)
-# desc_cols <- c("Layer", "Scientific name")
-# com_cols <- "Common name"
-# 
-# 
-# # Final column order: descriptors first, then SiteUnits ordered by tempAssoc
-# final_cols <- c(desc_cols, su_order, com_cols)
-# # Convert assoc_row_tbl to a named vector
-# assoc_vec <- unlist(assoc_row_tbl[1, ], use.names = TRUE)
-# 
-# # Build a full assoc row matching final_cols
-# assoc_row <- sapply(final_cols, function(col) {
-#   if (col %in% names(assoc_vec)) assoc_vec[[col]] else ""
-# })
-# 
-# 
-# veg_all_tbl <- veg_all_tbl[, ..final_cols]
-# 
-# veg_all_tbl <- rbindlist(
-#   list(as.list(assoc_row), veg_all_tbl),
-#   use.names = TRUE,
-#   fill = TRUE
-# )
-# 
-# 
-#   # ------------------------------------------------------------
-#   # WRITE TO WORKBOOK
-#   # ------------------------------------------------------------
-#   sheet_name <- paste0(g_i)
-#   if (nchar(sheet_name) > 31) {
-#     suffix <- substr(digest::digest(sheet_name), 1, 5)
-#     sheet_name <- paste0(substr(sheet_name, 1, 25), "_", suffix)
-#   }
-# 
-#   addWorksheet(vegsum.wbk, sheet_name)
-#   # Write first header row (column names)
-# #writeData(vegsum.wbk, sheet_name, x = colnames(veg_all_tbl), startCol = 1, startRow = 1)
-# #writeData(vegsum.wbk, sheet_name, x = t(second_header),        startCol = 1, startRow = 1)
-# writeData(vegsum.wbk, sheet_name, veg_all_tbl,                 startCol = 1, startRow = 1)
-# 
-# }
-# # Save workbook
-# saveWorkbook(
-#   vegsum.wbk,
-#   paste0("./vegsum.tables/Group_Summary_tables_", author, ".xlsx"),
-#   overwrite = TRUE
-# )
-```
-
-
-
 
 ## Look for possible placements for single site units
 
@@ -1753,200 +1383,4 @@ Find nearest neighbours for single units (singletons) and compare vegetation, ed
 ```
 
 
-____OLD CODE____________________________
-
-
-## Create hierarchical unit summary table report for review and editing of membership
-
-Output a Vpro summary style report for review. Formatting macro in Excel can be applied to format the tables for review and editing.
-
-```{r build veg guide summary and export to excel2, echo = FALSE, warning=FALSE, message=FALSE}
-# data.path = "D:/OneDrive - Government of BC/GitHub_data"
-# author = "Coast_Forest_Assocs"
-# 
-# 
-# su_working3 <- su_working2 %>% select(PlotNumber, SiteUnit.orig) %>% left_join(BEC.hier2, by = c("SiteUnit.orig" = "SU_Label"))
-# su.anal.new <- left_join(su_working3)
-# 
-# vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
-# veg.dat2 <- combine_taxa_strata(vegdata = vegdata, lump, use.subtaxa = FALSE) %>% filter(!Species == "UNKNOWN")
-# vegsum.wbk <- createWorkbook()
-# su.anal.new <- su.anal.new %>% mutate(groups = tempAssoc_Code)
-# # Loop over each cluster
-# for (g in sort(unique(su.anal.new$groups))) {
-# 
-#   # SiteUnits in this group
-#   su_group <- su.anal.new %>% 
-#     filter(groups == g) %>% 
-#     pull(SiteUnit)
-# 
-#   # Filter your siteUnits table
-#   su_sub <- su.anal.new %>% 
-#     filter(SiteUnit %in% su_group)
-# 
-#   # Build vegetation summary for this group
-#   vegSum_sub <- create_veg_sum_all(
-#     vdat = veg.dat2,
-#     siteUnits = su_sub,
-#     minconstancy = 50,
-#     noiseconstancy = 25,
-#     strata.by = "Layer"
-#   )
-# 
-#   # Format table
-#   veg.sum.table_sub <- format_veg_table_strata(
-#     vsum = vegSum_sub,
-#     spp = taxon.lifeform
-#   )
-# 
-#   # Name the sheet
-# sheet_name <- paste0("Group_", g)
-# 
-# # Trim to 25 chars, then add a 5‑char hash suffix
-# if (nchar(sheet_name) > 31) {
-#   suffix <- substr(digest::digest(sheet_name), 1, 5)
-#   sheet_name <- paste0(substr(sheet_name, 1, 25), "_", suffix)
-# }
-# 
-# addWorksheet(vegsum.wbk, sheetName = sheet_name)
-# 
-# 
-#   # Write data
-#   writeData(vegsum.wbk, sheet = sheet_name, veg.sum.table_sub)
-# }
-# 
-# saveWorkbook(
-#   vegsum.wbk,
-#   paste0("./vegsum.tables/", author, ".xlsx"),
-#   overwrite = TRUE
-# )
-
-```
-
-
-## generate a vegetation summary with singletons in possible associations.
-
-Compare vegetation summaries for these units to see if they are similar enough to consider merging into the same association.
-
-```{r}
-# require(openxlsx)
-# require(tictoc)
-# library(stringr)
-# 
-# su.singles <- su.anal.new %>% filter(SiteUnit %in% check.match$SiteUnit | groups %in% check.match$group)
-# #su.zonal <- su %>% filter(bgc %in% bgc.choose)
-# #bgc.list <- unique(su.zonal$bgc)
-# 
-# vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
-# veg.dat2 <- combine_taxa_strata(vegdata = vegdata, lump, use.subtaxa = FALSE) %>% filter(!Species == "UNKNOWN")
-# author = "singles_compare"
-# 
-# vegsum.wbk <- createWorkbook()
-# 
-# # Loop over each cluster
-# # Add comparison worksheets for each SiteUnit–Group match
-# for (i in seq_len(nrow(check.match))) {
-#   i=1
-#   su_i <- check.match$SiteUnit[i]
-#   g_i  <- check.match$Group[i]
-#   
-#   # SiteUnits in the matched group
-#   su_group <- su.singles %>% 
-#     dplyr::filter(!!sym(group.to.test) == g_i) %>% 
-#     pull(SiteUnit)
-#   
-#   # Combine singleton + group SUs
-#   su_all <- su.singles %>% 
-#     filter(SiteUnit %in% c(su_group, su_i))
-#   
-#   # Build vegetation summary for ALL SUs together
-#   veg_all <- create_veg_sum_all(
-#     vdat = veg.dat2,
-#     siteUnits = su_all,
-#     minconstancy = 50,
-#     noiseconstancy = 25,
-#     strata.by = "Layer"
-#   )
-#   
-#   # Format table
-#   veg_all_tbl <- format_veg_table_strata(vsum = veg_all, spp = taxon.lifeform)
-#   
-#   # Add a flag column showing which rows belong to the singleton SU
-#   #veg_all_tbl$SingletonFlag <- ifelse(veg_all_tbl$SiteUnit == su_i, "SINGLETON", "")
-#   
-#   # Move flag column to the front for visibility
-#   #veg_all_tbl <- veg_all_tbl %>% 
-#    # dplyr::relocate(SingletonFlag, .before = 1)
-#   
-#   # -------------------------------
-#   # WRITE TO WORKBOOK
-#   # -------------------------------
-#   
-#   sheet_name <- paste0("Compare_", su_i, "_vs_", g_i)
-#   if (nchar(sheet_name) > 31) {
-#     suffix <- substr(digest::digest(sheet_name), 1, 5)
-#     sheet_name <- paste0(substr(sheet_name, 1, 25), "_", suffix)
-#   }
-#   
-#   addWorksheet(vegsum.wbk, sheet_name)
-#   
-#   # Write combined table
-#   writeData(vegsum.wbk, sheet = sheet_name, veg_all_tbl, startCol = 1, startRow = 1)
-#   
-#   # Headers
-#   writeData(vegsum.wbk, sheet = sheet_name,
-#             x = paste("Group:", g_i), startCol = 15, startRow = 1)
-#   writeData(vegsum.wbk, sheet = sheet_name,
-#             x = paste("Singleton SiteUnit:", su_i), startCol = 16, startRow = 1)
-# }
-# saveWorkbook(
-#   vegsum.wbk,
-#   paste0("./vegsum.tables/Singleton_Compare_tables_", author, ".xlsx"),
-#   overwrite = TRUE
-# )
-
-```
-
-## Create prospective Alliances from last round of Associations
-
-Set the cut level to 40% dissimilarity to generate preliminary alliances for review and editing. This will be used to review the proposed alliances and make decisions about which site units should be merged into associations, which should be separated into new associations, and which should be left as singletons. The vegetation summary tables will also be used to identify potential diagnostic species for each alliance and to compare the vegetation composition of different alliances.
-
-```{r echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
-# source("../BEC_R_working/_functions/_bec_dist_matrix.R")
-# #single.units <- draw_dendro_split(unit.compare = vegsum.pairs.new, cut.level=.4)
-# 
-# source("../BEC_R_working/_functions/_bec_dist_matrix.R")
-# dendro_hc <- create_dendro_all(unit.compare)
-# clusters <- cutree(dendro_hc, h = 0.4)
-# BEC.hier <- BEC.hier %>% select(-tempAlliance)
-# cluster_dt <- data.table(
-#   SiteUnit = names(clusters),
-#   tempAlliance = paste0("All_", clusters)
-# ) %>% left_join(BEC.hier, by = c("SiteUnit" = "SiteUnit")) %>% select(SS_Label, tempAlliance) %>% distinct %>% drop_na
-# 
-# cluster_dt2 <- data.table(
-#   SiteUnit = names(clusters),
-#   tempAlliance = paste0("All_", clusters)) %>% 
-#   left_join(BEC.hier, by = c("SiteUnit" = "working_Assoc")) %>% select(SS_Label, tempAlliance) %>% distinct %>% drop_na
-# 
-# cluster_dt <- rbind(cluster_dt, cluster_dt2) %>% distinct
-# 
-# ### write into BECdb a working file to update the tempAssoc field
-# becdb <- dbConnect(
-#   odbc::odbc(),
-#   .connection_string =
-#     "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
-#      DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2026.accdb;"
-# )
-# 
-# dbWriteTable(
-#   becdb,
-#   "working_tempAlliance",
-#   cluster_dt, append=FALSE,
-#   overwrite = TRUE,
-#   batch_rows = 1
-# )
-# dbDisconnect(becdb)
-
-```
 
