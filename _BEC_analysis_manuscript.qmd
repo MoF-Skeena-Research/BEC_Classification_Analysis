@@ -36,9 +36,10 @@ This report describes formalized quantitative methods for assessing and correlat
 
 2.  Assessment of internal consistency for proposed site units
 
-3.  Comparison of site series within each BGC for sufficient unit differentiation
+3.  Comparison of site series within each BGC for sufficient site unit differentiation
 
 4.  Creation of hierarchical units from local site units
+
 
 This report primarily focused on the development of the quantitative BEC analysis of site unit using a novel similarity metric that reflects differentiating criteria outlined in Pojar and Klinka. \[refs\]
 
@@ -124,6 +125,8 @@ The BEC.sim is a measure of the similarity of the diagnostic species composition
 -   *Unit Differential Sum(UDS)*: UDS = sum(sdv +sddv)
 
 -   *BEC.sim*: BEC.sim= min(UDS1, UDS2))/SDS
+
+Research Baselga framework (based on pres-abs data) which partitions dissimilarity into species replacement (different species) versus nestedness (missing species in one unit).
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)

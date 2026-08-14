@@ -1,0 +1,1992 @@
+---
+title: "Hierarchy Unit Review"
+author: "William H MacKenzie"
+date: "08/11/2024"
+format: 
+  pdf: 
+    documentclass: scrartcl
+    papersize: letter
+editor: source
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+require(tidyverse)
+require(DBI)
+require(data.table)
+require(cluster)
+require(dendextend)
+require(dynamicTreeCut)
+require(gtable)
+require(colorspace)
+require(gtsummary)
+require(openxlsx)
+require(tictoc)
+require(labdsv)
+require(indicspecies)
+require(Polychrome)
+require(ggdendro)
+require(purrr)
+require(ggplotify)
+require(grid)
+library(stringr)
+require(vegan)
+require(betapart)
+library(plotly)
+set.seed(1279)
+source("../BEC_R_working/_functions/_bec_dist.R")
+source("../BEC_R_working/_functions/_bec_dist_matrix.R")
+source("../BEC_R_working/_functions/_combine_taxa.R")
+source("../BEC_R_working/_functions/_combine_taxa_strata.R")
+source("../BEC_R_working/_functions/_create_su_vegdata.R")
+source("../BEC_R_working/_functions/_create_analysis_vegsum.R")
+source("../BEC_R_working/_functions/_TabletoTree.R")
+source("../BEC_R_working/_functions/_TreetoTable.R")
+source("../BEC_R_working/_functions/_add_vars.R")
+source("../BEC_R_working/_functions/_do_pairwise.R")
+source("../BEC_R_working/_functions/_create_diagnostic_veg.R")
+source("../BEC_R_working/_functions/_return_similar_pairs.R")
+source("../BEC_R_working/_functions/_read_sppmaster.R")
+source("../BEC_R_working/_functions/_combined_su.R")
+source("../BEC_R_working/_functions/_create_veg_sum.R")
+source('../BEC_R_working/_functions/_create_veg_sum_all.R')
+source('../BEC_R_working/_functions/_build_species_ordering.R')
+source('../BEC_R_working/_functions/_format_veg_table.R')
+source('../BEC_R_working/_functions/_format_veg_table_strata.R')
+source('../BEC_R_working/_functions/_format_veg_table_nostrata.R')
+source('../BEC_R_working/_functions/_encode_veg_sum.R')
+source('../BEC_R_working/_functions/_create_dendro.R')
+source('../BEC_R_working/_functions/_create_dendro_all.R')
+source('../BEC_R_working/_functions/_create_dendro_bybgc.R')
+source('../BEC_R_working/_functions/_draw_dendro_split.R')
+source('../BEC_R_working/_functions/_cluster_groups.R')
+source('../BEC_R_working/_functions/_TabletoTree.R')
+source('../BEC_R_working/_functions/_build_species_ordering_hier.R')
+source("../BEC_R_working/_functions/_cluster_by_spp_group.R")
+source("../BEC_R_working/_functions/_baselga_diagnostics.R")
+data.path = "D:/OneDrive - Government of BC/GitHub_data"
+```
+
+# General flow for review
+
+A report to review proposed associations and hierarchical unit. Comparative summary table Ordination Comparative environmental reporting
+
+## Read in data
+
+Read in vegetation data and join to taxonomic read in becdb table with units and hierarchical levels read in working xlsx becdb table with proposed units read in su tables and limit to units in the working xlsx
+
+Vegetation data is read in from saved .RDS file generated from the BECMaster cleaning scripts. Taxonomy is read-in from the species taxonomy database. A species lumping table is read-in from a Vpro database and applied to the vegetation data. The species taxonomy is joined to the vegetation data.
+
+```{r load data}
+# =============================================================================
+# Vegetation Data
+# =============================================================================
+
+veg.dat <- readRDS(
+  file.path(data.path, "BEC_veg_data/Analysis_BECMaster_Veg.rds")
+)
+
+veg.dat2 <- veg.dat
+
+# =============================================================================
+# Species Master and Lifeforms
+# =============================================================================
+
+taxon.all <- read_sppmaster()
+
+taxon.lifeform <- taxon.all %>%
+  filter(Codetype %in% c("U", "X", "D")) %>%
+  dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
+  distinct()
+
+# Tree species codes
+trees <- taxon.lifeform %>%
+  filter(Lifeform %in% c("1", "2")) %>%
+  pull(Code)
+
+# Tree seedling species codes
+tree_seedlings <- taxon.lifeform %>%
+  filter(Lifeform %in% c("1", "2")) %>%
+  mutate(Code = paste0(Code, "D")) %>%
+  pull(Code)
+
+# =============================================================================
+# Species Lump Table
+# =============================================================================
+
+veglump <- dbConnect(
+  odbc::odbc(),
+  .connection_string = paste0(
+    "Driver={Microsoft Access Driver (*.mdb, *.accdb)};",
+    "DBQ=D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb;"
+  )
+)
+
+lump <- dbReadTable(veglump, "CorrelationZonal_Lump")
+
+dbDisconnect(veglump)
+
+veg.dat2 <- combine_taxa(
+  vegdata = veg.dat2,
+  lump = lump,
+  use.subtaxa = TRUE
+)
+
+# =============================================================================
+# BEC Database
+# =============================================================================
+
+bgc.units <- dbConnect(
+  odbc::odbc(),
+  .connection_string = paste0(
+    "Driver={Microsoft Access Driver (*.mdb, *.accdb)};",
+    "DBQ=D:/OneDrive - Government of BC/BECdb_Working/",
+    "BECdb_ver14_2026_v0.accdb;"
+  )
+)
+
+bgcv13 <- dbReadTable(
+  bgc.units,
+  "tblBEC_SiteSeriesWorkingandArchive"
+) %>%
+  filter(Status != "Retired")
+
+hierarchy <- dbReadTable(
+  bgc.units,
+  "tblBEC_Hierarchy_Class"
+)
+
+dbDisconnect(bgc.units)
+
+# =============================================================================
+# Correlation Database
+# =============================================================================
+
+db <- "D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb"
+
+su_all <- combined_su(db)
+
+# Remove retired, support, and other non-working site units
+su_all <- su_all %>%
+  filter(
+    !grepl(
+      "101a.2|101b.2|low|-S|add|nudum|poor|yc|_W|_F|ys|moved|X|omit|unplaced|support",
+      SiteUnit
+    )
+  )
+
+#===========================================================================
+# Site Unit Cleanup
+# =============================================================================
+
+su_all <- su_all %>%
+  #dplyr::select(-SiteUnit.orig) %>%
+  mutate(
+    SiteUnit = str_replace(SiteUnit, "b$|a$", ""),
+    zone = str_extract(bgc, "[A-Z]+")
+  ) %>%
+  distinct()
+
+# =============================================================================
+# QA / Check for Oddities
+# =============================================================================
+
+bgc.unique <- su_all %>%
+  distinct(bgc)
+
+```
+
+### Core analyses would be:
+
+With 3,450 plots assigned to 28 alliances, I'd treat this as a multivariate community ecology problem and analyze it at several complementary levels. All comparisons use the site unit summary data as the basis for comparison and not plot level data.
+
+1.  NMDS ordination
+
+2.  PERMANOVA to compare sig differences between units. Alliances, Assocs within Alliances, All Assocs
+
+3.  Betadisper: variability within units 
+
+4.  Indicator species analysis: significant indicators associated with single or groups of units. Where few indicators in individual units consider combining with groups
+
+5.  Random Forest classification: prediction of membership
+
+6.  Species constancy tables: standard vegetation summary output
+
+7.  Environmental gradient analysis: environmental separation of units
+
+Together these answer:
+
+Are alliances compositionally distinct? How distinct are they? Which species define them? Which alliances overlap? What environmental gradients drive differences? How internally consistent are they?
+
+For a BEC/alliance classification paper, NMDS + PERMANOVA + Indicator Species + Random Forest + diagnostic species tables would likely provide the strongest and most defensible framework.
+
+
+5.  Classification accuracy
+
+If alliances are real compositional groups, you should be able to predict them.
+
+Random Forest rf \<- randomForest( x = comm, y = alliance )
+
+Investigate:
+
+Overall accuracy Confusion matrix Important species
+
+Questions:
+
+Which alliances are consistently confused? Which alliances are highly distinct? 
+
+
+7.  Functional composition
+
+Since you already have lifeforms available, compare:
+
+Tree cover Shrub cover Herb cover Moss cover Lichen cover
+
+Calculate for each plot:
+
+community_summary \<- veg.dat %\>% group_by(PlotID, Lifeform) %\>% summarise(total_cover = sum(Cover))
+
+Then compare among alliances.
+
+This often reveals clearer patterns than species-level analyses.
+
+9.  Differential abundance
+
+Rather than just indicators, identify species significantly more abundant in particular alliances.
+
+Possible methods:
+
+ALDEx2 DESeq2 (presence/abundance transformed) mvabund
+
+Though indicator species analysis is often sufficient for vegetation studies.
+
+
+```{r read in SU data}
+hier_working <- openxlsx::read.xlsx("D:/OneDrive/WNA_BGC/Association_Analysis/Coast_Hierarchy_Analysis/BECdb_Coast_Hierarchy_Working_ver2.xlsx") |> filter(Analysis_Group %in% "Forest-Coast_MH")
+
+# Keep only site units present in hierarchy table
+su <- su_all %>%
+  filter(SiteUnit.orig %in% hier_working$SU_Label)
+su.anal <- su %>%
+  left_join(hier_working, by = c("SiteUnit.orig" = "SU_Label"))
+
+su.class <- su.anal |> filter(n_plots >1) |> dplyr::select(PlotNumber, siteunit = SiteUnit, assoc = working_Assoc_cleaned, alliance = working_Alliance) |> 
+  mutate(alliance = str_remove(alliance, "^coast_generated_"))  |> distinct()|> arrange(PlotNumber)
+unique.su <- su.class |> dplyr::select(siteunit) |> distinct()|> arrange(siteunit)
+unique.assocs <- su.class |> dplyr::select(siteunit, assoc) |> distinct()|> arrange(siteunit)
+unique.alliances <- su.class |> dplyr::select(siteunit, alliance) |> distinct()|> arrange(siteunit)
+
+
+hier.class <- su.anal |> filter(n_plots >1) |> dplyr::select(n_plots,siteunit = SiteUnit, assoc = working_Assoc_cleaned, alliance = working_Alliance) |> 
+  mutate(alliance = str_remove(alliance, "^coast_generated_")) |> arrange(siteunit) |> distinct()
+unique.su2 <- hier.class |> dplyr::select(siteunit) |> distinct()
+unique.assocs2 <- hier.class |> dplyr::select(assoc) |> distinct()
+unique.alliances2 <- hier.class |> dplyr::select(alliance) |> distinct()
+
+
+veg.anal<- veg.dat2 |> filter(PlotNumber %in% su.class$PlotNumber) |> dplyr::select(PlotNumber, Species, Cover) |>
+  arrange(PlotNumber) #|> matrify()
+
+reduced.exceptions <- c("SPHAGNUM","CLADONIA","CLADINA","RACOMITR","MNIUM")
+reduced.lifeforms  <- c(9, 10, 11)
+
+pairwise.params <- list(
+  su                = su.anal,
+  minconstancy          = 50,
+  noiseconstancy        = 10,
+  minplots              = 1,
+  minor                 = 1,
+  use.ksi               = FALSE,
+  ksi   = NULL,
+  ksi.value             = 1.5,
+  reduce.lifeform       = TRUE,
+  reduced.lifeforms     = reduced.lifeforms,
+  reduction             = 0.1,
+  reduced.exceptions    = reduced.exceptions,
+  add_vegsum_table      = NULL
+)
+
+vegsum.pairs <- do.call(
+  do_pairwise,
+  c(list(veg.anal), pairwise.params)
+)
+
+ bec.dist <- bec_dist_matrix(vegsum.pairs = vegsum.pairs, distance = "BEC.sim.min")
+
+```
+
+##Describe differences in species composition
+
+### NMDS ordination
+
+Use BEC dissimilarity and plot alliances.
+
+Questions answered:
+
+Do alliances form distinct clusters? Which alliances overlap? Are some alliances highly variable internally?
+
+Add alliance centroids and confidence ellipses.
+
+ordiplot(nmds) ordiellipse(nmds, alliance)
+```{r NMDS}
+## NMDS
+nmds <- metaMDS(
+  bec.dist,
+  k = 2
+)
+nmds$stress
+
+nmds3 <- metaMDS(
+  bec.dist, 
+  k = 3
+)
+nmds3$stress
+```
+## Build 3D NMDS plot
+```{r}
+library(dplyr)
+library(tibble)
+library(plotly)
+library(vegan)
+
+#==============================================================================
+# NMDS scores (SiteUnit level)
+#==============================================================================
+
+scores3d <- as.data.frame(
+  scores(nmds3, display = "sites")
+) |>
+  rownames_to_column("siteunit") |>
+  left_join(
+    hier.class |>
+      dplyr::select(siteunit, assoc, alliance),
+    by = "siteunit"
+  ) |>
+  filter(
+    !is.na(siteunit),
+    !is.na(assoc),
+    !is.na(alliance)
+  )
+
+#==============================================================================
+# Association centroids
+#==============================================================================
+
+assoc.cent <- scores3d |>
+  group_by(assoc, alliance) |>
+  summarise(
+    NMDS1 = mean(NMDS1),
+    NMDS2 = mean(NMDS2),
+    NMDS3 = mean(NMDS3),
+    n_siteunits = n(),
+    .groups = "drop"
+  )
+
+#==============================================================================
+# Alliance centroids
+#==============================================================================
+
+alliance.cent <- assoc.cent |>
+  group_by(alliance) |>
+  summarise(
+    NMDS1 = mean(NMDS1),
+    NMDS2 = mean(NMDS2),
+    NMDS3 = mean(NMDS3),
+    n_assoc = n(),
+    .groups = "drop"
+  )
+
+#==============================================================================
+# SiteUnit -> Association links
+#==============================================================================
+
+links.su <- scores3d |>
+  dplyr::select(
+    siteunit,
+    assoc,
+    alliance,
+    NMDS1.su = NMDS1,
+    NMDS2.su = NMDS2,
+    NMDS3.su = NMDS3
+  ) |>
+  left_join(
+    assoc.cent,
+    by = c("assoc", "alliance")
+  ) |>
+  rename(
+    NMDS1.assoc = NMDS1,
+    NMDS2.assoc = NMDS2,
+    NMDS3.assoc = NMDS3
+  )
+
+#==============================================================================
+# Association -> Alliance links
+#==============================================================================
+
+links.assoc <- assoc.cent |>
+  left_join(
+    alliance.cent,
+    by = "alliance",
+    suffix = c(".assoc", ".alliance")
+  )
+
+#==============================================================================
+# Plot
+#==============================================================================
+
+p <- plot_ly()
+
+
+#------------------------------------------------------------------------------
+# SiteUnit -> Association lines
+#------------------------------------------------------------------------------
+
+for(i in seq_len(nrow(links.su))) {
+
+  p <- p |>
+    add_trace(
+      type = "scatter3d",
+      mode = "lines",
+      x = c(
+        links.su$NMDS1.su[i],
+        links.su$NMDS1.assoc[i]
+      ),
+      y = c(
+        links.su$NMDS2.su[i],
+        links.su$NMDS2.assoc[i]
+      ),
+      z = c(
+        links.su$NMDS3.su[i],
+        links.su$NMDS3.assoc[i]
+      ),
+      line = list(
+        color = "lightgrey",
+        width = 1
+      ),
+      showlegend = FALSE,
+      inherit = FALSE
+    )
+}
+
+
+#------------------------------------------------------------------------------
+# Association -> Alliance lines
+#------------------------------------------------------------------------------
+
+for(i in seq_len(nrow(links.assoc))) {
+
+  p <- p |>
+    add_trace(
+      type = "scatter3d",
+      mode = "lines",
+      x = c(
+        links.assoc$NMDS1.assoc[i],
+        links.assoc$NMDS1.alliance[i]
+      ),
+      y = c(
+        links.assoc$NMDS2.assoc[i],
+        links.assoc$NMDS2.alliance[i]
+      ),
+      z = c(
+        links.assoc$NMDS3.assoc[i],
+        links.assoc$NMDS3.alliance[i]
+      ),
+      line = list(
+        color = "black",
+        width = 4
+      ),
+      showlegend = FALSE,
+      inherit = FALSE
+    )
+}
+
+#------------------------------------------------------------------------------
+# SiteUnit points
+#------------------------------------------------------------------------------
+
+p <- p |>
+  add_trace(
+    data = scores3d,
+    x = ~NMDS1,
+    y = ~NMDS2,
+    z = ~NMDS3,
+    color = ~alliance,
+    type = "scatter3d",
+    mode = "markers+text",
+    text = ~siteunit,
+    textposition = "top center",
+    marker = list(
+      size = 3,
+      opacity = 0.4
+    ),
+    hoverinfo = "text",
+    hovertext = ~paste(
+      "SiteUnit:", siteunit,
+      "<br>Association:", assoc,
+      "<br>Alliance:", alliance
+    )
+  )
+#------------------------------------------------------------------------------
+# Association centroids
+#------------------------------------------------------------------------------
+
+p <- p |>
+  add_trace(
+    data = assoc.cent,
+    x = ~NMDS1,
+    y = ~NMDS2,
+    z = ~NMDS3,
+    color = ~alliance,
+    type = "scatter3d",
+    mode = "markers+text",
+    text = ~assoc,
+    textposition = "top center",
+    marker = list(
+      size = 8,
+      symbol = "circle",
+      line = list(
+        color = "black",
+        width = 1
+      )
+    )
+  )
+#------------------------------------------------------------------------------
+# Alliance centroids
+#------------------------------------------------------------------------------
+
+p <- p |>
+  add_trace(
+    data = alliance.cent,
+    x = ~NMDS1,
+    y = ~NMDS2,
+    z = ~NMDS3,
+    color = ~alliance,
+    type = "scatter3d",
+    mode = "markers+text",
+    text = ~alliance,
+    textposition = "middle right",
+    marker = list(
+      size = 18,
+      symbol = "diamond",
+      line = list(
+        color = "black",
+        width = 3
+      )
+    ),
+    name = "Alliance"
+  )
+
+# library(geometry)
+# 
+# min_n <- 6
+# 
+# for(a in unique(scores3d$alliance)) {
+# 
+#   pts <- scores3d |>
+#     filter(alliance == a)
+# 
+#   if(nrow(pts) < min_n) next
+# 
+#   ell <- make_ellipsoid(pts)
+# 
+#   p <- p |>
+#     add_trace(
+#       data = ell,
+#       x = ~x,
+#       y = ~y,
+#       z = ~z,
+#       type = "mesh3d",
+#       opacity = 0.15,
+#       showlegend = FALSE
+#     )
+# }
+p
+## Write to stand alone product.
+# library(htmlwidgets)
+# 
+# saveWidget(
+#   p,
+#   file = "./review_materials/BEC_NMDS_Hierarchy.html",
+#   selfcontained = TRUE
+#)
+
+```
+
+
+2.  Test whether alliances differ PERMANOVA
+
+A statistical test of compositional differences.
+
+adonis2( comm \~ alliance, data = meta, method = "bray", permutations = 999 )
+
+Outputs:
+
+R² = how much variation is explained by alliance P-value
+
+Given 3450 plots, you'll almost certainly get a significant result. Focus on effect size (R²), not just significance.
+
+Test dispersion first
+
+PERMANOVA is sensitive to unequal dispersion.
+
+disp \<- betadisper( vegdist(comm, method = "bray"), alliance )
+
+anova(disp)
+
+This tells you whether differences are due to centroids (real compositional shifts) or spread.
+
+3.  Quantify within-unit heterogeneity
+
+Some alliances are very tight, others broad.
+
+Beta diversity disp \<- betadisper( vegdist(comm, "bray"), alliance )
+
+boxplot(disp)
+
+Useful outputs:
+
+Mean distance to centroid Rank alliances from homogeneous to heterogeneous
+
+This is often ecologically informative.
+
+```{r}
+
+pairwise_adonis_dist <- function(
+    dist.mat,
+    groups,
+    permutations = 999,
+    p.adjust.method = "BH"
+) {
+
+  groups <- droplevels(as.factor(groups))
+
+  combs <- combn(levels(groups), 2)
+
+  results <- data.frame()
+
+  for (i in seq_len(ncol(combs))) {
+
+    grp <- combs[, i]
+
+    keep <- groups %in% grp
+
+    # subset distance matrix
+    d.sub <- as.dist(
+      as.matrix(dist.mat)[keep, keep]
+    )
+
+    meta.sub <- data.frame(
+      group = droplevels(groups[keep])
+    )
+
+    mod <- adonis2(
+      d.sub ~ group,
+      data = meta.sub,
+      permutations = permutations
+    )
+
+    results <- rbind(
+      results,
+      data.frame(
+        group1 = grp[1],
+        group2 = grp[2],
+        F = mod$F[1],
+        R2 = mod$R2[1],
+        p = mod$`Pr(>F)`[1]
+      )
+    )
+  }
+
+  results$p.adj <- p.adjust(
+    results$p,
+    method = p.adjust.method
+  )
+
+  results[order(results$R2, decreasing = TRUE), ]
+}
+
+library(vegan)
+
+pairwise_dispersion_dist <- function(
+    dist.mat,
+    groups,
+    p.adjust.method = "BH"
+) {
+
+  groups <- as.factor(groups)
+
+  # Remove NAs
+  keep <- !is.na(groups)
+
+  groups <- droplevels(groups[keep])
+
+  dmat <- as.matrix(dist.mat)
+  dmat <- dmat[keep, keep]
+
+  combs <- combn(levels(groups), 2)
+
+  results <- data.frame()
+
+  for (i in seq_len(ncol(combs))) {
+
+    grp <- combs[, i]
+
+    keep_pair <- groups %in% grp
+
+    d.sub <- as.dist(
+      dmat[keep_pair, keep_pair]
+    )
+
+    groups_sub <- droplevels(groups[keep_pair])
+
+    bd <- betadisper(d.sub, groups_sub)
+
+    aov_res <- anova(bd)
+
+    results <- rbind(
+      results,
+      data.frame(
+        group1 = grp[1],
+        group2 = grp[2],
+        n1 = sum(groups_sub == grp[1]),
+        n2 = sum(groups_sub == grp[2]),
+        mean.dist1 = mean(
+          bd$distances[groups_sub == grp[1]]
+        ),
+        mean.dist2 = mean(
+          bd$distances[groups_sub == grp[2]]
+        ),
+        diff = abs(
+          mean(bd$distances[groups_sub == grp[1]]) -
+          mean(bd$distances[groups_sub == grp[2]])
+        ),
+        F = aov_res[1, "F value"],
+        p = aov_res[1, "Pr(>F)"]
+      )
+    )
+  }
+
+  results$p.adj <- p.adjust(
+    results$p,
+    method = p.adjust.method
+  )
+
+  results |>
+    arrange(p.adj)
+}
+```
+
+```{r pairwise permanova}
+adonis.assoc <- pairwise_adonis_dist(
+  dist.mat = bec.dist,
+  groups = unique.assocs$assoc,
+  permutations = 199 ## reset to 999 for final runs
+)
+low.sep <- adonis.assoc |>
+  filter(R2 < 0.05)
+
+disp.assoc <- pairwise_dispersion_dist(
+  dist.mat = bec.dist,
+  groups = unique.assocs$assoc
+)
+
+
+
+adonis.alliance <- pairwise_adonis_dist(
+  dist.mat = bec.dist,
+  groups = unique.alliances$alliance,
+  permutations = 199 ## reset to 999 for final runs
+)
+low.sep <- adonis.alliance |>
+  filter(R2 < 0.05)
+
+disp.alliance <- pairwise_dispersion_dist(
+  dist.mat = bec.dist,
+  groups = unique.alliances$alliance
+)
+
+```
+4.  mvabund analysis (composition and abundance differences) rather than Indicator species analysis (constancy only)
+
+Questions:
+
+Which species define each alliance? Are your alliances characterized by expected indicators?
+
+Produces species such as:
+
+These become excellent ecological descriptions.
+
+Prep data for pairwise statistical tests
+```{r pairwise indicator species}
+# Keep only SiteUnits with an alliance assignment
+alliance.good <- su.class |> filter(!is.na(alliance))
+veg.matrix <- veg.dat2 |> filter(PlotNumber %in% alliance.good$PlotNumber) |> dplyr::select(PlotNumber, Species, Cover) |>
+  arrange(PlotNumber) |> matrify()
+
+##remove rare species
+freq <- colSums(veg.matrix > 0)
+veg.matrix2 <- veg.matrix[, freq >= 10]
+alliance2 <- droplevels(as.factor(alliance.good$alliance))
+
+
+table(alliance2)
+## remove alliances with few members
+keep.grp <- alliance2 %in%
+  names(which(table(alliance2) >= 5))
+
+veg.matrix2 <- veg.matrix2[keep.grp, ]
+
+alliance2 <- droplevels(alliance2[keep.grp])
+table(alliance2)
+```
+## do pairwise comparison between hierarchy units
+```{r}
+library(dplyr)
+library(purrr)
+library(tibble)
+library(mvabund)
+
+################################################
+# All pairwise combinations
+################################################
+su.class <- su.class |> filter(alliance %in% alliance2)
+pairs <- combn(
+  sort(unique(su.class$alliance)),
+  2,
+  simplify = FALSE
+)
+
+################################################
+# Run pairwise comparisons
+################################################
+pair <- pairs[[2]]
+pairwise.results <- map_dfr(
+  pairs,
+  function(pair){
+
+    alliance.choose <- su.class |>
+      filter(alliance %in% pair) |>
+      arrange(PlotNumber)
+
+    ################################################
+    # Species matrix
+    ################################################
+
+    veg.matrix.mva <- veg.dat2 |>
+      filter(PlotNumber %in% alliance.choose$PlotNumber) |>
+      dplyr::select(PlotNumber, Species, Cover) |>
+      arrange(PlotNumber) |>
+      matrify()
+
+    ################################################
+    # Transform cover
+    ################################################
+
+    veg.matrix.mva <- veg.matrix.mva^(1/3)
+
+    ################################################
+    # Remove rare species
+    ################################################
+
+    freq <- colSums(veg.matrix.mva > 0)
+
+    veg.matrix.mva <- veg.matrix.mva[
+    ,
+    freq >= 0.10 * nrow(veg.matrix.mva),
+    drop = FALSE
+    ]
+
+    ################################################
+    # Model
+    ################################################
+
+    alliance2 <- droplevels(
+      factor(alliance.choose$alliance)
+    )
+
+    mod.ab <- manylm(
+      mvabund(veg.matrix.mva) ~ alliance2
+    )
+
+    ################################################
+    # Test
+    ################################################
+
+    res <- anova(
+      mod.ab,
+      p.uni = "adjusted"
+    )
+
+    ################################################
+    # Significant species
+    ################################################
+
+    sig.species <- tibble(
+      Species = colnames(res$uni.test),
+      P_value = res$uni.p[2, ]
+    ) |>
+      filter(P_value <= 0.05)
+
+    if(nrow(sig.species) == 0)
+      return(NULL)
+
+
+################################################
+# Diagnostic statistics by alliance
+################################################
+
+diag.stats <- alliance.choose |>
+  select(PlotNumber, alliance) |>
+  crossing(
+    Species = sig.species$Species
+  ) |>
+  left_join(
+    veg.dat2 |>
+      select(PlotNumber, Species, Cover),
+    by = c("PlotNumber", "Species")
+  ) |>
+  mutate(
+    Cover = replace_na(Cover, 0)
+  ) |>
+  group_by(Species, alliance) |>
+  summarise(
+    N_Plots = n(),
+    N_Present = sum(Cover > 0),
+    Frequency = N_Present / N_Plots,
+    MeanCover_AllPlots = mean(Cover),
+    MeanCover_PresentOnly = ifelse(
+      N_Present > 0,
+      mean(Cover[Cover > 0]),
+      0
+    ),
+    SD_Cover = sd(Cover),
+    .groups = "drop"
+  )
+
+################################################
+# Put alliance diagnostics into columns
+################################################
+
+diag_pair <- diag.stats |>
+  mutate(
+    AllianceCol = case_when(
+      alliance == pair[1] ~ "A1",
+      alliance == pair[2] ~ "A2"
+    )
+  ) |>
+  pivot_wider(
+    names_from = AllianceCol,
+    values_from = c(
+      N_Plots,
+      N_Present,
+      Frequency,
+      MeanCover_AllPlots,
+      MeanCover_PresentOnly,
+      SD_Cover
+    ),
+    values_fill = 0
+  )
+################################################
+# Return results
+################################################
+
+sig.species |>
+  left_join(
+    diag_pair,
+    by = c("Species")
+  ) |>
+  mutate(
+    Alliance_1 = pair[1],
+    Alliance_2 = pair[2],
+    compared = paste0(pair[1], "_vs_", pair[2])) |> 
+      mutate(
+  Rare_A1 = Frequency_A1 < 0.10,
+  Rare_A2 = Frequency_A2 < 0.10,
+  Low_N_A1 = N_Present_A1 < 3,
+  Low_N_A2 = N_Present_A2 < 3,
+  Large_Mean_Diff =
+   abs(MeanCover_AllPlots_A1 - MeanCover_AllPlots_A2) > 5
+)
+
+  }
+)
+
+################################################
+# Results
+################################################
+
+pairwise.results
+
+# ## pairwise summary
+# pairwise.summary <- pairwise.results |>
+#   count(
+#     Contrast,
+#     name = "N_Significant_Species"
+#   ) |>
+#   arrange(desc(N_Significant_Species))
+# 
+# pairwise.summary
+
+write.csv(
+  pairwise.results,
+  "./review_materials/Pairwise_Differential_Abundance.csv",
+  row.names = FALSE
+)
+
+## compare alliance versus all others
+focal <- "Alli_01_woring"
+
+alli_01_results <- pairwise.results |>
+  filter(
+    Alliance_1 == focal |
+    Alliance_2 == focal
+  )
+species_summary <- alli_01_results |>
+  count(Species, sort = TRUE)
+
+focal <- "Alli_01_woring"
+
+alli_01_results <- pairwise.results |>
+  filter(
+    Alliance_1 == focal |
+    Alliance_2 == focal
+  )
+
+n_comparisons <- alli_01_results |>
+  distinct(compared) |>
+  nrow()
+
+species_summary <- alli_01_results |>
+  count(Species, name = "n_sig_pairs") |>
+  mutate(
+    pct_sig_pairs = round(
+      100 * n_sig_pairs / n_comparisons,
+      1
+    )
+  ) |>
+  arrange(
+    desc(pct_sig_pairs),
+    desc(n_sig_pairs)
+  )
+
+alli_01_results <- alli_01_results |>
+  mutate(
+    focal_cover = if_else(
+      Alliance_1 == focal,
+      MeanCover_AllPlots_A1,
+      MeanCover_AllPlots_A2
+    ),
+    other_cover = if_else(
+      Alliance_1 == focal,
+      MeanCover_AllPlots_A2,
+      MeanCover_AllPlots_A1
+    ),
+    focal_higher = focal_cover > other_cover
+  )
+
+indicator_summary <- alli_01_results |>
+  filter(focal_higher) |>
+  count(Species, name = "n_higher_pairs") |>
+  mutate(
+    pct_higher_pairs =
+      round(100 * n_higher_pairs / n_comparisons, 1)
+  ) |>
+  arrange(desc(pct_higher_pairs))
+
+
+alli_01_results <- pairwise.results |>
+  filter(
+    Alliance_1 == focal |
+    Alliance_2 == focal
+  ) |>
+  mutate(
+    Focal_MeanCover = case_when(
+      Alliance_1 == focal ~ MeanCover_AllPlots_A1,
+      Alliance_2 == focal ~ MeanCover_AllPlots_A2
+    ),
+    Other_MeanCover = case_when(
+      Alliance_1 == focal ~ MeanCover_AllPlots_A2,
+      Alliance_2 == focal ~ MeanCover_AllPlots_A1
+    ),
+    Focal_Higher = Focal_MeanCover > Other_MeanCover
+  )
+# unique_species <- alli_01_results |>
+#   filter(Focal_Higher) |>
+#   count(Species, name = "n_sig_pairs") |>
+#   arrange(desc(n_sig_pairs))
+
+```
+
+
+indicator species analysis - should some alliances be combined
+```{r}
+################################################
+# Indicator species analysis
+################################################
+
+library(indicspecies)
+library(vegan)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(purrr)
+library(tictoc)
+
+tic()
+
+ind.cover <- multipatt(
+  veg.matrix2,
+  alliance2,
+  func = "IndVal.g",
+  max.order = 3,      # increase as desired
+  control = how(nperm = 999)
+)
+
+toc()
+
+################################################
+# Convert multipatt output to table
+################################################
+
+ind.tbl <- ind.cover$sign %>%
+  as.data.frame() %>%
+  rownames_to_column("species")
+
+group.cols <- grep(
+  "^s\\.",
+  names(ind.tbl),
+  value = TRUE
+)
+
+################################################
+# Create labels for alliance combinations
+################################################
+
+group.names <- sub("^s\\.", "", group.cols)
+
+ind.tbl <- ind.tbl %>%
+  rowwise() %>%
+  mutate(
+    pattern = paste(
+      group.names[c_across(all_of(group.cols)) == 1],
+      collapse = "+"
+    )
+  ) %>%
+  ungroup()
+
+################################################
+# Presence / absence matrix
+################################################
+
+veg.pa <- (veg.matrix2 > 0) * 1
+
+################################################
+# Fidelity calculations
+################################################
+
+fidelity.tbl <- map_dfr(
+  seq_len(nrow(ind.tbl)),
+  function(i) {
+
+    sp <- ind.tbl$species[i]
+
+    pattern.groups <- strsplit(
+      ind.tbl$pattern[i],
+      "\\+"
+    )[[1]]
+
+    inside <- alliance2 %in% pattern.groups
+    outside <- !inside
+
+    tibble(
+      species = sp,
+      pattern = ind.tbl$pattern[i],
+
+      freq_in = mean(
+        veg.pa[inside, sp],
+        na.rm = TRUE
+      ),
+
+      freq_out = mean(
+        veg.pa[outside, sp],
+        na.rm = TRUE
+      )
+    ) %>%
+      mutate(
+        fidelity = freq_in - freq_out
+      )
+  }
+)
+
+################################################
+# Final table
+################################################
+
+supp.tbl <- ind.tbl %>%
+  dplyr::select(
+    species,
+    pattern,
+    stat,
+    p.value
+  ) %>%
+  left_join(
+    fidelity.tbl,
+    by = c("species", "pattern")
+  ) %>%
+  transmute(
+    Alliance_Pattern = pattern,
+    Species = species,
+    IndVal = round(stat, 3),
+    P_value = signif(p.value, 3),
+    Constancy_in_Pattern = round(freq_in * 100, 1),
+    Constancy_Outside_Pattern = round(freq_out * 100, 1),
+    Fidelity = round(fidelity * 100, 1)
+  ) %>%
+  mutate(
+    Indicator_Strength = case_when(
+      IndVal >= 0.70 ~ "Excellent",
+      IndVal >= 0.50 ~ "Strong",
+      IndVal >= 0.25 ~ "Moderate",
+      TRUE ~ "Weak"
+    )
+  ) |> 
+  filter(
+    Alliance_Pattern != "",
+    P_value <= 0.2
+  ) %>%
+  arrange(
+    Alliance_Pattern,
+    desc(Fidelity),
+    desc(IndVal)
+  )
+supp.tbl
+################################################
+# Count indicators by alliance pattern
+################################################
+
+indicator.counts <- supp.tbl %>%
+  count(
+    Alliance_Pattern,
+    name = "N_Indicators"
+  ) %>%
+  arrange(desc(N_Indicators))
+
+indicator.counts
+
+################################################
+# Export
+################################################
+
+write.csv(
+  supp.tbl,
+  "./review_materials/Indicator_Species_Table.csv",
+  row.names = FALSE
+)
+write.csv(
+  indicator.counts,
+  "./review_materials/Indicator_Counts_By_Pattern.csv",
+  row.names = FALSE
+)
+
+supp.tbl.cons <- supp.tbl |> filter(Constancy_in_Pattern >=60)
+
+```
+
+single alliance indicator species
+```{r pairwise indicator species for single alliances}
+# Indicator species analysis for single alliances
+library(indicspecies)
+tic()
+ind.cover <- multipatt(
+  veg.matrix2,
+  alliance2,
+  func = "IndVal.g",
+  max.order = 2,
+  control = how(nperm = 199) ## reset to 999 for final runs
+)
+toc()
+
+library(dplyr)
+library(tidyr)
+library(tibble)
+
+ind.tbl <- ind.cover$sign %>%
+  as.data.frame() %>%
+  rownames_to_column("species")
+
+################################################
+# Alliance assignment
+################################################
+
+group.cols <- grep(
+  "^s\\.",
+  names(ind.tbl),
+  value = TRUE
+)
+
+ind.tbl <- ind.tbl %>%
+  mutate(
+    alliance = apply(
+      select(., all_of(group.cols)),
+      1,
+      function(x){
+
+        idx <- which(x == 1)
+
+        if(length(idx) == 1){
+          sub("^s\\.", "", group.cols[idx])
+        } else {
+          NA_character_
+        }
+      }
+    )
+  )
+
+################################################
+# Presence / absence matrix
+################################################
+
+veg.pa <- (veg.matrix2 > 0) * 1
+
+################################################
+# Fidelity calculations
+################################################
+
+fidelity.tbl <- bind_rows(
+
+  lapply(sort(unique(alliance2)), function(g){
+
+    inside  <- alliance2 == g
+    outside <- alliance2 != g
+
+    tibble(
+      alliance = g,
+      species = colnames(veg.pa),
+
+      freq_in = colMeans(
+        veg.pa[inside, , drop = FALSE]
+      ),
+
+      freq_out = colMeans(
+        veg.pa[outside, , drop = FALSE]
+      )
+
+    ) %>%
+      mutate(
+        fidelity = freq_in - freq_out
+      )
+
+  })
+
+)
+
+################################################
+# Final table
+################################################
+
+supp.tbl <- ind.tbl %>%
+  select(
+    species,
+    alliance,
+    stat,
+    p.value
+  ) %>%
+  left_join(
+    fidelity.tbl,
+    by = c("alliance", "species")
+  ) %>%
+  transmute(
+    Alliance = alliance,
+    Species = species,
+    IndVal = round(stat, 3),
+    P_value = signif(p.value, 3),
+    Constancy_in_Alliance = round(freq_in * 100, 1),
+    Constancy_Outside_Alliance = round(freq_out * 100, 1),
+    Fidelity = round(fidelity * 100, 1)
+  ) %>%
+  filter(
+    !is.na(Alliance),
+    P_value <= 0.05
+  ) %>%
+  arrange(
+    Alliance,
+    desc(Fidelity),
+    desc(IndVal)
+  )
+```
+
+11. Environmental differentiation
+
+Elevation Slope Aspect MAT MAP Soil moisture Nutrient regime
+
+Use:
+
+RDA rda.mod \<- rda( comm \~ elevation + moisture + nutrients, data = env )
+
+or
+
+envfit on NMDS envfit(nmds, env)
+
+This links community differences to environmental gradients.
+
+
+```{r}
+#------------------------------------------------------------
+# 8. Join edatopic with modeled aSMR ranges
+#------------------------------------------------------------
+
+rsmr_asmr.long <- fread("../aSMR_X_rSMR/outputs/modelled_aSMR_by_rSMR_long.csv") %>%
+  filter(cmd.type == "CMD", PERIOD == "1961_1990")
+
+SS.edatopic <- left_join(edatopic, rsmr_asmr.long, by = c("BGC", "rSMR")) %>%
+  dplyr::select(BGC, rSMR, SNR, SiteUnit, Edatopic, aSMR) %>%
+  distinct()
+
+SS.edatopic.range <- SS.edatopic %>%
+  group_by(SiteUnit) %>%
+  summarise(
+    SNR.range = paste0(min(SNR), "_", max(SNR)),
+    rSMR = paste0(min(rSMR), "_", max(rSMR)),
+    aSMR = paste0(min(aSMR), "_", max(aSMR)),
+    .groups = "drop"
+  ) %>%
+  mutate(SiteUnit = gsub("/", "_", SiteUnit)) %>%
+  dplyr::select(SiteUnit, SNR.range, rSMR, aSMR)
+
+
+```
+## Climate of units
+```{r}
+#------------------------------------------------------------
+# 9. Plot climate data
+#------------------------------------------------------------
+plot.climate <- readRDS("./clean_data/BECMaster_climr.rds")
+clim.alliance <- plot.climate |>
+  left_join(
+    su.class, 
+    by = "PlotNumber"
+  ) |>
+  filter(!is.na(alliance))
+
+kruskal.test(MAT ~ alliance, data = clim.alliance)
+
+kruskal.test(MAP ~ alliance, data = clim.alliance)
+
+kruskal.test(CMD_an ~ alliance, data = clim.alliance)
+
+
+xx <- pairwise.wilcox.test(
+  clim.alliance$MAT,
+  clim.alliance$alliance,
+  p.adjust.method = "BH"
+)
+
+sig.table <- xx$p.value |>
+  as.data.frame() |>
+  rownames_to_column("alliance1") |>
+  pivot_longer(
+    -alliance1,
+    names_to = "alliance2",
+    values_to = "p_adj"
+  ) |>
+  filter(!is.na(p_adj)) |>
+  mutate(
+    sig = case_when(
+      p_adj <= 0.001 ~ "***",
+      p_adj <= 0.01  ~ "**",
+      p_adj <= 0.05  ~ "*",
+      TRUE           ~ ""
+    )
+  ) |>
+  arrange(p_adj)
+
+gt::gt(sig.table)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(vegan)
+
+#==============================================================================
+# Summarize climate by SiteUnit
+#==============================================================================
+
+su.clim <- clim.alliance |>
+  group_by(siteunit, assoc, alliance) |>
+  summarise(
+    PAS_an = mean(PAS_an, na.rm = TRUE),
+    CMD_an = mean(CMD_an, na.rm = TRUE),
+    MWMT   = mean(MWMT, na.rm = TRUE),
+    MCMT   = mean(MCMT, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+#==============================================================================
+# Climate variables for PCA
+#==============================================================================
+
+clim.vars <- su.clim |>
+  dplyr::select(PAS_an, CMD_an, MWMT, MCMT)
+
+# Remove rows with missing values
+keep.rows <- complete.cases(clim.vars)
+
+clim.vars <- clim.vars[keep.rows, ]
+
+# Remove constant variables if any
+clim.vars <- clim.vars |>
+  dplyr::select(
+    where(~ sd(.x, na.rm = TRUE) > 0)
+  )
+
+su.clim <- su.clim[keep.rows, ]
+
+
+# clim.rda <- rda(
+#   clim.vars ~ alliance,
+#   data = su.clim,
+#   scale = TRUE
+# )
+# anova(clim.rda)
+# anova(clim.rda, by = "axis")
+#==============================================================================
+# PCA
+#==============================================================================
+
+clim.pca <- rda(clim.vars, scale = TRUE)
+
+scores.pca <- scores(clim.pca, display = "sites") |>
+  as.data.frame() |>
+  bind_cols(
+    su.clim |>
+      dplyr::select(siteunit, assoc, alliance)
+  )
+
+#==============================================================================
+# Variance explained
+#==============================================================================
+
+eig <- eigenvals(clim.pca)
+pct <- round(100 * eig / sum(eig), 1)
+
+sum(pct[1:2])
+sum(pct[1:3])
+
+loadings <- scores(clim.pca, display = "species")
+
+
+#==============================================================================
+# Association centroids
+#==============================================================================
+
+assoc.cent <- scores.pca |>
+  group_by(assoc, alliance) |>
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    n_siteunits = n(),
+    .groups = "drop"
+  )
+
+#==============================================================================
+# Alliance centroids
+#==============================================================================
+
+alliance.cent <- assoc.cent |>
+  group_by(alliance) |>
+  summarise(
+    PC1 = mean(PC1),
+    PC2 = mean(PC2),
+    n_assoc = n(),
+    .groups = "drop"
+  )
+
+#==============================================================================
+# SiteUnit -> Association links
+#==============================================================================
+
+links.su <- scores.pca |>
+  dplyr::select(
+    siteunit,
+    assoc,
+    alliance,
+    PC1.su = PC1,
+    PC2.su = PC2
+  ) |>
+  left_join(
+    assoc.cent,
+    by = c("assoc", "alliance")
+  ) |>
+  rename(
+    PC1.assoc = PC1,
+    PC2.assoc = PC2
+  )
+
+#==============================================================================
+# Association -> Alliance links
+#==============================================================================
+
+links.assoc <- assoc.cent |>
+  left_join(
+    alliance.cent,
+    by = "alliance",
+    suffix = c(".assoc", ".alliance")
+  )
+
+library(dplyr)
+
+hulls <- scores.pca |>
+  group_by(alliance) |>
+  slice(chull(PC1, PC2)) |>
+  ungroup()
+#==============================================================================
+# Plot
+#==============================================================================
+
+ggplot() +
+
+  #--------------------------------------------------------------------------
+  # SiteUnit -> Association lines
+  #--------------------------------------------------------------------------
+
+  geom_segment(
+    data = links.su,
+    aes(
+      x = PC1.su,
+      y = PC2.su,
+      xend = PC1.assoc,
+      yend = PC2.assoc
+    ),
+    colour = "grey80",
+    linewidth = 0.3
+  ) +
+
+  #--------------------------------------------------------------------------
+  # Association -> Alliance lines
+  #--------------------------------------------------------------------------
+
+  geom_segment(
+    data = links.assoc,
+    aes(
+      x = PC1.assoc,
+      y = PC2.assoc,
+      xend = PC1.alliance,
+      yend = PC2.alliance
+    ),
+    colour = "black",
+    linewidth = 1
+  ) +
+
+  #--------------------------------------------------------------------------
+  # Alliance ellipses
+  #--------------------------------------------------------------------------
+geom_polygon(
+  data = hulls,
+  aes(
+    PC1,
+    PC2,
+    fill = alliance,
+    group = alliance
+  ),
+  alpha = 0.15,
+  colour = NA
+)+
+  # stat_ellipse(
+  #   data = scores.pca,
+  #   aes(
+  #     PC1,
+  #     PC2,
+  #     colour = alliance
+  #   ),
+  #   level = 0.68
+  #   linewidth = 0.8,
+  #   alpha = 0.6
+  # ) +
+
+#--------------------------------------------------------------------------
+# SiteUnit points
+#--------------------------------------------------------------------------
+
+geom_point(
+  data = scores.pca,
+  aes(
+    PC1,
+    PC2,
+    colour = alliance
+  ),
+  alpha = 0.4,
+  size = 2
+) +
+
+geom_text(
+  data = scores.pca,
+  aes(
+    PC1,
+    PC2,
+    label = siteunit,
+    colour = alliance
+  ),
+  size = 2.5,
+  alpha = 0.7,
+  check_overlap = TRUE,
+  show.legend = FALSE
+) +
+  #--------------------------------------------------------------------------
+  # Association centroids
+  #--------------------------------------------------------------------------
+
+  geom_point(
+    data = assoc.cent,
+    aes(
+      PC1,
+      PC2,
+      fill = alliance
+    ),
+    shape = 21,
+    colour = "black",
+    size = 5,
+    stroke = 1
+  ) +
+
+  geom_text(
+    data = assoc.cent,
+    aes(
+      PC1,
+      PC2,
+      label = assoc
+    ),
+    size = 3,
+    nudge_y = 0.10,
+    show.legend = FALSE
+  ) +
+
+  #--------------------------------------------------------------------------
+  # Alliance centroids
+  #--------------------------------------------------------------------------
+
+  geom_point(
+    data = alliance.cent,
+    aes(
+      PC1,
+      PC2,
+      fill = alliance
+    ),
+    shape = 23,
+    colour = "black",
+    size = 8,
+    stroke = 1.5
+  ) +
+
+  geom_text(
+    data = alliance.cent,
+    aes(
+      PC1,
+      PC2,
+      label = alliance
+    ),
+    fontface = "bold",
+    size = 4,
+    nudge_y = 0.25,
+    show.legend = FALSE
+  ) +
+
+  theme_bw() +
+
+  labs(
+    x = paste0("PC1 (", pct[1], "%)"),
+    y = paste0("PC2 (", pct[2], "%)"),
+    colour = "Alliance",
+    fill = "Alliance"
+  )
+```
+
+## Summarize by Alliance
+
+Generate vegetation summary output for all proposed alliances on a single sheet
+
+```{r compare alliances}
+reduced.exceptions <- c("SPHAGNUM","CLADONIA","CLADINA","RACOMITR","MNIUM")
+reduced.lifeforms  <- c(9, 10, 11)
+su.alliance <- su.anal %>% mutate(SiteUnit = working_Alliance) %>% select(PlotNumber, SiteUnit)
+
+#------------------------------------------------------------
+# 3. Run pairwise vegetation similarity analysis
+#------------------------------------------------------------
+pairwise.params <- list(
+  su                = su.alliance,
+  minconstancy          = 0,
+  noiseconstancy        = 10,
+  minplots              = 1,
+  minor                 = 1,
+  use.ksi               = FALSE,
+  ksi   = NULL,
+  ksi.value             = 1.5,
+  reduce.lifeform       = TRUE,
+  reduced.lifeforms     = reduced.lifeforms,
+  reduction             = 0.1,
+  reduced.exceptions    = reduced.exceptions,
+  add_vegsum_table      = NULL
+)
+
+vegsum.pairs <- do.call(
+  do_pairwise,
+  c(list(veg.dat2), pairwise.params)
+)
+
+# Start with everything except `su`
+print.params <- pairwise.params[setdiff(names(pairwise.params), "su")]
+
+# Remove ksi if use.ksi == FALSE
+if (!pairwise.params$use.ksi) {
+  print.params <- print.params[setdiff(names(print.params), c("ksi", "ksi.value"))]
+}
+
+# Remove reduction-related fields if reduce.lifeform == FALSE
+if (!pairwise.params$reduce.lifeform) {
+  print.params <- print.params[setdiff(names(print.params),
+                                       c("reduced.lifeforms", "reduction", "reduced.exceptions"))]
+}
+library(tibble)
+library(knitr)
+
+param.table <- tibble(
+  parameter = names(print.params),
+  value = sapply(print.params, function(x) paste(x, collapse = ", "))
+)
+
+param.table %>%
+  gt::gt() %>%
+  gt::tab_header(title = "Parameter Settings for do_pairwise()") %>%
+  gt::tab_options(
+    table.font.size = gt::px(8),
+    table.border.top.width = gt::px(1),
+    table.border.bottom.width = gt::px(1)
+  )
+
+
+
+#------------------------------------------------------------
+# 4. Extract comparison table
+#------------------------------------------------------------
+fwrite(vegsum.pairs, "./outputs/vegsum_pairs.csv")
+
+### return unit species information
+vegsum.pairs.spp <- vegsum.pairs |> dplyr::select(Unit1, Unit2, Species, ScientificName, MeanCov.unit1, Constancy.unit1, MeanCov.unit2, Constancy.unit2, diff.pts.unit1, diff.pts.unit2)
+
+### return distinct unit comparisons
+
+unit.compare1 <- vegsum.pairs %>%
+  dplyr::select(
+    Unit1, Unit2, diff.ratio.unit1, diff.ratio.unit2, nplots.unit1, nplots.unit2, unit.diag.sum.unit1, unit.diag.sum.unit2
+  ) %>%
+  distinct(Unit1, Unit1, .keep_all = TRUE)
+
+
+unit.compare <- unit.compare1 %>% 
+    dplyr::select(
+      Unit1 = Unit2,
+      Unit2 = Unit1,
+      diff.ratio.unit1 = diff.ratio.unit2,
+      diff.ratio.unit2 = diff.ratio.unit1,
+      nplots.unit1 = nplots.unit2,
+      nplots.unit2 = nplots.unit1,
+      unit.diag.sum.unit1 = unit.diag.sum.unit2,
+      unit.diag.sum.unit2 = unit.diag.sum.unit1
+      ) |>  rbind(unit.compare1) |> 
+  distinct() |> mutate(BEC.sim.min = pmin(diff.ratio.unit1, diff.ratio.unit2),
+                      BEC.sim.max = pmax(diff.ratio.unit1, diff.ratio.unit2))
+
+
+fwrite(unit.compare , "./outputs/alliance_compare.csv")
+#------------------------------------------------------------
+# 5. Build BEC distance matrix and export
+#------------------------------------------------------------
+
+source("../BEC_R_working/_functions/_bec_dist_matrix.R")
+
+bec_dist_matrix <- bec_dist_matrix(
+  vegsum.pairs,
+  distance = "BEC.sim.min"
+) %>% 
+  data.frame()
+
+openxlsx::write.xlsx(
+  x = bec_dist_matrix,
+  file = "./clean_tabs/Coast_Forest_Alliance_Distance_matrix.xlsx",
+  rowNames = TRUE
+)
+```
+
+```{r summary report by alliances}
+author = "MH_Forest_Alliance"
+
+vegsum.wbk <- createWorkbook()
+  # Build vegetation summary for this group
+  vegSum_sub <- create_veg_sum_all(
+    vdat = veg.dat2,
+    siteUnits = su.alliance,
+    minconstancy = 50,
+    noiseconstancy = 25,
+    strata.by = "Lifeform"
+  )
+
+  # Format table
+  veg.sum.table_sub <- format_veg_table_nostrata(
+    vsum = vegSum_sub,
+    spp = taxon.lifeform
+  )
+sheet_name <- author
+  # Name the sheet
+# sheet_name <- paste0("Group_", g)
+
+# Trim to 25 chars, then add a 5‑char hash suffix
+# if (nchar(sheet_name) > 31) {
+#   suffix <- substr(digest::digest(sheet_name), 1, 5)
+#   sheet_name <- paste0(substr(sheet_name, 1, 25), "_", suffix)
+# }
+
+addWorksheet(vegsum.wbk, sheetName = sheet_name)
+
+
+  # Write data
+  writeData(vegsum.wbk, sheet = sheet_name, veg.sum.table_sub)
+#}
+
+saveWorkbook(
+  vegsum.wbk,
+  paste0("./vegsum.tables/", author, ".xlsx"),
+  overwrite = TRUE
+)
+
+```
+
+```{r build veg guide summary and export to excel, echo = FALSE, warning=FALSE, message=FALSE}
+# 
+# data.path = "D:/OneDrive - Government of BC/GitHub_data"
+# author <- "test.assoc1"
+# assoc.list <- bgcv13 %>% filter(!is.na(Association_Code)) %>% group_by(Association_Code) %>% mutate(n=n()) %>% filter(n>2) %>% distinct(Association_Code) %>% pull(Association_Code)
+# 
+# vegsum.wbk <- createWorkbook()
+# for(assoc.choose in assoc.list){
+# #assoc.choose = "assoc-13"
+# assoc <- bgcv13 %>% filter(Association_Code %in% assoc.choose) %>% dplyr::select(SS_Label, Association_Code) %>% mutate(SiteUnit = gsub(" ", "", SS_Label)) %>% mutate(SiteUnit = str_replace(SiteUnit, "/", "_"))
+# su.assoc <- left_join(assoc, su, by = "SiteUnit") %>%  mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct() 
+# veg.dat.assoc <- veg.dat2 %>% filter(PlotNumber %in% su.assoc$PlotNumber)
+# # vegsum.wbk <- createWorkbook()
+# # #bgc.choose = "CDFmmtab2"
+# # #for(bgc.choose in bgc.list){
+# vegSum <-
+#   create_veg_sum_all(vdat = veg.dat.assoc, siteUnits = su.assoc, strata.by = "Lifeform")
+# 
+# indic.order <- build_species_ordering_hier(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc, hier.level = "Association_Code")
+# veg.sum.table <- format_veg_table2(vsum = vegSum, spp=taxon.lifeform)
+# openxlsx::addWorksheet(vegsum.wbk, sheetName = assoc.choose)
+# openxlsx::writeData(vegsum.wbk, sheet = assoc.choose, veg.sum.table) 
+# }
+# 
+# saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_assoc_tables_", author, ".xlsx"), overwrite = TRUE)
+
+```
+
+

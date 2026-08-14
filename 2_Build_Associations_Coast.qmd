@@ -84,6 +84,8 @@ source('../BEC_R_working/_functions/_cluster_groups.R')
 source('../BEC_R_working/_functions/_TabletoTree.R')
 source('../BEC_R_working/_functions/_build_species_ordering_hier.R')
 source("../BEC_R_working/_functions/_cluster_by_spp_group.R")
+source("../BEC_R_working/_functions/_baselga_diagnostics.R")
+
 ```
 
 # Introduction
@@ -121,12 +123,12 @@ Vegetation data is read in from saved BECMaster.RDS file generated from the BECM
 taxon.all <- read_sppmaster()
 taxon.exotic <- taxon.all %>%
   filter(Native == "E") %>%
-  select(Code) %>%
+  dplyr::select(Code) %>%
   pull()
 
 taxon.lifeform <- taxon.all %>%
   filter(Codetype %in% c("U", "X", "D")) %>%
-  select(Code, ScientificName, EnglishName, Lifeform) %>%
+  dplyr::select(Code, ScientificName, EnglishName, Lifeform) %>%
   distinct()
 
 trees <- taxon.lifeform %>% 
@@ -157,10 +159,10 @@ veg.dat2 <- combine_taxa(vegdata = veg.dat, lump, use.subtaxa = FALSE)%>%
 # 3. Load SiteUnit data from two LMH databases
 #------------------------------------------------------------
 
-db1 <- "D:/BC_Correlation2_Vpro_2023/Sorts_published_LMH/LMH77_Coast_Sorts.accdb"
+db <- "D:/BC_Correlation2_Vpro_2023/Sorts_published_LMH/LMH77_Coast_Sorts.accdb"
 #db2 <- "D:/BC_Correlation2_Vpro_2023/Sorts_published_LMH/LMH68_HG_Sorts.accdb"
 
-su <- rbind(combined_su(db1))#, combined_su(db2))
+su <- rbind(combined_su(db))#, combined_su(db2))
 
 su <- su %>%
   filter(!grepl("X|unplaced|omit|support|nudum|Ww|!", SiteUnit)) %>%
@@ -218,7 +220,7 @@ dbWriteTable(becdb, "n_plots", n_plots, append = FALSE, overwrite = TRUE,
 
 BGC_all <- dbReadTable(becdb, "tblBGC_UnitsWorkingandArchive") %>%
   filter(is.na(BGCVersionRetired)) %>%
-  select(FSRegion, BGC_NoSpace)
+  dplyr::select(FSRegion, BGC_NoSpace)
 
 BEC.hier <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") %>%
   filter(SU_Label %in% su2$SiteUnit.orig) %>%
@@ -226,7 +228,7 @@ BEC.hier <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") %>%
 
 bgcv13 <- dbReadTable(becdb, "tblBGC_UnitsWorkingandArchive") %>%
   filter(is.na(BGCVersionRetired)) %>%
-  select(BGC_NoSpace, SiteClassificationStatus)
+  dplyr::select(BGC_NoSpace, SiteClassificationStatus)
 
 edatopic <- dbReadTable(becdb, "Edatopic_v13_3") %>%
   mutate(
@@ -234,7 +236,7 @@ edatopic <- dbReadTable(becdb, "Edatopic_v13_3") %>%
     SNR = substr(Edatopic, 1, 1)
   ) %>%
   filter(startsWith(Source, "BEC")) %>%
-  select(BGC, rSMR, SNR, SS_NoSpace, Edatopic) %>%
+  dplyr::select(BGC, rSMR, SNR, SS_NoSpace, Edatopic) %>%
   distinct() %>%
   mutate(SiteUnit = gsub("/", "_", SS_NoSpace))
 
@@ -259,7 +261,7 @@ rsmr_asmr.long <- fread("../aSMR_X_rSMR/outputs/modelled_aSMR_by_rSMR_long.csv")
   filter(cmd.type == "CMD", PERIOD == "1961_1990")
 
 SS.edatopic <- left_join(edatopic, rsmr_asmr.long, by = c("BGC", "rSMR")) %>%
-  select(BGC, rSMR, SNR, SiteUnit, Edatopic, aSMR) %>%
+  dplyr::select(BGC, rSMR, SNR, SiteUnit, Edatopic, aSMR) %>%
   distinct()
 
 SS.edatopic.range <- SS.edatopic %>%
@@ -271,7 +273,7 @@ SS.edatopic.range <- SS.edatopic %>%
     .groups = "drop"
   ) %>%
   mutate(SiteUnit = gsub("/", "_", SiteUnit)) %>%
-  select(SiteUnit, SNR.range, rSMR, aSMR)
+  dplyr::select(SiteUnit, SNR.range, rSMR, aSMR)
 
 #------------------------------------------------------------
 # 9. Plot climate data
@@ -292,7 +294,7 @@ plot.climate <- readRDS("./clean_data/BECMaster_climr.rds")
 #   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver13_2026.accdb;")
 # bgcv12 <- dbReadTable(bgc.units, "tblBGC_UnitsWorkingandArchive")
 # dbDisconnect(bgc.units)
-# bgcv13 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% select(BGC_NoSpace, SiteClassificationStatus)
+# bgcv13 <- bgcv12 %>% filter(is.na(VersionRetired)) %>% dplyr::select(BGC_NoSpace, SiteClassificationStatus)
 
 ```
 
@@ -322,7 +324,7 @@ group.to.test <- "Association"## uses data for this field to initially group sit
 #------------------------------------------------------------
 
 BEC.hier2 <- BEC.hier %>%
-  select(-SiteUnit)   # keep SS_Label + hierarchy columns
+  dplyr::select(-SiteUnit)   # keep SS_Label + hierarchy columns
 
 #------------------------------------------------------------
 # 3. Join hierarchy onto su2 and redue to anal.set
@@ -363,12 +365,12 @@ su.anal1 <- su.anal1 %>%
   mutate(
     SiteUnit.hier = coalesce(.data[[group.to.test]], SiteUnit)
   ) %>%
-  select(
+  dplyr::select(
     PlotNumber, SiteUnit, SiteUnit.orig,generated_Alliance, generated_Assoc, generated_SubAss,
     !!sym(group.to.test), anal.test, SiteUnit.hier
   ) %>%
   group_by(SiteUnit.hier) %>%# 6. remove any hierarchy units with fewer than 6 plots
-  filter(n() >= 5 | !is.na(!!sym(group.to.test))) %>%
+  filter(n() >= 1 | !is.na(!!sym(group.to.test))) %>%
   ungroup()
 
 ```
@@ -378,7 +380,7 @@ su.anal1 <- su.anal1 %>%
 Other summary tables for comparison (e.g. USA) table can be added to the analysis for comparison in do.pairwise function.
 
 ```{r add extra summary units}
-usa_units <- fread("./usa.summary.units/USA_prepped_units3.csv") %>% select(-ScientificName) %>% 
+usa_units <- fread("./usa.summary.units/USA_prepped_units3.csv") %>% dplyr::select(-ScientificName) %>% 
    filter(!Species %in% taxon.exotic,!startsWith(Species, "POA_PRA")) %>% filter(startsWith(SiteUnit, "Q"))
 usa_units <- usa_units %>%
   mutate(Species = recode(Species,
@@ -423,7 +425,6 @@ su_working <- su.anal1 %>%   rename(SiteUnit.base = SiteUnit, SiteUnit = SiteUni
 #------------------------------------------------------------
 pairwise.params <- list(
   su                = su_working,
-  minimportance         = 0.1,
   minconstancy          = 60,
   noiseconstancy        = 10,
   minplots              = 1,
@@ -478,13 +479,36 @@ param.table %>%
 #------------------------------------------------------------
 # 4. Extract comparison table
 #------------------------------------------------------------
+fwrite(vegsum.pairs, "./outputs/vegsum_pairs.csv")
 
-unit.compare <- vegsum.pairs %>%
-  filter(nplots.x > 0, Unit1 != Unit2) %>%
-  select(Unit1, Unit2, Species, BEC.sim.min, BEC.sim.max,
-         nplots.x, unit.diag.sum.x) %>%
-  distinct()
+### return unit species information
+vegsum.pairs.spp <- vegsum.pairs |> dplyr::select(Unit1, Unit2, Species, ScientificName, MeanCov.unit1, Constancy.unit1, MeanCov.unit2, Constancy.unit2, diff.pts.unit1, diff.pts.unit2)
 
+### return distinct unit comparisons
+
+unit.compare1 <- vegsum.pairs %>%
+  dplyr::select(
+    Unit1, Unit2, diff.ratio.unit1, diff.ratio.unit2, nplots.unit1, nplots.unit2, unit.diag.sum.unit1, unit.diag.sum.unit2
+  ) %>%
+  distinct(Unit1, Unit1, .keep_all = TRUE)
+
+
+unit.compare <- unit.compare1 %>% 
+    dplyr::select(
+      Unit1 = Unit2,
+      Unit2 = Unit1,
+      diff.ratio.unit1 = diff.ratio.unit2,
+      diff.ratio.unit2 = diff.ratio.unit1,
+      nplots.unit1 = nplots.unit2,
+      nplots.unit2 = nplots.unit1,
+      unit.diag.sum.unit1 = unit.diag.sum.unit2,
+      unit.diag.sum.unit2 = unit.diag.sum.unit1
+      ) |>  rbind(unit.compare1) |> 
+  distinct() |> mutate(BEC.sim.min = pmin(diff.ratio.unit1, diff.ratio.unit2),
+                      BEC.sim.max = pmax(diff.ratio.unit1, diff.ratio.unit2))
+
+
+fwrite(unit.compare , "./outputs/unit_compare.csv")
 #------------------------------------------------------------
 # 5. Build BEC distance matrix and export
 #------------------------------------------------------------
@@ -497,11 +521,57 @@ bec_dist_matrix <- bec_dist_matrix(
 ) %>% 
   data.frame()
 
-write.csv(
-  bec_dist_matrix,
-  "./clean_tabs/Coast_Forest_Distance_matrix.csv",
-  row.names = TRUE
+openxlsx::write.xlsx(
+  x = bec_dist_matrix,
+  file = "./clean_tabs/Coast_Forest_Distance_matrix.xlsx",
+  rowNames = TRUE
 )
+```
+
+In your Baselga implementation, overall similarity is captured by the Sørensen analogue:
+
+Ssor=2A2A+B+CS\_{sor}=\frac{2A}{2A+B+C}
+
+while the dissimilarity is partitioned into:
+
+βsor=βsim+βnes\beta*{sor}=*\beta{sim}+\beta\_{nes}
+
+where:
+
+Turnover dissimilarity (βsim\beta*{sim}) = replacement of diagnostic potential between units. Nestedness dissimilarity (βnes*\beta{nes}) = differences caused by one unit essentially being a subset of the other.
+
+The two fractions:
+
+1.  turnover_fraction = turnover_dissimilarity / sorensen_dissimilarity
+
+2.  nestedness_fraction = nestedness_dissimilarity / sorensen_dissimilarity
+
+Practical interpretation guide Pattern Ecological meaning
+
+- High similarity + high nestedness ratio One unit largely contains a subset of the other's diagnostic composition
+
+- High similarity + high turnover ratio Communities are almost identical but differ via species replacement
+
+- Low similarity + high nestedness ratio Strong subset relationship; one unit much poorer than the other
+
+- Low similarity + high turnover ratio Strong compositional replacement; distinct communities
+
+For BEC comparisons, I would interpret high nestedness fractions as indicating a diagnostic signal that is largely shared but differs in strength or completeness, whereas high turnover fractions indicate that different species are carrying the diagnostic signal in each unit.
+
+```{r}
+baselga_pairs <- baselga_diagnostic(vegsum.pairs, join_back = TRUE) |> filter(BEC.sim.min >= 0.8)
+# filter(BEC.sim.min <= 0.8 &  BEC.sim.min >= 0.6 & nestedness_fraction >=0.8)
+
+ggplot(
+  baselga_pairs,
+  aes(
+    sorensen_similarity,
+    turnover_fraction
+  )
+) +
+  geom_point(alpha = 0.6) +
+  theme_bw()
+
 ```
 
 ## Evaluate site series within each BGC
@@ -523,13 +593,12 @@ Some units with few plots or low diagnostics fall out as singles in the first pa
 
 # Identify Site Units with fewer than 8 plots
 ss_too.few <- unit.compare %>%
-  select(Unit1, nplots.x) %>%
-  filter(nplots.x < 6) %>%
+  dplyr::select(Unit1, nplots.unit1) %>%
+  filter(nplots.unit1 < 6 & nplots.unit1>0) %>%
   distinct() %>%
   rename(
     "SiteUnit"      = Unit1,
-    "Number of Plots" = nplots.x
-  )
+    "Number of Plots" = nplots.unit1)
 
 # Count unique Site Units for dynamic column label
 num_units <- ss_too.few %>%
@@ -554,9 +623,9 @@ gt::gt(ss_too.few) %>%
 #| tbl-align: "left"
 
 ss_low.diag <- unit.compare %>%
-  select(Unit1, unit.diag.sum.x)  %>% 
-  filter(unit.diag.sum.x < 24) %>% 
-  rename("Diagnostic Potential" = unit.diag.sum.x, "SiteUnit" = Unit1) %>%
+  dplyr::select(Unit1, unit.diag.sum.unit1)  %>% 
+  filter(unit.diag.sum.unit1 < 24 & unit.diag.sum.unit1 >0) %>% 
+  rename("Diagnostic Potential" = unit.diag.sum.unit1, "SiteUnit" = Unit1) %>%
   distinct()
 
 num_units <- ss_low.diag %>% 
@@ -581,9 +650,9 @@ col_label <- paste0("Site Unit (", num_units, ")")
 #| tbl-align: "left"
 # same.threshold = 0.93
 # ss_similar <- unit.compare %>% 
-# select(Unit1, Unit2, BEC.sim.min) %>% 
+# dplyr::select(Unit1, Unit2, BEC.sim.min) %>% 
 #  dplyr::filter(BEC.sim.min >= same.threshold) %>% mutate(Units = paste0(Unit1, " vs ", Unit2)) %>%
-#   select(-Unit2, -Unit1) %>%
+#   dplyr::select(-Unit2, -Unit1) %>%
 #   rename("Similarity" = BEC.sim.min, "Site Units" = Units) %>%
 #   distinct() 
 #  # low.diff <- gt::as_gtable((gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) |> gt::cols_width(Site.Units ~ gt::px(250))), plot = TRUE, text_grob = gridtext::richtext_grob) 
@@ -591,7 +660,7 @@ col_label <- paste0("Site Unit (", num_units, ")")
 # 
 # 
 # ss_similar <- unit.compare %>%
-#   select(Unit1, Unit2, BEC.sim.min) %>%
+#   dplyr::select(Unit1, Unit2, BEC.sim.min) %>%
 #   dplyr::filter(BEC.sim.min >= same.threshold) %>%
 #   distinct() 
 # library(igraph)
@@ -599,7 +668,7 @@ col_label <- paste0("Site Unit (", num_units, ")")
 # 
 # g <- ss_similar %>%
 #   filter(BEC.sim.min >= 0.93) %>%   # <-- apply threshold here
-#   select(Unit1, Unit2) %>%
+#   dplyr::select(Unit1, Unit2) %>%
 #   distinct() %>%
 #   graph_from_data_frame(directed = FALSE)
 # 
@@ -615,7 +684,7 @@ col_label <- paste0("Site Unit (", num_units, ")")
 #   left_join(cluster_df, by = c("SiteUnit" = "Unit")) %>% 
 #   mutate(tempSubAss_Code = ifelse(!is.na(tempSubAss_Code), paste0("coast_subass_", tempSubAss_Code), NA))
 # 
-# subass <- su_working2 %>% select(SiteUnit = SiteUnit.orig, tempSubAss_Code) %>%
+# subass <- su_working2 %>% dplyr::select(SiteUnit = SiteUnit.orig, tempSubAss_Code) %>%
 #   filter(!is.na(tempSubAss_Code)) %>% distinct
 # 
 # ### write into BECdb a working file to update the tempSubAssoc field
@@ -641,7 +710,7 @@ create new temporary sorts to run a new cluster analysis that excludes units wit
 
 ```{r remove for analysis}
 # remove units with few plots
-subass <- BEC.hier %>% select(SU_Label, generated_SubAss)
+subass <- BEC.hier %>% dplyr::select(SU_Label, generated_SubAss)
 su_working2 <- su_working %>%
   filter(
     !SiteUnit %in% ss_too.few$SiteUnit,
@@ -664,7 +733,6 @@ run new cluster with removed units, initial subassoc clusters, and previously as
 ```{r run cluster with subass merged}
 pairwise.params <- list(
   su                = su_working2,
-  minimportance         = 0.1,
   minconstancy          = 60,
   noiseconstancy        = 10,
   minplots              = 1,
@@ -712,8 +780,9 @@ dissimilarity of 17-20% is an approximate threshold for association differentiat
 
 ```{r split first cluster}
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
-xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.4)
+xx <- draw_dendro_split(unit.compare.tbl = vegsum.pairs, cut.level=.4)
 ```
+
 ### Create initial hierarchy from clusters to group and write into BECdb
 
 In the BECdb query to write the initial units in the the tempAssoc_Code field of tblBECHierarchy_Class table for subsequent use in analytics Also return alternate possible site unit matches for review by returning other units with similarity that falls below threshold.
@@ -737,7 +806,7 @@ cluster_dt <- data.table(
 )
 
 ## merge back to retrieve SiteUnit for all and the coalesce.
-working.hier <- su_working2 %>% select(SiteUnit.base, generated_SubAss, Association) %>% distinct
+working.hier <- su_working2 %>% dplyr::select(SiteUnit.base, generated_SubAss, Association) %>% distinct
 working.hier2 <- working.hier %>%
   left_join(cluster_dt, by = c("SiteUnit.base" = "SiteUnit")) %>%
   rename(tempAssoc_base = tempAssoc) %>%
@@ -752,7 +821,7 @@ working.hier2 <- working.hier %>%
       tempAssoc_assoc
     )
   )
-temp_assoc <- working.hier2 %>% select(SiteUnit = SiteUnit.base, tempAssoc) %>% data.table
+temp_assoc <- working.hier2 %>% dplyr::select(SiteUnit = SiteUnit.base, tempAssoc) %>% data.table
 # # Count members per cluster
 cluster_sizes <- temp_assoc[, .N, by = tempAssoc]
 
@@ -762,7 +831,7 @@ valid_clusters <- cluster_sizes[N > 1, tempAssoc]
 # Filter cluster_dt to only those units with > 1 unit in clusters
 cluster_dt_assoc <- temp_assoc[tempAssoc %in% valid_clusters]
 
-cluster_update_assoc <- merge(cluster_dt_assoc, su.anal1, by = c("SiteUnit"), all.x = TRUE) %>% select(SU_Label = SiteUnit.orig,  tempAssoc) %>%
+cluster_update_assoc <- merge(cluster_dt_assoc, su.anal1, by = c("SiteUnit"), all.x = TRUE) %>% dplyr::select(SU_Label = SiteUnit.orig,  tempAssoc) %>%
     mutate(SU_Label = str_replace(SU_Label, "[abc]$", ""),# ignore phases
          SU_Label = if_else(
            str_detect(SU_Label, "101"),
@@ -801,7 +870,7 @@ cluster_dt_alli <- data.table(
   SiteUnit = names(clusters),
   generated_Alliance = paste0("coast_generated_Alli_", clusters)
 )
-working.hier3 <- su_working2 %>% select(SiteUnit.orig, SiteUnit.base, generated_SubAss, Association) %>% distinct %>% 
+working.hier3 <- su_working2 %>% dplyr::select(SiteUnit.orig, SiteUnit.base, generated_SubAss, Association) %>% distinct %>% 
   mutate(highest = coalesce(
     Association,
     generated_SubAss,
@@ -810,7 +879,7 @@ working.hier3 <- su_working2 %>% select(SiteUnit.orig, SiteUnit.base, generated_
   )) %>% data.table
 
 
-cluster_update2 <- left_join(cluster_dt_alli, working.hier3, by = c("SiteUnit" = "highest")) %>% select(SiteUnit, SU_Label = SiteUnit.orig,  generated_Alliance) %>%  
+cluster_update2 <- left_join(cluster_dt_alli, working.hier3, by = c("SiteUnit" = "highest")) %>% dplyr::select(SiteUnit, SU_Label = SiteUnit.orig,  generated_Alliance) %>%  
     mutate(SU_Label = str_replace(SU_Label, "[abc]$", ""),# ignore phases
          SU_Label = if_else(
            str_detect(SU_Label, "101"),
@@ -852,22 +921,22 @@ Highlights other similar units that are not in the same association for review T
 
 ```{r create altnerate su matches table}
 same.threshold = 0.8
-ss_similar <- vegsum.pairs %>%
-select(Unit1, Unit2, BEC.sim.min) %>%
- dplyr::filter(BEC.sim.min >= same.threshold) %>% mutate(Units = paste0(Unit1, " vs ", Unit2)) %>%
-  select(-Unit2, -Unit1) %>%
-  rename("Similarity" = BEC.sim.min, "Site Units" = Units) %>%
-  distinct()
+# ss_similar <- unit.compare %>%
+# dplyr::select(Unit1, Unit2, BEC.sim.min) %>%
+#  dplyr::filter(BEC.sim.min >= same.threshold) %>% mutate(Units = paste0(Unit1, " vs ", Unit2)) %>%
+#   dplyr::select(-Unit2, -Unit1) %>%
+#   rename("Similarity" = BEC.sim.min, "Site Units" = Units) %>%
+#   distinct()
  # low.diff <- gt::as_gtable((gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10) |> gt::cols_width(Site.Units ~ gt::px(250))), plot = TRUE, text_grob = gridtext::richtext_grob)
 #gt::gt(ss_similar) |> gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 8)
 
-
+# 
 ss_similar <- unit.compare %>%
-  select(Unit1, Unit2, BEC.sim.min) %>%
+  dplyr::select(Unit1, Unit2, BEC.sim.min) %>%
   dplyr::filter(BEC.sim.min >= same.threshold) %>%
   distinct()
 
-cluster_update <- merge(cluster_dt, su.anal1, by = c("SiteUnit"), all.x = TRUE) %>% select(SiteUnit, generated_Assoc) %>% distinct %>% drop_na
+cluster_update <- merge(cluster_dt, su.anal1, by = c("SiteUnit"), all.x = TRUE) %>% dplyr::select(SiteUnit, generated_Assoc) %>% distinct %>% drop_na
 
 su_all_sim <- ss_similar %>%
   left_join(
@@ -896,12 +965,12 @@ becdb <- dbConnect(
   odbc::odbc(),
   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;"
 )
-BEC.hier.temp <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") #%>% select(-SiteUnit)
+BEC.hier.temp <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") #%>% dplyr::select(-SiteUnit)
 dbDisconnect(becdb)
 
 group.to.test <- "generated_Alliance"
 
-su.anal.new <- su_working2 %>% select(PlotNumber, SiteUnit.orig) %>% left_join(BEC.hier.temp, by = c("SiteUnit.orig" = "SU_Label")) %>% rename(SiteUnit = SiteUnit.orig) %>%
+su.anal.new <- su_working2 %>% dplyr::select(PlotNumber, SiteUnit.orig) %>% left_join(BEC.hier.temp, by = c("SiteUnit.orig" = "SU_Label")) %>% rename(SiteUnit = SiteUnit.orig) %>%
   mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", ""),# ignore phases
          SiteUnit = if_else(
            str_detect(SiteUnit, "101"),
@@ -964,7 +1033,7 @@ veg_all <- create_veg_sum_all(
   # ORDER SITEUNITS BY tempAssoc_Code WITHIN THIS tempAlliance
   # ------------------------------------------------------------
 # su_order_df has SiteUnit.orig and tempAssoc_Code in the right order
-su_group_ord <- su_group %>% mutate(generated_Assoc = coalesce(working_Assoc, generated_Assoc)) %>% select(SiteUnit, generated_Assoc) %>%
+su_group_ord <- su_group %>% mutate(generated_Assoc = coalesce(working_Assoc, generated_Assoc)) %>% dplyr::select(SiteUnit, generated_Assoc) %>%
   dplyr::arrange(generated_Assoc, SiteUnit) %>% distinct %>% replace_na(list(generated_Assoc = "No_Assoc")) # replace NA with "No_Assoc" for ordering
 assoc_row_tbl <- su_group_ord %>%
   tidyr::pivot_wider(
@@ -1025,6 +1094,7 @@ saveWorkbook(
 ```
 
 ## Summarize by Alliance
+
 Generate vegetation summary output for all proposed alliances on a single sheet
 
 ```{r summary by alliances}
@@ -1037,7 +1107,7 @@ becdb <- dbConnect(
 BEC.hier.temp <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") %>%  filter(Analysis_Group %in% anal.set)
 dbDisconnect(becdb)
 
-su.anal.new <- su_working2 %>% select(PlotNumber, SiteUnit = SiteUnit.orig) %>%
+su.anal.new <- su_working2 %>% dplyr::select(PlotNumber, SiteUnit = SiteUnit.orig) %>%
     mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", ""),# ignore phases
          SiteUnit = if_else(
            str_detect(SiteUnit, "101"),
@@ -1045,7 +1115,7 @@ su.anal.new <- su_working2 %>% select(PlotNumber, SiteUnit = SiteUnit.orig) %>%
            SiteUnit
          )) %>% 
   left_join(BEC.hier.temp, by = c("SiteUnit"= "SU_Label"))
-su_sub <- su.anal.new %>% mutate(SiteUnit = generated_Alliance) %>% select(PlotNumber, SiteUnit)
+su_sub <- su.anal.new %>% mutate(SiteUnit = generated_Alliance) %>% dplyr::select(PlotNumber, SiteUnit)
 
 # vegdata <- readRDS(file.path(data.path,"BEC_veg_data/Reports_BECMaster_Veg.rds"))
 # veg.dat2 <- combine_taxa_strata(vegdata = vegdata, lump, use.subtaxa = FALSE) %>% filter(!Species == "UNKNOWN")
@@ -1102,7 +1172,6 @@ saveWorkbook(
 
 ```
 
-
 ## Review environmental space of site units within associations
 
 Now look for environmental outliers of site units that have been merged into each association.
@@ -1122,13 +1191,13 @@ SU_edatope <- plot.edatope %>%
   left_join(BEC.hier, by = c("SiteUnit" = "SiteUnit")) %>%
   mutate(SiteUnit = coalesce(Association, SiteUnit)) %>%  # fallback
   filter(Analysis_Group == anal.set) %>%
-  select(SiteUnit, aSMR, SNR) %>%
+  dplyr::select(SiteUnit, aSMR, SNR) %>%
   filter(!is.na(SiteUnit)) %>%
   mutate(
     SNR = factor(SNR, levels = c("A", "B", "C", "D", "E"), ordered = TRUE),
     SNR_num = as.numeric(SNR)
   ) %>%
-  select(-SNR) %>%
+  dplyr::select(-SNR) %>%
   filter(!is.na(SNR_num))
 
 
@@ -1141,11 +1210,11 @@ median_by_site <- SU_edatope %>%
 
 
 su_all_sim2 <- su_all_sim %>% left_join(median_by_site, by = c("Unit1" = "SiteUnit")) %>% left_join(median_by_site, by = c("Unit2" = "SiteUnit")) %>% distinct %>% 
-  select(Unit1, Unit2, BEC.sim.min, tempAssoc1, tempAssoc2, smr1 = median_aSMR.x, smr2 = median_aSMR.y, snr1 = median_SNR_num.x, snr2 = median_SNR_num.y, tempAssoc_match )
+  dplyr::select(Unit1, Unit2, BEC.sim.min, tempAssoc1, tempAssoc2, smr1 = median_aSMR.x, smr2 = median_aSMR.y, snr1 = median_SNR_num.x, snr2 = median_SNR_num.y, tempAssoc_match )
 
 
 su_all_sim2_rev <- su_all_sim2 %>% 
-  select(Unit1 = Unit2, Unit2 = Unit1, BEC.sim.min, tempAssoc1 = tempAssoc2, tempAssoc2 = tempAssoc1, smr1 = smr2, smr2 = smr1, snr1 = snr2, snr2 = snr1, tempAssoc_match )
+  dplyr::select(Unit1 = Unit2, Unit2 = Unit1, BEC.sim.min, tempAssoc1 = tempAssoc2, tempAssoc2 = tempAssoc1, smr1 = smr2, smr2 = smr1, snr1 = snr2, snr2 = snr1, tempAssoc_match )
 
 # bind and sort
 su_all_sim2_full <- bind_rows(su_all_sim2, su_all_sim2_rev) %>%
@@ -1160,7 +1229,6 @@ write.xlsx(
 #fwrite(su_all_sim2_full, "./review_materials/other_similar_sus_cluster_review_edatope.")
 ```
 
-
 ```{r test for edaphic outliers2}
 group = "generated_Alliance"
 
@@ -1170,7 +1238,7 @@ assoc_edatope <- plot.edatope %>%
   left_join(su2, by = "PlotNumber") %>%
   left_join(BEC.hier, by = c("SiteUnit" = "SiteUnit")) %>%
   filter(Analysis_Group == anal.set) %>%
-  select(SiteUnit, aSMR, SNR, groups = group) %>%
+  dplyr::select(SiteUnit, aSMR, SNR, groups = group) %>%
   filter(!is.na(SiteUnit)) %>%
 #  filter(groups %in% select.groups) %>%
   mutate(
@@ -1199,11 +1267,11 @@ range_all <- bind_rows(
   lapply(all_results, function(x) x$range_overlap)
 )
 range_all  <- bind_rows(lapply(all_results, function(x) x$range_overlap))
-edatopic_flag_all  <- bind_rows(lapply(all_results, function(x) x$median_flags)) %>% select(group, SiteUnit, flag_aSMR, aSMR_median, group_aSMR_median, flag_SNR,SNR_median, group_SNR_median, flag_any, everything())
+edatopic_flag_all  <- bind_rows(lapply(all_results, function(x) x$median_flags)) %>% dplyr::select(group, SiteUnit, flag_aSMR, aSMR_median, group_aSMR_median, flag_SNR,SNR_median, group_SNR_median, flag_any, everything())
 edatopic_outlier <- edatopic_flag_all %>% filter(flag_any == TRUE)
 
 edatopic_outlier_gt <- edatopic_outlier %>%
-  select(
+  dplyr::select(
     Group = group,
     SiteUnit,
     aSMR_Median = aSMR_median,
@@ -1262,8 +1330,8 @@ climate_compared <- climate_outliers(
     alpha_global = .90,
     alpha_local = .90)
 
-mahal_outliers <- climate_compared$within_group_outliers %>% select(SiteUnit, groups, distance_global, cutoff_global, is_outlier_global) %>% filter(is_outlier_global == TRUE) %>% arrange(groups, desc(distance_global)) %>% drop_na(groups)%>%
-  select(
+mahal_outliers <- climate_compared$within_group_outliers %>% dplyr::select(SiteUnit, groups, distance_global, cutoff_global, is_outlier_global) %>% filter(is_outlier_global == TRUE) %>% arrange(groups, desc(distance_global)) %>% drop_na(groups)%>%
+  dplyr::select(
     Group = groups,
     SiteUnit,
     Distance = distance_global,
@@ -1285,8 +1353,8 @@ mahal_outliers <- climate_compared$within_group_outliers %>% select(SiteUnit, gr
   )
 
   
-univariate_outliers <- climate_compared$climate_outliers %>% select(SiteUnit, groups, variable, mean_su, mean_grp) %>% arrange(groups, SiteUnit) %>% drop_na(groups) %>%
-  select(
+univariate_outliers <- climate_compared$climate_outliers %>% dplyr::select(SiteUnit, groups, variable, mean_su, mean_grp) %>% arrange(groups, SiteUnit) %>% drop_na(groups) %>%
+  dplyr::select(
     Group = groups,
     SiteUnit,
     Variable = variable,
@@ -1314,8 +1382,6 @@ gt(univariate_outliers) %>%
 #mahalabobis_outliers <- climate_compared$mahal_all  %>% arrange(group, SiteUnit) %>% drop_na(group)
 #mahal_dist<- mahal_results$within_group_mahal %>% drop_na(groups)
 ```
-
-
 
 ## Look for possible placements for single site units
 
@@ -1351,7 +1417,7 @@ Find nearest neighbours for single units (singletons) and compare vegetation, ed
 # 
 # fwrite(nearest, "./outputs/veg_climate_edaphic_similarity.csv", row.names = FALSE)
 # check.match <- nearest %>% filter(distance < 7.78, BEC.sim.max >.65) %>%
-#   select(
+#   dplyr::select(
 #     SiteUnit,
 #     Group = group,
 #     Distance = distance,
@@ -1381,6 +1447,3 @@ Find nearest neighbours for single units (singletons) and compare vegetation, ed
 
 
 ```
-
-
-
