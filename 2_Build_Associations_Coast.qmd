@@ -190,7 +190,13 @@ su2 <- su %>%
            str_replace(SiteUnit, "\\.[123]$", ""), # remove zonal variations
            SiteUnit
          ))
-
+su2 <- su2 %>%
+  mutate(SiteSeries = str_replace(SiteUnit.orig, "[abc]$", ""))# ignore phases
+         # SiteSeries = if_else(
+         #   str_detect(SiteUnit.orig, "101"),
+         #   str_replace(SiteUnit.orig, "\\.[123]$", ""), # remove zonal variations
+         #   SiteUnit.orig
+         # ))
 
 #------------------------------------------------------------
 # 5. Load BECMaster environmental + edatopic tables
@@ -242,16 +248,26 @@ edatopic <- dbReadTable(becdb, "Edatopic_v13_3") %>%
 
 dbDisconnect(becdb)
 
+
+##Use working spreadsheet instead of BECdb
+BEC.hier <- openxlsx::read.xlsx("D:/OneDrive/WNA_BGC/Association_Analysis/Coast_Hierarchy_Analysis/BECdb_Coast_Hierarchy_Working_ver2.xlsx") |> filter(Analysis_Group %in% "Forest-Coast_MH")
+
+# Keep only site units present in hierarchy table
+su2 <- su2 %>%
+  filter(SiteUnit.orig %in% BEC.hier$SU_Label)
+su.anal <- su2 %>%
+  left_join(BEC.hier, by = c("SiteUnit.orig" = "SU_Label"))
+
 #------------------------------------------------------------
 # 7. Identify SiteUnits missing from hierarchy
 #------------------------------------------------------------
 
-missing_in_hierarchy <- su2 %>%
-  distinct(SiteUnit) %>%
-  anti_join(BEC.hier %>% distinct(SiteUnit), by = "SiteUnit") %>%
-  mutate(flag = "in_su2_not_hierarchy")
-
-fwrite(missing_in_hierarchy, "./missing_in_hierarchy.csv")
+# missing_in_hierarchy <- su2 %>%
+#   distinct(SiteUnit) %>%
+#   anti_join(BEC.hier %>% distinct(SiteUnit), by = "SiteUnit") %>%
+#   mutate(flag = "in_su2_not_hierarchy")
+# 
+# fwrite(missing_in_hierarchy, "./missing_in_hierarchy.csv")
 
 #------------------------------------------------------------
 # 8. Join edatopic with modeled aSMR ranges
@@ -304,7 +320,7 @@ This code links Site Units to their BEC hierarchy classifications and determines
 
 ```{r choose level, echo=FALSE}
 ## Limit the analysis based on Analysis_Group column in the hierarchy table. 
-anal.set <- c("Forest-Coast")#, "Deciduous-Coast", 
+anal.set <- c("Forest-Coast_MH")#, "Deciduous-Coast", 
 #Order.set <- c("Qg")
 #------------------------------------------------------------
 # 1. Define hierarchy (cleaned)
@@ -323,8 +339,8 @@ group.to.test <- "Association"## uses data for this field to initially group sit
 # 2. Prepare hierarchy table
 #------------------------------------------------------------
 
-BEC.hier2 <- BEC.hier %>%
-  dplyr::select(-SiteUnit)   # keep SS_Label + hierarchy columns
+BEC.hier2 <- BEC.hier #%>%
+ # dplyr::select(-SiteUnit)   # keep SS_Label + hierarchy columns
 
 #------------------------------------------------------------
 # 3. Join hierarchy onto su2 and redue to anal.set
@@ -361,7 +377,7 @@ su.anal1 <- su.anal1 %>%
 # 5. Compute SiteUnit.hier based on group.to.test
 #------------------------------------------------------------
 
-su.anal1 <- su.anal1 %>%
+su.anal2 <- su.anal1 %>%
   mutate(
     SiteUnit.hier = coalesce(.data[[group.to.test]], SiteUnit)
   ) %>%
@@ -418,7 +434,7 @@ reduced.lifeforms  <- c(9, 10, 11)
 # 2. Prepare SiteUnit table for analysis
 #------------------------------------------------------------
 # SiteUnit.hier is replacing site unit with a previously determined Association group
-su_working <- su.anal1 %>%   rename(SiteUnit.base = SiteUnit, SiteUnit = SiteUnit.hier)
+su_working <- su.anal1 #%>%   rename(SiteUnit.base = SiteUnit, SiteUnit = SiteUnit.hier)
 
 #------------------------------------------------------------
 # 3. Run pairwise vegetation similarity analysis
@@ -713,15 +729,15 @@ create new temporary sorts to run a new cluster analysis that excludes units wit
 subass <- BEC.hier %>% dplyr::select(SU_Label, generated_SubAss)
 su_working2 <- su_working %>%
   filter(
-    !SiteUnit %in% ss_too.few$SiteUnit,
-    !SiteUnit %in% ss_low.diag$SiteUnit
+    # !SiteUnit %in% ss_too.few$SiteUnit,
+    # !SiteUnit %in% ss_low.diag$SiteUnit
   ) #%>% left_join(subass, by =c("SiteUnit.orig" = "SU_Label"))
 
 ## Chooses filled fields in order listed
 su_working2 <- su_working2 %>%
   mutate(SiteUnit = coalesce(
-    as.character(generated_SubAss), # very similar units from above
-    as.character(!!sym(group.to.test)), # previously defined associations
+    #as.character(generated_SubAss), # very similar units from above
+    #as.character(!!sym(group.to.test)), # previously defined associations
     as.character(SiteUnit)
   ))
 
@@ -771,7 +787,7 @@ In the dendrograms, the red line represents the minimum threshold for separating
 #| fig-width: 8
 #| fig-height: 12
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
-dendro_hc <- create_dendro_all(vegsum.pairs)
+dendro_hc <- create_dendro_all(vegsum.pairs, threshold.low = .72)
 ```
 
 ### Draw cluster diagram subsets from tree split at set dissimilarity level
@@ -780,7 +796,7 @@ dissimilarity of 17-20% is an approximate threshold for association differentiat
 
 ```{r split first cluster}
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
-xx <- draw_dendro_split(unit.compare.tbl = vegsum.pairs, cut.level=.4)
+xx <- draw_dendro_split(unit.compare.tbl = vegsum.pairs, cut.level=.72, show.singles = TRUE)
 ```
 
 ### Create initial hierarchy from clusters to group and write into BECdb
@@ -798,35 +814,84 @@ In the BECdb query to write the initial units in the the tempAssoc_Code field of
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
 fig.show='hide'
 #--------- do for associations
+
 dendro_hc <- create_dendro_all(vegsum.pairs)
-clusters <- cutree(dendro_hc, h = 0.18)
-cluster_dt <- data.table(
+
+clusters <- cutree(dendro_hc, h = 0.09)
+cluster_subass<- data.table(
   SiteUnit = names(clusters),
-  tempAssoc = paste0("coast_generated_Assoc_", clusters)
+  generated_SubAss= paste0("MH_generated_Subass_", clusters)
+)
+clusters <- cutree(dendro_hc, h = 0.18)
+cluster_assoc <- data.table(
+  SiteUnit = names(clusters),
+  generated_Assoc = paste0("MH_generated_Assoc_", clusters)
+)
+  clusters <- cutree(dendro_hc, h = 0.27)
+cluster_suball <- data.table(
+  SiteUnit = names(clusters),
+  generated_Alliance= paste0("MH_generated_Suball_", clusters)
+)
+clusters <- cutree(dendro_hc, h = 0.36)
+cluster_alli <- data.table(
+  SiteUnit = names(clusters),
+  generated_SubAll= paste0("MH_generated_Alli_", clusters)
 )
 
+clusters <- cutree(dendro_hc, h = 0.54)
+cluster_subord <- data.table(
+  SiteUnit = names(clusters),
+  generated_SubOrd= paste0("MH_generated_SubOrd_", clusters)
+)
+clusters <- cutree(dendro_hc, h = 0.72)
+cluster_ord <- data.table(
+  SiteUnit = names(clusters),
+  generated_Order= paste0("MH_generated_Order_", clusters)
+)
+clusters <- cutree(dendro_hc, h = 0.90)
+cluster_class <- data.table(
+  SiteUnit = names(clusters),
+  generated_Order= paste0("MH_generated_Class_", clusters)
+)
+
+# Combine
+cluster_table <- Reduce(
+function(x, y) merge(x, y, by = "SiteUnit", all = TRUE),
+list(
+cluster_subass,
+cluster_assoc,
+cluster_suball,
+cluster_alli,
+cluster_subord,
+cluster_ord,
+cluster_class)
+)
+
+cluster_table
 ## merge back to retrieve SiteUnit for all and the coalesce.
-working.hier <- su_working2 %>% dplyr::select(SiteUnit.base, generated_SubAss, Association) %>% distinct
-working.hier2 <- working.hier %>%
-  left_join(cluster_dt, by = c("SiteUnit.base" = "SiteUnit")) %>%
-  rename(tempAssoc_base = tempAssoc) %>%
-  left_join(cluster_dt, by = c("generated_SubAss" = "SiteUnit")) %>%
-  rename(tempAssoc_sub = tempAssoc) %>%
-  left_join(cluster_dt, by = c("Association" = "SiteUnit")) %>%
-  rename(tempAssoc_assoc = tempAssoc) %>%
-  mutate(
-    tempAssoc = coalesce(
-      tempAssoc_base,
-      tempAssoc_sub,
-      tempAssoc_assoc
-    )
-  )
-temp_assoc <- working.hier2 %>% dplyr::select(SiteUnit = SiteUnit.base, tempAssoc) %>% data.table
+orig.SU <- su_working2 %>% dplyr::select(SiteUnit.orig, SiteUnit.short = SiteUnit) %>% distinct
+generated.hier <- cluster_table %>%
+  left_join(orig.SU, by = c("SiteUnit" = "SiteUnit.short")) |> select(SiteUnit = SiteUnit.orig, -SiteUnit.orig, everything())
+fwrite(generated.hier, "./hierarchy/generated_MH.csv")
+# %>%
+#   rename(tempAssoc_base = tempAssoc) %>%
+#   left_join(cluster_dt, by = c("generated_SubAss" = "SiteUnit")) %>%
+#   rename(tempAssoc_sub = tempAssoc) %>%
+#   left_join(cluster_dt, by = c("Association" = "SiteUnit")) %>%
+#   rename(tempAssoc_assoc = tempAssoc) %>%
+#   mutate(
+#     tempAssoc = coalesce(
+#       tempAssoc_base,
+#       tempAssoc_sub,
+#       tempAssoc_assoc
+#     )
+#   )
+# temp_assoc <- working.hier2 %>% dplyr::select(SiteUnit = SiteUnit.base, tempAssoc) %>% data.table
 # # Count members per cluster
 cluster_sizes <- temp_assoc[, .N, by = tempAssoc]
 
 # Keep only clusters with >1 member
-valid_clusters <- cluster_sizes[N > 1, tempAssoc]
+valid_clusters <- cluster_sizes[N > 0, tempAssoc]
 
 # Filter cluster_dt to only those units with > 1 unit in clusters
 cluster_dt_assoc <- temp_assoc[tempAssoc %in% valid_clusters]
