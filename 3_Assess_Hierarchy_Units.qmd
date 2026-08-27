@@ -1,13 +1,39 @@
 ---
-title: "Hierarchy Unit Review"
+title: "Assess proposed hierarchy for LMH77"
 author: "William H MacKenzie"
-date: "08/11/2024"
-format: 
-  pdf: 
-    documentclass: scrartcl
-    papersize: letter
+date: today
+format:
+  typst:
+    toc: false
+    toc-depth: 1
+    toc-title: Contents
+    section-numbering: 1.1.1
+    columns: 1
+output-file: "MH_Hierarchy_Assessment.pdf"
 editor: source
+execute:
+  echo: false
+  error: false
+  warning: false
+  message: false
+  fig.width: 6
+  fig.height: 4
+  fig.align: 'center'
+  fig.cap: true
+  fig.pos: H
+  out.width: '100%'
+  dev: pdf
+  fig.ext: pdf
+  cache: false
+  fig.retina: 2
+  dpi: 600
+  fig.asp: 1.5
+  fig.path: "./figures/"
 ---
+
+```{r}
+anal.set = "MH"
+```
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
@@ -33,6 +59,9 @@ library(stringr)
 require(vegan)
 require(betapart)
 library(plotly)
+require(gt)
+gt <- gt::gt
+library(writexl)
 set.seed(1279)
 source("../BEC_R_working/_functions/_bec_dist.R")
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
@@ -66,20 +95,6 @@ source("../BEC_R_working/_functions/_cluster_by_spp_group.R")
 source("../BEC_R_working/_functions/_baselga_diagnostics.R")
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
 ```
-
-# General flow for review
-
-A report to review proposed associations and hierarchical unit. Comparative summary table Ordination Comparative environmental reporting
-
-## Read in data
-
-Read in vegetation data and join to taxonomic read in becdb table with units and hierarchical levels read in working xlsx becdb table with proposed units read in su tables and limit to units in the working xlsx
-
-Vegetation data is read in from saved .RDS file generated from the BECMaster cleaning scripts. Taxonomy is read-in from the species taxonomy database. A species lumping table is read-in from a Vpro database and applied to the vegetation data. The species taxonomy is joined to the vegetation data.
-
-## Read in data
-
-Vegetation data is read in from saved BECMaster.RDS file generated from the BECMaster cleaning scripts. A compiled SU table is build from all BGC_SU tables stored in the coast guides Vpro database. Taxonomy is read in from the species taxonomy database. A species lumping code table is read in from the Correlation2_Spp_lump.accdb database and the vegetation data is lumped using the combine_taxa function.
 
 ```{r load data, echo=FALSE}
 #------------------------------------------------------------
@@ -156,6 +171,7 @@ becmaster <- dbConnect(
 
 plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
 plot.edatope <- dbReadTable(becmaster, "BECMaster_fixing_edatopic")
+plot.info <- dbReadTable(becmaster, "BECMaster_fixing_Admin")
 
 dbDisconnect(becmaster)
 
@@ -192,6 +208,16 @@ edatopic <- dbReadTable(becdb, "Edatopic_v13_3") %>%
 
 dbDisconnect(becdb)
 
+##Export working BECdb for anal.set
+BECdb.anal <- BEC.hier |> filter(Analysis_Group %in% anal.set)
+
+BECdb.anal <- BEC.hier |>
+  filter(Analysis_Group %in% anal.set)
+
+write_xlsx(
+  BECdb.anal,
+  file.path("./review_materials", paste0(anal.set,"_BECdb_for_updates.xlsx"))
+)
 
 ##Use working spreadsheet instead of BECdb
 #BEC.hier <- openxlsx::read.xlsx("D:/OneDrive/WNA_BGC/Association_Analysis/Coast_Hierarchy_Analysis/BECdb_Coast_Hierarchy_Working_ver3.xlsx") #|> 
@@ -199,320 +225,32 @@ dbDisconnect(becdb)
 
 # Keep only site units present in hierarchy table
 su2 <- su2 %>%
-  filter(SU_Label %in% BEC.hier$SU_Label)
-su.missed <- su2 |> filter(!SU_Label %in% BEC.hier$SU_Label)
+  filter(SU_Label %in% BECdb.anal$SU_Label)
+su.missed <- su2 |> filter(!SU_Label %in% BECdb.anal$SU_Label)
 su.class <- su2 %>%
-  left_join(BEC.hier, by = c("SiteUnit" = "SiteUnit", "SU_Label" = "SU_Label"))
+  left_join(BECdb.anal, by = c("SiteUnit" = "SiteUnit", "SU_Label" = "SU_Label"))
 
-
+su.anal <- su.class |> filter(n_plots >1, Analysis_Group %in% anal.set)|> arrange(PlotNumber) 
 ```
 
-### Core analyses would be:
-
-All comparisons use the site unit summary data as the basis for comparison and not plot level data.
-
-1.  NMDS ordination
-
-2.  PERMANOVA to compare sig differences between units. Alliances, Assocs within Alliances, All Assocs
-
-3.  Betadisper: variability within units
-
-4.  Indicator species analysis: significant indicators associated with single or groups of units. Where few indicators in individual units consider combining with groups
-
-5.  Random Forest classification: prediction of membership
-
-6.  Species constancy tables: standard vegetation summary output
-
-7.  Environmental gradient analysis: environmental separation of units
-
-Together these answer:
-
-Are alliances compositionally distinct from one another? How internally consistent are they? How distinct are they? Which species define them? Which alliances overlap? What environmental gradients drive differences?
-
-For a BEC/alliance classification paper, NMDS + PERMANOVA + Indicator Species + Random Forest + diagnostic species tables would likely provide the strongest and most defensible framework.
-
-```{r read in SU data}
-
-anal.set = "MH"
-su.anal <- su.class |> filter(n_plots >0, Analysis_Group %in% anal.set)|> arrange(PlotNumber) 
-su.anal2 <- su.anal |> dplyr::select(PlotNumber, SiteUnit, assoc = working_association, alliance = working_alliance) |> 
-  mutate(alliance = str_remove(alliance, "^coast_generated_"))  |> distinct()
-unique.su <- su.anal2 |> dplyr::select(SiteUnit) |> distinct()|> arrange(SiteUnit)
-unique.assocs2 <- su.anal2 |> dplyr::select(assoc) |> distinct()
-unique.alliances2 <- su.anal2 |> dplyr::select(alliance) |> distinct()
-su.assocs <- su.anal2 |> dplyr::select(SiteUnit, assoc) |> distinct()|> arrange(SiteUnit)
-su.alliances <- su.anal2 |> dplyr::select(SiteUnit, alliance) |> distinct()|> arrange(SiteUnit)
-
-veg.anal<- veg.dat2 |> filter(PlotNumber %in% su.class$PlotNumber) |> dplyr::select(PlotNumber, Species, Cover) |>
-  arrange(PlotNumber) #|> matrify()
-
-reduced.exceptions <- c("SPHAGNUM","CLADONIA","CLADINA","RACOMITR","MNIUM")
-reduced.lifeforms  <- c(9, 10, 11)
-
-pairwise.params <- list(
-  su                = su.anal,
-  su.field =  "SiteUnit",
-  minconstancy          = 50,
-  noiseconstancy        = 10,
-  minplots              = 1,
-  minor                 = 1,
-  use.ksi               = FALSE,
-  ksi   = NULL,
-  ksi.value             = 1.5,
-  reduce.lifeform       = TRUE,
-  reduced.lifeforms     = reduced.lifeforms,
-  reduction             = 0.1,
-  reduced.exceptions    = reduced.exceptions,
-  add_vegsum_table      = NULL
-)
-
-vegsum.pairs <- do.call(
-  do_pairwise,
-  c(list(veg.anal), pairwise.params)
-)
-source("../BEC_R_working/_functions/_build_bec_distance_matrix.R")
-
-
-result <- build_bec_distance_matrix(
-  vegsum_pairs = vegsum.pairs,
-  su_anal = su.anal,
-  preclass_field = "assoc",
-  use_preclass = FALSE
-)
-
-unit.compare2 <- result$unit_compare
-bec.dist <- result$bec_dist
-
- #bec.dist <- bec_dist_matrix(vegsum.pairs = vegsum.pairs, distance = "BEC.sim.min")
-
-```
-
-##Describe differences in species composition
-
-### 3D NMDS ordination plot
-
-links to interactive html 3D ordination plot
-
-Use BEC dissimilarity and working alliances, associations, siteunits.
-
-Questions answered:
-
-Do alliances form distinct clusters? Which alliances overlap? Are some alliances highly variable internally?
-
-Add alliance centroids and confidence ellipses.
-
-ordiplot(nmds) ordiellipse(nmds, alliance)
-
-```{r NMDS}
-source("../BEC_R_working/_functions/_plot_nmds_hierarchy.R")
-
-result <- plot_nmds_hierarchy(
-  bec.dist = bec.dist,
-  su.anal = su.anal,
-  classification = "working", 
-  output_file = paste0(anal.set, "_NMDS_Hierarchy.html"),
-  save_html = TRUE
-)
-
-result$stress
-result$plot
-
-```
-
-See the interactive version:
-
-\[[3D_NMDS_Graphic.html](nmds.file)\]
-
-## 2. Test whether alliances differ PERMANOVA
-
-A statistical test of composition differences.
-
-adonis2( comm \~ alliance, data = meta, method = "bray", permutations = 999 )
-
-Outputs:
-
-R² = how much variation is explained by alliance P-value
-
-Given 3450 plots, you'll almost certainly get a significant result. Focus on effect size (R²), not just significance.
-
-Test dispersion first
-
-PERMANOVA is sensitive to unequal dispersion.
-
-disp \<- betadisper( vegdist(comm, method = "bray"), alliance )
-
-anova(disp)
-
-This tells you whether differences are due to centroids (real compositional shifts) or spread.
-
-3.  Quantify within-unit heterogeneity
-
-Some alliances are very tight, others broad.
-
-Beta diversity disp \<- betadisper( vegdist(comm, "bray"), alliance )
-
-boxplot(disp)
-
-Useful outputs:
-
-Mean distance to centroid Rank alliances from homogeneous to heterogeneous
-
-This is often ecologically informative.
-
-```{r pairwise permanova}
-  #veg.dat = veg.anal;  su.anal = su.anal1; group.field = "working_Alliance"; permutations = 199
-source("../BEC_R_working/_functions/_assess_group_support.R")
-source("../BEC_R_working/_functions/_pairwise_adonis_dist.R")
-
-alliance.support <- assess_group_support(
-  veg.dat = veg.anal,
-  su.anal = su.anal,
-  group.field = "working_alliance",
-    permutations = 999
-)
-alliance.support$gt_table
-# gtsave(
-#   res$gt_table,
-#   "alliance_support_table.html"
-# )
-
-assoc.support <- assess_group_support(
-    veg.dat = veg.anal,
-  su.anal = su.anal,
-  group.field = "working_association",
-    permutations = 999
-)
-assoc.support$gt_table
-
-# ------------------------------------------------------------
-  # Export workbook
-  # ------------------------------------------------------------
-  out.dir = "./review_materials"
-  outfile <- file.path(
-    out.dir,
-    paste0(anal.set, "_other_similar_units.xlsx")
-  )
-
-  replace_sheet <- function(wb, sheet) {
-  if (sheet %in% names(wb)) {
-    removeWorksheet(wb, sheet)
-  }
-  addWorksheet(wb, sheet)
-}
-
-
-wb <- if (file.exists(outfile)) {
-  loadWorkbook(outfile)
-} else {
-  createWorkbook()
-}
-
-replace_sheet(wb, "alliance_test")
-
-  setColWidths(
-    wb,
-    sheet = "alliance_test",
-    cols = 1:ncol(alliance.support$support),
-    widths = "auto"
-  )
-
-writeData(wb, "alliance_test", alliance.support$support)
-
-replace_sheet(wb, "assoc_test")
-
-  setColWidths(
-    wb,
-    sheet = "assoc_test",
-    cols = 1:ncol(assoc.support$support),
-    widths = "auto"
-  )
-  writeData(wb, "assoc_test", assoc.support$support)
-
-  saveWorkbook(
-    wb,
-    outfile,
-    overwrite = TRUE
-  )
-
-```
-
-What species separate units
-
-indicator species analysis - should some  associations or alliances be combined. Flag site units with few of the hierarchy unit indicator species?
-
-
-```{r}
-source("../BEC_R_working/_functions/_indicator_species_analysis.R")
-
-ind.alliance <- indicator_species_analysis(
-  veg.dat,
-  su.anal,
-  group_level = "working_alliance",
-  max.order = 2,
-  min.constancy = 40,
-  min.fidelity = 15,
-  p.cutoff = 0.05
-)
-
-alliance.indic <- ind.alliance$indicators
-
-ind.assoc.alliance <- indicator_species_analysis(
-  veg.dat,
-  su.anal,
-  group_level = "working_association",
-  within_level = "working_alliance",
-  max.order = 1,
-  min.constancy = 50
-)
-assoc.indic <- ind.assoc.alliance$indicators
-```
-
-
-
-11. Environmental differentiation
-
-Elevation Slope Aspect MAT MAP Soil moisture Nutrient regime
-
-Use:
-
-RDA rda.mod \<- rda( comm \~ elevation + moisture + nutrients, data = env )
-
-or
-
-envfit on NMDS envfit(nmds, env)
-
-This links community differences to environmental gradients. function to pull climate data and other environment data
-
-```{r}
-su.anal <- su.anal
-## read in plot data and extract lat/long and environment info
-becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;")
-plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env") %>% mutate(lon = ifelse(Longitude<0, Longitude, 0-Longitude)) %>% mutate(Date = as_date(Date)) |> 
+```{r prep env data}
+plot.env2 <- plot.env %>% mutate(lon = ifelse(Longitude<0, Longitude, 0-Longitude)) %>% mutate(Date = as_date(Date)) |> 
   filter(PlotNumber %in% su.anal$PlotNumber) |>
   dplyr::select(PlotNumber, lon, lat = Latitude, elev = Elevation, special = Exposure1, rSMR = MoistureRegime, rSNR = NutrientRegime, slope = SlopeGradient, aspect = Aspect ) 
-plot.info <- dbReadTable(becmaster, "BECMaster_fixing_Admin") |> dplyr::select(Plot, BECSiteUnit, UserSiteUnit, HumusThickness, BGC=GIS_BGC)  |> filter(Plot %in% su.anal$PlotNumber)
-plot.env <- left_join(plot.env, plot.info, by = c("PlotNumber" = "Plot")) |> filter(!is.na (rSMR))
-#odbc::odbcListColumns(becmaster, table = "BECMaster_fixing_plot.env")
-dbDisconnect(becmaster)
+ plot.info <- plot.info |> dplyr::select(Plot, BECSiteUnit, UserSiteUnit, HumusThickness, BGC=GIS_BGC)  |> filter(Plot %in% su.anal$PlotNumber)
+plot.env2 <- left_join(plot.env2, plot.info, by = c("PlotNumber" = "Plot")) |> filter(!is.na (rSMR))
+
 
 ## extract climate data for plots from climr
 require(climr)
-plot.locs <- plot.env %>% dplyr::select(id=PlotNumber, BGC, lon,lat,elev) |> drop_na(lat)
+plot.locs <- plot.env2 %>% dplyr::select(id=PlotNumber, BGC, lon,lat,elev) |> drop_na(lat)
 plot.climate <- climr::downscale(setDT(plot.locs),
                               vars = list_vars(set = c("Annual", "Seasonal", "Monthly")),
                               return_refperiod = TRUE,
-                             # obs_periods = c("2001_2020"),
-                              #obs_years = 2001:2024,
-                              # gcms = c("ACCESS-ESM1-5","CNRM-ESM2-1", "EC-Earth3", "GFDL-ESM4", "GISS-E2-1-G", "MIROC6",  "MPI-ESM1-2-HR", "MRI-ESM2-0",  "UKESM1-0-LL" ),
-                              # ssps = c("ssp126", "ssp245", "ssp370"),
-                              # gcm_ssp_years = c(2025:2045),
-                              #ensemble_mean = TRUE,
-                              #obs_ts_dataset = "cru.gpcc",
-                              #obs_ts_dataset = "mswx.blend",
                               db_option = "local",
                               cache = TRUE)
 ## calculate aSMR
-plot.env2 <- plot.climate |> select(PlotNumber = id, everything()) |> left_join(plot.env) |> 
+plot.env3 <- plot.climate |> select(PlotNumber = id, everything()) |> left_join(plot.env2) |> 
   mutate(
     moist = rowSums(
       across(c(PPT_05, PPT_06, PPT_07, PPT_08, PPT_09), ~ .x >= 90),
@@ -550,74 +288,55 @@ rules <- read.csv("./inputs/aSMR_Rules_HalfStep_v13_23June2025.csv") |>
   mutate(
     rSMR.rule = sub("^rSMR", "", rSMR)) |> dplyr::select(-rSMR)
 
-plot_asmr <- plot.env2 %>% select(PlotNumber, rSMR, CMD.site) |> 
+plot_asmr <- plot.env3 %>% select(PlotNumber, rSMR, CMD.site) |> 
   left_join(rules, by = c("rSMR" = "rSMR.rule")) %>%
   filter(CMD.site <= CMD) %>%
   group_by(PlotNumber) %>%  # ensure row-wise logic if needed
   slice_max(aSMR, with_ties = FALSE) %>%
   ungroup() %>% select(PlotNumber, aSMR)
 
-plot.env2 <- left_join(plot.env2, plot_asmr)
-# fwrite(rsmr_asmr_long, file = "./outputs/aSMR_by_rSMR_long.csv")# for use in droughtprone sites
-# all_cmd <- rsmr_asmr_long   %>%
-#   arrange(BGC) %>%
-#   pivot_wider(names_from = rSMR, values_from = aSMR)
-# fwrite (all_cmd, "./outputs/CMDcalc_aSMR_by_rSMR_matrix.csv")
+plot.env3 <- left_join(plot.env3, plot_asmr)
 
-```
-
-## Environment of units
-
-### PCA of environment variables for analysis group
-
-```{r}
-
-source("../BEC_R_working/_functions/_plot_pca_hierarchy.R")
-
-#Use site unit summarized values for graphic
-library(forcats)
-
-workin
-su.env <- plot.env2 |>
+plot.env3 <- plot.env3 |>
   left_join(
     su.anal, 
-    by = "PlotNumber"
-  ) |>
-  filter(!is.na(alliance)) |>
-  group_by(siteunit, assoc, alliance) |>
-  summarise(
-    PAS_an = mean(PAS_an, na.rm = TRUE),
-    #CMD.site = mean(CMD.site, na.rm = TRUE),
-    #MSP   = mean(MSP, na.rm = TRUE),
-    aSMR = mean(aSMR, na.rm = TRUE),
-    SNR = mean(SNR.clean, na.rm = TRUE),
-    AHM = mean(AHM, na.rm = TRUE),
-    lat = mean(lat, na.rm = TRUE),
-    FFP   = mean(FFP, na.rm = TRUE),
-    DD5 = mean(DD5_an, na.rm = TRUE),
-    DD18_sm = mean(DD18_sm, na.rm = TRUE),
-    EXT = mean(EXT, na.rm = TRUE),
-    .groups = "drop"
-  )
+    by = "PlotNumber")
+ 
+plot.env.vars <- plot.env3 |>   select(-SiteUnit, -working_association, -working_alliance) |> 
+   select(PlotNumber, PAS_an,CMD.site, MSP, aSMR , SNR = SNR.clean, AHM,FFP, DD5 = DD5_an, DD18_sm ) |> arrange(PlotNumber)
+ keep.rows <- complete.cases(plot.env.vars)
 
-# su.env <- env.alliance |>
-#   select(-matches("[0-9]$")) |>
-#   group_by(siteunit, assoc, alliance) |>
-#   summarise(
-#     across(
-#       where(is.numeric),
-#       ~ mean(.x, na.rm = TRUE)
-#     ),
-#     .groups = "drop"
-#   )
+  su.env <- plot.env3 |> rename(assoc = working_association, alliance = working_alliance) |> 
+  filter(!is.na(alliance)) |> arrange(SiteUnit) |> 
+  group_by(SiteUnit, assoc, alliance) |>
+    summarise(
+  PAS_an = mean(PAS_an, na.rm = TRUE),
+  CMD.site = mean(CMD.site, na.rm = TRUE),
+  MSP   = mean(MSP, na.rm = TRUE),
+  aSMR = mean(aSMR, na.rm = TRUE),
+  SNR = mean(SNR.clean, na.rm = TRUE),
+  AHM = mean(AHM, na.rm = TRUE),
+  #lat = mean(lat, na.rm = TRUE),
+  FFP   = mean(FFP, na.rm = TRUE),
+  DD5 = mean(DD5_an, na.rm = TRUE),
+  DD18_sm = mean(DD18_sm, na.rm = TRUE),
+  #EXT = mean(EXT, na.rm = TRUE),
+  .groups = "drop"
+)
 
+#     summarise(
+#   across(
+#     where(is.numeric) & !c(lat, lon),
+#     ~ mean(.x, na.rm = TRUE)
+#   ),
+#   .groups = "drop"
+# )
 
-#==============================================================================
+# ==============================================================================
 # Climate variables for PCA
 #==============================================================================
-
-env.vars <- su.env |>
-  select(-siteunit, -assoc, -alliance) 
+  env.vars <- su.env |>
+  select(-assoc, -alliance) 
 
 # Remove rows with missing values
 keep.rows <- complete.cases(env.vars)
@@ -625,25 +344,520 @@ keep.rows <- complete.cases(env.vars)
 env.vars <- env.vars[keep.rows, ]
 
 # Remove constant variables if any
-env.vars <- env.vars |>
+env.vars.filt <- env.vars |>
+  select(-SiteUnit) |>
   dplyr::select(
-    where(~ sd(.x, na.rm = TRUE) > 0)
+    where(~ is.numeric(.x) && sd(.x, na.rm = TRUE) > 0)
   )
 
-su.env <- su.env[keep.rows, ]
+keep.rows <- complete.cases(env.vars.filt)
 
-pca.env <- plot_pca_hierarchy( su.env,
+#su.env <- env.vars[keep.rows, ]
+su.env <- su.env |>
+  dplyr::select(
+    SiteUnit, assoc, alliance,
+    where(~ is.numeric(.x) && sd(.x, na.rm = TRUE) > 0)
+  )
+
+```
+
+# Assess and review the separation associations and alliances
+
+All comparisons use the site unit summary data as the basis for comparison and not plot level data.
+
+An initial generated hierarchical classification from Build_Hierarchy_working can be used but better is to have done initial assessments and created intial working\_ hierarchy levels for application in this script.
+
+This script is to be used iteratively to assess current working unit membership is supported or if site unit membership should be reassigned.
+
+Subsequent analysis here will substantiate the existing working units or suggest where association membership in alliances should be adjusted to maximize indicator species separation and environmental space.
+
+### Core analyses are:
+
+1.  NMDS ordination of plant communities showing Alliance, Association and SiteUnits with envfit joint plot for edaphic and select climatic parameters.
+
+2.  Environment separation: PCA of units, boxplot showing position of site units on PCA axes grouped by higher taxons
+
+3.  PERMANOVA (pairwise adonis) with betadispersion metrics to assess vegetation differences between units.
+
+4.  Indicator species analysis identifying species which are statistically associated with units.
+
+5.  Vpro style vegetation summary report by working_alliance organized by working hierarchical taxa
+
+Together these answer:
+
+Are alliances and associations compositionally distinct from one another? How internally consistent are they? How distinct are they? Which species define them? Which alliances overlap? What environmental gradients drive differences?
+
+```{r read in SU data}
+# anal.set = "MH"
+# 
+# 
+# combine.grps <- c("CWH-wetfor")#, "CWH-Fd")
+# 
+# su.class <- su.class |>
+#   dplyr::mutate(
+#     Analysis_Group = ifelse(
+#       Analysis_Group %in% combine.grps,
+#       anal.set,
+#       Analysis_Group
+#     )
+ # ) 
+
+
+
+
+
+# alliance.remove = c("Ss_shoreline", "CWH_Fraser_Fh", "CDF_rich", "CWHds_102", "CWHws_102", "CWHvmN_102", "CWHvmS_102", "CWH_Fh_south", "CWHms_102", "CWHw_terraces", "CWHvh_102", "CWHv_102")
+# su.anal <- su.anal |> filter(!working_alliance %in% alliance.remove)
+#   
+su.anal2 <- su.anal |> dplyr::select(PlotNumber, SiteUnit, assoc = working_association, alliance = working_alliance) |> 
+  mutate(alliance = str_remove(alliance, "^coast_generated_"))  |> distinct()
+unique.su <- su.anal2 |> dplyr::select(SiteUnit) |> distinct()|> arrange(SiteUnit)
+unique.assocs2 <- su.anal2 |> dplyr::select(assoc) |> distinct()
+unique.alliances2 <- su.anal2 |> dplyr::select(alliance) |> distinct()
+su.assocs <- su.anal2 |> dplyr::select(SiteUnit, assoc) |> distinct()|> arrange(SiteUnit)
+su.alliances <- su.anal2 |> dplyr::select(SiteUnit, alliance) |> distinct()|> arrange(SiteUnit)
+
+veg.anal<- veg.dat2 |> filter(PlotNumber %in% su.class$PlotNumber) |> dplyr::select(PlotNumber, Species, Cover) |>
+  arrange(PlotNumber) #|> matrify()
+
+reduced.exceptions <- c("SPHAGNUM","CLADONIA","CLADINA","RACOMITR","MNIUM")
+reduced.lifeforms  <- c(9, 10, 11)
+
+pairwise.params <- list(
+  su                = su.anal,
+  su.field =  "SiteUnit",
+  minconstancy          = 50,
+  noiseconstancy        = 10,
+  minplots              = 1,
+  minor                 = 5,
+  use.ksi               = FALSE,
+  ksi   = NULL,
+  ksi.value             = 1.5,
+  reduce.lifeform       = TRUE,
+  reduced.lifeforms     = reduced.lifeforms,
+  reduction             = 0.1,
+  reduced.exceptions    = reduced.exceptions,
+  add_vegsum_table      = NULL
+)
+
+vegsum.pairs <- do.call(
+  do_pairwise,
+  c(list(veg.anal), pairwise.params)
+)
+
+
+
+source("../BEC_R_working/_functions/_build_bec_distance_matrix.R")
+
+
+result <- build_bec_distance_matrix(
+  vegsum_pairs = vegsum.pairs,
+  su_anal = su.anal,
+  preclass_field = "assoc",
+  use_preclass = FALSE
+)
+
+unit.compare2 <- result$unit_compare
+bec.dist <- result$bec_dist
+
+ #bec.dist <- bec_dist_matrix(vegsum.pairs = vegsum.pairs, distance = "BEC.sim.min")
+
+```
+
+### 3D NMDS ordination plot
+
+NMDS based on BEC dissimilarity using siteunits., working alliances and associations
+
+Visual review: do alliances form distinct clusters? Which alliances overlap? Are some alliances highly variable internally? Includes an envfit joint plot on NMDS from a select set of climate and edaphic variables
+
+[**See interactive 3D NMDS html file in review materials**]{.underline}
+
+```{r}
+#| label: fig-nmds
+#| fig-cap: ("3D NMDS for SiteUnits within working Alliances")
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 12
+
+source("../BEC_R_working/_functions/_plot_nmds_hierarchy.R")
+
+nmds <- plot_nmds_hierarchy(
+  bec.dist = bec.dist,
+  su.anal = su.anal,
+  su.env = su.env,
+  k=3,
+  classification = "working", 
+  output_file = paste0(anal.set, "_NMDS_Hierarchy.html"),
+  save_html = TRUE
+)
+
+nmds$plot
+#nmds$scores
+#nmds$stress
+```
+
+### 2. Permanova test of vegetation differences
+
+Permanova statistical test of composition differences using adonis2 package
+
+Outputs: R² = how much variation is explained by hierarchical group. Betadispersion test within units to adjust the PERMANOVA assessment to assess whether differences are due to real compositional shifts or spread.
+
+Assigning a strength rating based on a sum of points from: r2 of permanova, p.adj from betadisp and permanova
+
+1.  permanova R2 = R2 \>= 0.20= 70, R2 \>= 0.15 = 60, R2 \>= 0.10 = 50, R2 \>= 0.05 = 25, R2 \< 0.05 = 0
+
+2.  permanovap.adj \< 0.05 = 10, p.adj \>= 0.05 = 0
+
+3.  betadisper p.adj. \> 0.10 = 20, p.adj. \> 0.05 = 10, p.adj. \<= 0.05 =0
+
+**support_score** = score_R2 +score_disp + score_perm
+
+**support_class**: score \>= 80 is "Strong", score \>= 60 is "Moderate", score \>= 40 is "Weak", score \<40 is"Review"
+
+**recommendation** = R2 \< 0.05 is "Merge?" R2 \< 0.10 is "Review", betadisper p.adj. \< 0.05 is "Heterogenous", otherwise "Supported"
+
+```{r pairwise permanova}
+#| label: fig-permanova-alliances
+#| fig-cap: ("Permanova assessment of Alliances")
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 12
+
+
+  #veg.dat = veg.anal;  su.anal = su.anal1; group.field = "working_Alliance"; permutations = 199
+source("../BEC_R_working/_functions/_assess_group_support.R")
+source("../BEC_R_working/_functions/_pairwise_adonis_dist.R")
+
+alliance.support <- assess_group_support(
+  veg.dat = veg.anal,
+  su.anal = su.anal,
+  group.field = "working_alliance",
+    permutations = 999
+)
+alliance.support$gt_table
+# gtsave(
+#   res$gt_table,
+#   "alliance_support_table.html"
+# )
+
+
+
+
+```
+
+```{r}
+#| label: fig-permanova-associations
+#| fig-cap: ("Permanova assessment of Associations within Alliances")
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 12
+
+assoc.support <- assess_group_support(
+  veg.dat = veg.anal,
+  su.anal = su.anal,
+  group.field = "working_association",
+  within_level = "working_alliance",
+  permutations = 999
+)
+assoc.support$gt_table
+# gtsave(
+#   res$gt_table,
+#   "alliance_support_table.html"
+# )
+
+
+```
+
+## Indicator Species Analysis
+
+Indicator species analysis using plot data to assess what species statistically differentiate units from all other units. Analysis looks at individual hierarchical units but also grouped pairs of units to allow assessment of whether some existing pairs be should combined to maximize Flag hierarchy units with few indicator species and where merged units have a long list of indicator species
+
+```{r}
+#| label: fig-alliance-indic
+#| fig-cap: ("Indicator species for  Alliances")
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 12
+
+source("../BEC_R_working/_functions/_indicator_species_analysis.R")
+
+ind.alliance <- indicator_species_analysis(
+  veg.dat,
+  su.anal,
+  group_level = "working_alliance",
+  max.order = 2,
+  min.constancy = 40,
+  min.fidelity = 15,
+  p.cutoff = 0.05,
+  export.tables = TRUE,
+  export.folder = "./review_materials",
+  show.tables = TRUE,
+  gt.top.n = NULL
+)
+ind.alliance$gt_table
+```
+
+```{r}
+#| label: fig-assoc-indic
+#| fig-cap: ("Indicator species for Associations within working Alliances")
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 12
+
+ind.assoc.alliance <- indicator_species_analysis(
+  veg.dat,
+  su.anal,
+  group_level = "working_association",
+  within_level = "working_alliance",
+  max.order = 2,
+  min.constancy = 50,
+  min.fidelity = 15,
+  p.cutoff = 0.05,
+  export.tables = TRUE,
+  export.folder = "./review_materials",
+  show.tables = TRUE,
+  gt.top.n = NULL
+  
+)
+
+#ind.assoc.alliance$gt_table
+
+
+```
+
+11. Environmental differentiation between units
+
+Elevation Slope Aspect MAT MAP Soil moisture Nutrient regime
+
+Use:
+
+RDA rda.mod \<- rda( comm \~ elevation + moisture + nutrients, data = env )
+
+or
+
+## Environment of units
+
+### PCA of environment variables for analysis group
+
+```{r}
+#| label: fig-env_pca
+#| fig-cap: ("3D environment PCA graphic for SiteUnits within working Alliances")
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 12
+
+
+source("../BEC_R_working/_functions/_plot_pca_hierarchy.R")
+library(forcats)
+require(ggrepel)
+
+su.env2 <- su.env |> select(siteunit = SiteUnit, everything())
+
+pca.env <- plot_pca_hierarchy(su.env2,
                     n_vectors = 10,
     output_file = NULL,
     save_html = FALSE)
 
 pca.env$plot
-boxplot(PC1 ~alliance, data = pca.env$scores)
-boxplot(PC2 ~alliance, data = pca.env$scores)
-boxplot(PC3 ~alliance, data = pca.env$scores)
 
 ```
 
+```{r}
+#| label: fig-PCA_boxplot
+#| fig-cap: ("Environment PCA scores for SiteUnits within working Alliances")
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 12
+
+library(tibble)
+library(dplyr)
+
+get_loading_subtitle <- function(loadings, pc, n = 3) {
+
+  x <- loadings |>
+    #tibble::rownames_to_column("Variable") |>
+    select(variable, all_of(pc))
+
+  top <- x |>
+    arrange(desc(abs(.data[[pc]]))) |>
+    slice_head(n = n)
+
+  paste(
+    paste0(
+      top$variable,
+      " (",
+      sprintf("%.2f", top[[pc]]),
+      ")"
+    ),
+    collapse = "; "
+  )
+}
+
+pca.var <- pca.env$variance
+
+sub.pc1 <- paste0(
+  "Env drivers: ",
+  get_loading_subtitle(pca.env$loadings, "PC1"),
+  " | Var explained = ",
+  round(pca.var["PC1"], 1),
+  "%"
+)
+sub.pc2 <- paste0(
+  "Env drivers: ",
+  get_loading_subtitle(pca.env$loadings, "PC2"),
+  " | Var explained = ",
+  round(pca.var["PC2"], 2),
+  "%"
+)
+sub.pc3 <- paste0(
+  "Env drivers: ",
+  get_loading_subtitle(pca.env$loadings, "PC3"),
+  " | Var explained = ",
+  round(pca.var["PC3"], 3),
+  "%"
+)
+
+
+scores <- pca.env$scores |>
+  mutate(
+    alliance =
+      forcats::fct_reorder(
+        alliance,
+        PC1,
+        median,
+        na.rm = TRUE
+      )
+  )
+
+scores <- scores |>
+  group_by(alliance) |>
+  mutate(
+    outlierPC1 =
+      PC1 < quantile(PC1, 0.15, na.rm = TRUE) |
+      PC1 > quantile(PC1, 0.85, na.rm = TRUE),
+    outlierPC2 =
+      PC2 < quantile(PC2, 0.15, na.rm = TRUE) |
+      PC2 > quantile(PC2, 0.85, na.rm = TRUE),
+    outlierPC3 =
+      PC3 < quantile(PC3, 0.15, na.rm = TRUE) |
+      PC3 > quantile(PC3, 0.85, na.rm = TRUE)
+  ) |>
+  ungroup()
+
+library(ggrepel)
+
+p1 <- ggplot(
+  scores,
+  aes(alliance, PC1, fill = alliance)
+) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(
+    width = 0.15,
+    alpha = 0.6,
+    size = 2
+  ) +
+  geom_text_repel(
+    data = filter(scores, outlierPC1),
+    aes(label = siteunit),
+    size = 2,
+    max.overlaps = 50,
+    box.padding = 0.3,
+    point.padding = 0.2,
+    segment.alpha = 0.5
+  ) +
+  coord_flip() +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(
+    title = "PC1 by Alliance",
+    subtitle = sub.pc1,
+    x = NULL
+  )
+
+p2 <- ggplot(
+  scores,
+  aes(alliance, PC2, fill = alliance)
+) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(
+    width = 0.15,
+    alpha = 0.6,
+    size = 2
+  ) +
+  geom_text_repel(
+    data = filter(scores, outlierPC2),
+    aes(label = siteunit),
+    size = 2,
+    max.overlaps = 50,
+    box.padding = 0.3,
+    point.padding = 0.2,
+    segment.alpha = 0.5
+  ) +
+  coord_flip() +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(
+    title = "PC2 by Alliance",
+    subtitle = sub.pc2,
+    x = NULL
+  )
+
+p3 <- ggplot(
+  scores,
+  aes(alliance, PC3, fill = alliance)
+) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(
+    width = 0.15,
+    alpha = 0.6,
+    size = 2
+  ) +
+  geom_text_repel(
+    data = filter(scores, outlierPC3),
+    aes(label = siteunit),
+    size = 2,
+    max.overlaps = 50,
+    box.padding = 0.3,
+    point.padding = 0.2,
+    segment.alpha = 0.5
+  ) +
+  coord_flip() +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(
+    title = "PC3 by Alliance",
+    subtitle = sub.pc3,
+    x = NULL
+  )
+require(patchwork)
+pc.boxplots <- p1 / p2 / p3 #+
+  # plot_annotation(
+  #   title = "Climate PCA Scores by Alliance"
+  # )
+pc.boxplots
+ggsave(
+  "./review_materials/PCA_Axis_Boxplots.png",
+  pc.boxplots,
+  width = 12,
+  height = 16,
+  dpi = 300
+)
+
+```
 
 ## Vegetation Summarize by Alliance
 
@@ -653,7 +867,7 @@ Generate vegetation summary output for all proposed alliances on a single sheet
 
 Generate vegetation summary for all site units by generated alliance colour-themed by generated association and subassociation for review.
 
-Each sheet has all site units for a proposed alliance on a single sheet grouped, labelled, and colour-themed by generated Association  to help review and editing of membership. This will be used to review the proposed alliances and make decisions about which site units should be merged into associations, which should be separated into new associations, and which should be left as singletons. The vegetation summary tables will also be used to identify potential diagnostic species for each alliance and to compare the vegetation composition of different alliances.
+Each sheet has all site units for a proposed alliance on a single sheet grouped, labelled, and colour-themed by generated Association to help review and editing of membership. This will be used to review the proposed alliances and make decisions about which site units should be merged into associations, which should be separated into new associations, and which should be left as singletons. The vegetation summary tables will also be used to identify potential diagnostic species for each alliance and to compare the vegetation composition of different alliances.
 
 ```{r summary table association within alliances}
 # compute anal.test
@@ -663,46 +877,59 @@ Each sheet has all site units for a proposed alliance on a single sheet grouped,
 # )
 # BEC.hier.temp <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") #%>% dplyr::select(-SiteUnit)
 # dbDisconnect(becdb)
-
-group.to.test = "generated_Alliance"
-BEC.hier.temp <- generated.hier |>
-  filter(!is.na(.data[[group.to.test]]))
-
-su.anal.new <- su.anal1 %>% dplyr::select(PlotNumber, SU_Label) %>% left_join(BEC.hier.temp, by = c("SU_Label" = "SU_Label")) %>% #rename(SiteUnit = SiteSeries) %>%
-  mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", ""),# ignore phases
-         SiteUnit = if_else(
-           str_detect(SiteUnit, "101"),
-           str_replace(SiteUnit, "\\.[123]$", ""), # remove zonal variations
-           SiteUnit
-         ))
+# 
+# group.to.test = "working_alliance"
+# BEC.hier.temp <- BEC.hier |>
+#   filter(!is.na(.data[[group.to.test]]))
+# 
+# su.anal.new <- su.anal %>% dplyr::select(PlotNumber, SU_Label) %>% left_join(BEC.hier.temp, by = c("SU_Label" = "SU_Label")) %>% #rename(SiteUnit = SiteSeries) %>%
+#   mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", ""),# ignore phases
+#          SiteUnit = if_else(
+#            str_detect(SiteUnit, "101"),
+#            str_replace(SiteUnit, "\\.[123]$", ""), # remove zonal variations
+#            SiteUnit
+#          ))
 
 source("../BEC_R_working/_functions/_create_veg_summary_workbook.R")
 
+# Site units arranged within generated alliances
 create_veg_summary_workbook(
-  su.anal = su.anal,
+  su.anal,
   veg.dat = veg.dat2,
-  taxon.lifeform = taxon.lifeform,  
-  generated.hier = BEC.hier.temp,
-  group.to.test = group.to.test,
-  anal.set = anal.set
+  taxon.lifeform = taxon.lifeform,
+  group_level = "SiteUnit",
+  within_level = "working_alliance",
+  classification = "working",
+  anal.set = "MH",
+  out.dir = "./review_materials"
 )
+
+# create_veg_summary_workbook(
+#   su.anal = su.anal,
+#   veg.dat = veg.dat2,
+#   taxon.lifeform = taxon.lifeform,  
+#   generated.hier = BEC.hier.temp,
+#   group.to.test = group.to.test,
+#   anal.set = anal.set
+# )
 
 ```
 
 ```{r compare alliances}
 reduced.exceptions <- c("SPHAGNUM","CLADONIA","CLADINA","RACOMITR","MNIUM")
 reduced.lifeforms  <- c(9, 10, 11)
-su.alliance <- su.anal %>% mutate(SiteUnit = working_Alliance) %>% select(PlotNumber, SiteUnit)
+su.alliance <- su.anal %>% mutate(SiteUnit = working_alliance) %>% select(PlotNumber, SiteUnit)
 
 #------------------------------------------------------------
 # 3. Run pairwise vegetation similarity analysis
 #------------------------------------------------------------
 pairwise.params <- list(
   su                = su.alliance,
+  su.field = "SiteUnit",
   minconstancy          = 0,
   noiseconstancy        = 10,
   minplots              = 1,
-  minor                 = 1,
+  minor                 = 5,
   use.ksi               = FALSE,
   ksi   = NULL,
   ksi.value             = 1.5,
@@ -802,132 +1029,47 @@ openxlsx::write.xlsx(
 ```
 
 ```{r summary report by alliances}
-author = "MH_Forest_Alliance"
-
-vegsum.wbk <- createWorkbook()
-  # Build vegetation summary for this group
-  vegSum_sub <- create_veg_sum_all(
-    vdat = veg.dat2,
-    siteUnits = su.alliance,
-    minconstancy = 50,
-    noiseconstancy = 25,
-    strata.by = "Lifeform"
-  )
-
-  # Format table
-  veg.sum.table_sub <- format_veg_table_nostrata(
-    vsum = vegSum_sub,
-    spp = taxon.lifeform
-  )
-sheet_name <- author
-  # Name the sheet
-# sheet_name <- paste0("Group_", g)
-
-# Trim to 25 chars, then add a 5‑char hash suffix
-# if (nchar(sheet_name) > 31) {
-#   suffix <- substr(digest::digest(sheet_name), 1, 5)
-#   sheet_name <- paste0(substr(sheet_name, 1, 25), "_", suffix)
-# }
-
-addWorksheet(vegsum.wbk, sheetName = sheet_name)
-
-
-  # Write data
-  writeData(vegsum.wbk, sheet = sheet_name, veg.sum.table_sub)
-#}
-
-saveWorkbook(
-  vegsum.wbk,
-  paste0("./vegsum.tables/", author, ".xlsx"),
-  overwrite = TRUE
-)
-
-```
-
-```{r build veg guide summary and export to excel, echo = FALSE, warning=FALSE, message=FALSE}
-# 
-# data.path = "D:/OneDrive - Government of BC/GitHub_data"
-# author <- "test.assoc1"
-# assoc.list <- bgcv13 %>% filter(!is.na(Association_Code)) %>% group_by(Association_Code) %>% mutate(n=n()) %>% filter(n>2) %>% distinct(Association_Code) %>% pull(Association_Code)
+# author = "MH_Forest_Alliance"
 # 
 # vegsum.wbk <- createWorkbook()
-# for(assoc.choose in assoc.list){
-# #assoc.choose = "assoc-13"
-# assoc <- bgcv13 %>% filter(Association_Code %in% assoc.choose) %>% dplyr::select(SS_Label, Association_Code) %>% mutate(SiteUnit = gsub(" ", "", SS_Label)) %>% mutate(SiteUnit = str_replace(SiteUnit, "/", "_"))
-# su.assoc <- left_join(assoc, su, by = "SiteUnit") %>%  mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct() 
-# veg.dat.assoc <- veg.dat2 %>% filter(PlotNumber %in% su.assoc$PlotNumber)
-# # vegsum.wbk <- createWorkbook()
-# # #bgc.choose = "CDFmmtab2"
-# # #for(bgc.choose in bgc.list){
-# vegSum <-
-#   create_veg_sum_all(vdat = veg.dat.assoc, siteUnits = su.assoc, strata.by = "Lifeform")
-# 
-# indic.order <- build_species_ordering_hier(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc, hier.level = "Association_Code")
-# veg.sum.table <- format_veg_table2(vsum = vegSum, spp=taxon.lifeform)
-# openxlsx::addWorksheet(vegsum.wbk, sheetName = assoc.choose)
-# openxlsx::writeData(vegsum.wbk, sheet = assoc.choose, veg.sum.table) 
-# }
-# 
-# saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_assoc_tables_", author, ".xlsx"), overwrite = TRUE)
-
-```
-
-In your Baselga implementation, overall similarity is captured by the Sørensen analogue:
-
-Ssor=2A2A+B+CS\_{sor}=\frac{2A}{2A+B+C}
-
-while the dissimilarity is partitioned into:
-
-βsor=βsim+βnes\beta*{sor}=\*\beta{sim}+\beta\_{nes}
-
-where:
-
-Turnover dissimilarity (βsim\beta*{sim}) = replacement of diagnostic potential between units. Nestedness dissimilarity (βnes\*\beta{nes}) = differences caused by one unit essentially being a subset of the other.
-
-The two fractions:
-
-1.  turnover_fraction = turnover_dissimilarity / sorensen_dissimilarity
-
-2.  nestedness_fraction = nestedness_dissimilarity / sorensen_dissimilarity
-
-Practical interpretation guide Pattern Ecological meaning
-
-- High similarity + high nestedness ratio One unit largely contains a subset of the other's diagnostic composition
-
-- High similarity + high turnover ratio Communities are almost identical but differ via species replacement
-
-- Low similarity + high nestedness ratio Strong subset relationship; one unit much poorer than the other
-
-- Low similarity + high turnover ratio Strong compositional replacement; distinct communities
-
-For BEC comparisons, I would interpret high nestedness fractions as indicating a diagnostic signal that is largely shared but differs in strength or completeness, whereas high turnover fractions indicate that different species are carrying the diagnostic signal in each unit.
-
-```{r}
-# baselga_pairs <- baselga_diagnostic(vegsum.pairs, join_back = TRUE) |> filter(BEC.sim.min >= 0.8)
-# # filter(BEC.sim.min <= 0.8 &  BEC.sim.min >= 0.6 & nestedness_fraction >=0.8)
-# 
-# ggplot(
-#   baselga_pairs,
-#   aes(
-#     sorensen_similarity,
-#     turnover_fraction
+#   # Build vegetation summary for this group
+#   vegSum_sub <- create_veg_sum_all(
+#     vdat = veg.dat2,
+#     siteUnits = su.alliance,
+#     minconstancy = 50,
+#     noiseconstancy = 25,
+#     strata.by = "Lifeform"
 #   )
-# ) +
-#   geom_point(alpha = 0.6) +
-#   theme_bw()
+# 
+#   # Format table
+#   veg.sum.table_sub <- format_veg_table_nostrata(
+#     vsum = vegSum_sub,
+#     spp = taxon.lifeform
+#   )
+# sheet_name <- author
+#   # Name the sheet
+# # sheet_name <- paste0("Group_", g)
+# 
+# # Trim to 25 chars, then add a 5‑char hash suffix
+# # if (nchar(sheet_name) > 31) {
+# #   suffix <- substr(digest::digest(sheet_name), 1, 5)
+# #   sheet_name <- paste0(substr(sheet_name, 1, 25), "_", suffix)
+# # }
+# 
+# addWorksheet(vegsum.wbk, sheetName = sheet_name)
+# 
+# 
+#   # Write data
+#   writeData(vegsum.wbk, sheet = sheet_name, veg.sum.table_sub)
+# #}
+# 
+# saveWorkbook(
+#   vegsum.wbk,
+#   paste0("./vegsum.tables/", author, ".xlsx"),
+#   overwrite = TRUE
+# )
 
 ```
-
-## Evaluate site series within each BGC
-
-1.  Identify site series that have fewer than 5 plots (difficult to quantitatively analyse)
-
-2.  Identify site series that have low diagnostic potential.
-
-3.  Compare site series to identify site series below the minimal threshold to separate.
-
-Some units with few plots or low diagnostics fall out as singles in the first pass cluster analysis. These are reviewed and merging rules applied before re-running the cluster analysis. List of site series with too few plots or low diagnostic potential for reliable analysis
-
 
 ## Review environmental space of site units within associations
 
@@ -1496,671 +1638,16 @@ This links community differences to environmental gradients. function to pull cl
 
 ```
 
-## Test whether alliances differ PERMANOVA
-
-A statistical test of compositional differences.
-
-adonis2( comm \~ alliance, data = meta, method = "bray", permutations = 999 )
-
-Outputs:
-
-R² = how much variation is explained by alliance P-value
-
-Given 3450 plots, you'll almost certainly get a significant result. Focus on effect size (R²), not just significance.
-
-Test dispersion first
-
-PERMANOVA is sensitive to unequal dispersion.
-
-disp \<- betadisper( vegdist(comm, method = "bray"), alliance )
-
-anova(disp)
-
-This tells you whether differences are due to centroids (real compositional shifts) or spread.
-
-3.  Quantify within-unit heterogeneity
-
-Some alliances are very tight, others broad.
-
-Beta diversity disp \<- betadisper( vegdist(comm, "bray"), alliance )
-
-boxplot(disp)
-
-Useful outputs:
-
-Mean distance to centroid Rank alliances from homogeneous to heterogeneous
-
-This is often ecologically informative.
-
-```{r}
-
-# pairwise_adonis_dist <- function(
-#     dist.mat,
-#     groups,
-#     permutations = 999,
-#     p.adjust.method = "BH"
-# ) {
-# 
-#   groups <- droplevels(as.factor(groups))
-# 
-#   combs <- combn(levels(groups), 2)
-# 
-#   results <- data.frame()
-# 
-#   for (i in seq_len(ncol(combs))) {
-# 
-#     grp <- combs[, i]
-# 
-#     keep <- groups %in% grp
-# 
-#     # subset distance matrix
-#     d.sub <- as.dist(
-#       as.matrix(dist.mat)[keep, keep]
-#     )
-# 
-#     meta.sub <- data.frame(
-#       group = droplevels(groups[keep])
-#     )
-# 
-#     mod <- adonis2(
-#       d.sub ~ group,
-#       data = meta.sub,
-#       permutations = permutations
-#     )
-# 
-#     results <- rbind(
-#       results,
-#       data.frame(
-#         group1 = grp[1],
-#         group2 = grp[2],
-#         F = mod$F[1],
-#         R2 = mod$R2[1],
-#         p = mod$`Pr(>F)`[1]
-#       )
-#     )
-#   }
-# 
-#   results$p.adj <- p.adjust(
-#     results$p,
-#     method = p.adjust.method
-#   )
-# 
-#   results[order(results$R2, decreasing = TRUE), ]
-# }
-# 
-# library(vegan)
-# 
-# pairwise_dispersion_dist <- function(
-#     dist.mat,
-#     groups,
-#     p.adjust.method = "BH"
-# ) {
-# 
-#   groups <- as.factor(groups)
-# 
-#   # Remove NAs
-#   keep <- !is.na(groups)
-# 
-#   groups <- droplevels(groups[keep])
-# 
-#   dmat <- as.matrix(dist.mat)
-#   dmat <- dmat[keep, keep]
-# 
-#   combs <- combn(levels(groups), 2)
-# 
-#   results <- data.frame()
-# 
-#   for (i in seq_len(ncol(combs))) {
-# 
-#     grp <- combs[, i]
-# 
-#     keep_pair <- groups %in% grp
-# 
-#     d.sub <- as.dist(
-#       dmat[keep_pair, keep_pair]
-#     )
-# 
-#     groups_sub <- droplevels(groups[keep_pair])
-# 
-#     bd <- betadisper(d.sub, groups_sub)
-# 
-#     aov_res <- anova(bd)
-# 
-#     results <- rbind(
-#       results,
-#       data.frame(
-#         group1 = grp[1],
-#         group2 = grp[2],
-#         n1 = sum(groups_sub == grp[1]),
-#         n2 = sum(groups_sub == grp[2]),
-#         mean.dist1 = mean(
-#           bd$distances[groups_sub == grp[1]]
-#         ),
-#         mean.dist2 = mean(
-#           bd$distances[groups_sub == grp[2]]
-#         ),
-#         diff = abs(
-#           mean(bd$distances[groups_sub == grp[1]]) -
-#           mean(bd$distances[groups_sub == grp[2]])
-#         ),
-#         F = aov_res[1, "F value"],
-#         p = aov_res[1, "Pr(>F)"]
-#       )
-#     )
-#   }
-# 
-#   results$p.adj <- p.adjust(
-#     results$p,
-#     method = p.adjust.method
-#   )
-# 
-#   results |>
-#     arrange(p.adj)
-# }
-```
-
-### This seems to produce some wonking results with units not separating that seem quite different.
-
-```{r pairwise permanova}
-
-# assess_group_support <- function(
-#     veg.dat,
-#     su.anal,
-#     group.field = "generated_Alliance",
-#     permutations = 999
-# ) {
-#     veg.matrix.mva <- veg.dat |>
-#       filter(PlotNumber %in% su.anal2$PlotNumber) |>
-#       dplyr::select(PlotNumber, Species, Cover) |>
-#       arrange(PlotNumber) |>
-#       matrify()
-# 
-#     ################################################
-#     # Transform cover
-#     ################################################
-# 
-#     veg.matrix.mva <- veg.matrix.mva^(1/3)
-# 
-#     ################################################
-#     # Remove rare species
-#     ################################################
-# 
-#     freq <- colSums(veg.matrix.mva > 0)
-# 
-#     veg.matrix.mva <- veg.matrix.mva[
-#     ,
-#     freq >= 0.10 * nrow(veg.matrix.mva),
-#     drop = FALSE
-#     ]
-# 
-# 
-# plot.dist <- veg.matrix.mva |> vegdist(method = "bray")
-#   groups <- su.anal2[[group.field]]
-# 
-#   adonis.res <- pairwise_adonis_dist(
-#     dist.mat = plot.dist,
-#     groups = groups,
-#     permutations = permutations
-#   )
-# 
-#   disp.res <- pairwise_dispersion_dist(
-#     dist.mat = plot.dist,
-#     groups = groups
-#   )
-# 
-#   support.tbl <- adonis.res %>%
-#     rename(
-#       F.adonis = F,
-#       p.adonis = p,
-#       p.adj.adonis = p.adj
-#     ) %>%
-#     left_join(
-#       disp.res %>%
-#         rename(
-#           F.disp = F,
-#           p.disp = p,
-#           p.adj.disp = p.adj
-#         ),
-#       by = c("group1", "group2")
-#     ) %>%
-#     mutate(
-# 
-#       score_R2 = case_when(
-#         R2 >= 0.20 ~ 70,
-#         R2 >= 0.15 ~ 60,
-#         R2 >= 0.10 ~ 50,
-#         R2 >= 0.05 ~ 25,
-#         TRUE ~ 0
-#       ),
-# 
-#       score_disp = case_when(
-#         p.adj.disp > 0.10 ~ 20,
-#         p.adj.disp > 0.05 ~ 10,
-#         TRUE ~ 0
-#       ),
-# 
-#       score_perm = if_else(
-#         p.adj.adonis < 0.05,
-#         10,
-#         0
-#       ),
-# 
-#       support_score =
-#         score_R2 +
-#         score_disp +
-#         score_perm,
-# 
-#       support_class = case_when(
-#         support_score >= 80 ~ "Strong",
-#         support_score >= 60 ~ "Moderate",
-#         support_score >= 40 ~ "Weak",
-#         TRUE ~ "Review"
-#       ),
-# 
-#       recommendation = case_when(
-#         R2 < 0.05 ~ "Consider merge",
-#         p.adj.disp < 0.05 ~ "Check heterogeneity",
-#         R2 < 0.10 ~ "Review",
-#         TRUE ~ "Supported"
-#       ),
-# 
-#       taxonomic_level = group.field
-#     ) %>%
-#     arrange(support_score)
-# 
-#   summary.tbl <- support.tbl %>%
-#     select(
-#       group1,
-#       group2,
-#       R2,
-#       p.adj.adonis,
-#       p.adj.disp,
-#       support_score,
-#       support_class,
-#       recommendation
-#     ) %>%
-#     arrange(support_score)
-# 
-#   list(
-#     adonis = adonis.res,
-#     dispersion = disp.res,
-#     support = support.tbl,
-#     summary = summary.tbl,
-#     low_separation = support.tbl %>%
-#       filter(R2 < 0.05)
-#   )
-# }
-# 
-# alliance.support <- assess_group_support(
-#   veg.dat = veg.dat2,
-#   su.anal = su.anal2,
-#   group.field = "generated_Alliance",
-#     permutations = 999
-# )
-# 
-# 
-# assoc.support <- assess_group_support(
-#     veg.dat = veg.dat2,
-#   su.anal = su.anal2,
-#   group.field = "generated_Assoc",
-#     permutations = 999
-# )
-# 
-# 
-# # ------------------------------------------------------------
-#   # Export workbook
-#   # ------------------------------------------------------------
-#   out.dir = "./review_materials"
-#   outfile <- file.path(
-#     out.dir,
-#     paste0(anal.set, "_other_similar_units.xlsx")
-#   )
-#   
-#   replace_sheet <- function(wb, sheet) {
-#   if (sheet %in% names(wb)) {
-#     removeWorksheet(wb, sheet)
-#   }
-#   addWorksheet(wb, sheet)
-# }
-# 
-#     
-# wb <- if (file.exists(outfile)) {
-#   loadWorkbook(outfile)
-# } else {
-#   createWorkbook()
-# }
-# 
-# replace_sheet(wb, "alliance_test")
-# 
-#   setColWidths(
-#     wb,
-#     sheet = "alliance_test",
-#     cols = 1:ncol(alliance.support$support),
-#     widths = "auto"
-#   )
-#   
-# writeData(wb, "alliance_test", alliance.support$support)
-# 
-# replace_sheet(wb, "assoc_test")
-#   
-#   setColWidths(
-#     wb,
-#     sheet = "assoc_test",
-#     cols = 1:ncol(assoc.support$support),
-#     widths = "auto"
-#   )
-#   writeData(wb, "assoc_test", assoc.support$support)
-# 
-#   saveWorkbook(
-#     wb,
-#     outfile,
-#     overwrite = TRUE
-#   )
-#   
-#   # invisible(
-#   #   list(
-#   #     summary = unit1_multiple_unit2,
-#   #     review_table = units_multiple_assocs,
-#   #     file = outfile
-#   #   )
-#   # )
-
-```
-
-## 4. mvabund analysis (composition and abundance differences) rather than Indicator species analysis (constancy only)
-
-uses the package mvabund
-
-For each significant species ask:
-
-Is the p-value significant? Is frequency in the focal alliance high? Is frequency in other alliances low? Is mean cover meaningfully higher? Is the species present in enough plots (\>3 to 5)? Does the pattern make ecological sense?
-
-Species meeting all six criteria are typically your best alliance indicators.
-
-For vegetation classification, I'd place more weight on Frequency + Mean Cover + Consistency across pairwise comparisons than on the p-value alone. A species can be highly significant statistically but still be a poor diagnostic species if it is rare or occurs in only a few plots.
-
-Prep data for pairwise statistical tests
-
-```{r pairwise indicator species}
-
-# Keep only SiteUnits with an alliance assignment
-# alliance.good <- su.anal2 |> filter(!is.na(generated_Alliance)) |> rename(alliance = generated_Alliance)
-# veg.matrix <- veg.dat2 |> filter(PlotNumber %in% alliance.good$PlotNumber) |> dplyr::select(PlotNumber, Species, Cover) |>
-#   arrange(PlotNumber) |> matrify()
-# 
-# ##remove rare species
-# freq <- colSums(veg.matrix > 0)
-# veg.matrix2 <- veg.matrix[, freq >= 10]
-# alliance2 <- droplevels(as.factor(alliance.good$alliance))
-# 
-# 
-# table(alliance2)
-# ## remove alliances with few members
-# keep.grp <- alliance2 %in%
-#   names(which(table(alliance2) >= 5))
-# 
-# veg.matrix2 <- veg.matrix2[keep.grp, ]
-# 
-# alliance2 <- droplevels(alliance2[keep.grp])
-# table(alliance2)
-```
-
-```{r}
-library(dplyr)
-library(purrr)
-library(tibble)
-library(mvabund)
-
-# ################################################
-# # All pairwise combinations
-# ################################################
-# su.class <- su.anal2 |> rename(alliance = generated_Alliance) |> filter(alliance %in% alliance2)
-# pairs <- combn(
-#   sort(unique(su.class$alliance)),
-#   2,
-#   simplify = FALSE
-# )
-# 
-# ################################################
-# # Run pairwise comparisons
-# ################################################
-# #pair <- pairs[[1]]
-# pairwise.results <- map_dfr(
-#   pairs,
-#   function(pair){
-# 
-#     alliance.choose <- su.class |>
-#       filter(alliance %in% pair) |>
-#       arrange(PlotNumber)
-# 
-# 
-#     ################################################
-#     # Model
-#     ################################################
-# 
-#     alliance2 <- droplevels(
-#       factor(alliance.choose$alliance)
-#     )
-# veg.sub <- veg.matrix2[
-#     match(alliance.choose$PlotNumber,
-#     rownames(veg.matrix2)),
-# ,
-# drop = FALSE
-# ]
-# 
-#     mod.ab <- manylm(
-#       mvabund(veg.sub) ~ alliance2
-#     )
-# 
-#     ################################################
-#     # Test
-#     ################################################
-# 
-#     res <- anova(
-#       mod.ab,
-#       p.uni = "adjusted"
-#     )
-# 
-# #################################################
-# #     # Significant species
-# #################################################
-# # 
-#     sig.species <- tibble(
-#       Species = colnames(res$uni.test),
-#       P_value = res$uni.p[2, ]
-#     ) |>
-#       filter(P_value <= 0.05)
-# ################################################
-# # Diagnostic statistics by alliance
-# ################################################
-# 
-# diag.stats <- alliance.choose |>
-#   select(PlotNumber, alliance) |>
-#   crossing(
-#     Species = sig.species$Species
-#   ) |>
-#   left_join(
-#     veg.dat2 |>
-#       select(PlotNumber, Species, Cover),
-#     by = c("PlotNumber", "Species")
-#   ) |>
-#   mutate(
-#     Cover = replace_na(Cover, 0)
-#   ) |>
-#   group_by(Species, alliance) |>
-#   summarise(
-#     N_Plots = n(),
-#     N_Present = sum(Cover > 0),
-#     Frequency = N_Present / N_Plots,
-#     MeanCover_AllPlots = mean(Cover),
-#     MeanCover_PresentOnly = ifelse(
-#       N_Present > 0,
-#       mean(Cover[Cover > 0]),
-#       0
-#     ),
-#     SD_Cover = sd(Cover),
-#     .groups = "drop"
-#   )
-# 
-# 
-#     if(nrow(sig.species) == 0)
-#       return(NULL)
-# 
-# 
-# ################################################
-# # Put alliance diagnostics into columns
-# ################################################
-# 
-# diag_A1 <- diag.stats %>%
-#   filter(alliance == pair[1]) %>%
-#   rename_with(~paste0(.x, "_A1"),
-#               c(N_Plots, N_Present, Frequency,
-#                 MeanCover_AllPlots,
-#                 MeanCover_PresentOnly,
-#                 SD_Cover))
-# 
-# diag_A2 <- diag.stats %>%
-#   filter(alliance == pair[2]) %>%
-#   rename_with(~paste0(.x, "_A2"),
-#               c(N_Plots, N_Present, Frequency,
-#                 MeanCover_AllPlots,
-#                 MeanCover_PresentOnly,
-#                 SD_Cover))
-# 
-# diag_pair <- diag_A1 %>%
-#   select(-alliance) %>%
-#   full_join(
-#     diag_A2 %>% select(-alliance),
-#     by = "Species"
-#   )
-# ################################################
-# # Return results
-# ################################################
-# 
-# sig.species |>
-#   left_join(diag_pair, by = "Species") |>
-#   mutate(
-# 
-#     Higher_Alliance = case_when(
-#       MeanCover_AllPlots_A1 > MeanCover_AllPlots_A2 ~ pair[1],
-#       MeanCover_AllPlots_A2 > MeanCover_AllPlots_A1 ~ pair[2],
-#       TRUE ~ "Tie"
-#     ),
-# 
-#     Indicator_Alliance = case_when(
-#       Frequency_A1 > Frequency_A2 ~ pair[1],
-#       Frequency_A2 > Frequency_A1 ~ pair[2],
-#       MeanCover_AllPlots_A1 > MeanCover_AllPlots_A2 ~ pair[1],
-#       MeanCover_AllPlots_A2 > MeanCover_AllPlots_A1 ~ pair[2],
-#       TRUE ~ "Tie"
-#     ),
-# 
-#     Comparison = paste0(pair[1], "_vs_", pair[2])
-# 
-#   ) |>
-# 
-#   select(
-#     Species,
-#     P_value,
-#     Comparison,
-#     Higher_Alliance,
-#     Indicator_Alliance,
-#     Frequency_A1,
-#     Frequency_A2,
-#     MeanCover_AllPlots_A1,
-#     MeanCover_AllPlots_A2,
-#     N_Present_A1,
-#     N_Present_A2
-#   )
-# 
-#   }
-# )
-# 
-# ################################################
-# # Results
-# ################################################
-# 
-# pairwise.results
-# 
-# 
-# write.csv(
-#   pairwise.results,
-#   paste0("./review_materials/", anal.set, "Pairwise_Differential_Abundance.csv"),
-#   row.names = FALSE
-# )
-
-
-```
-
-```{r}
-# library(forcats)
-# env.alliance <- plot.env2 |>
-#   left_join(
-#     su.class, 
-#     by = "PlotNumber"
-#   ) |>
-#   filter(!is.na(alliance))
-# env.long <- env.alliance |>
-#   select(alliance, aSMR, SNR.clean) |>
-#   pivot_longer(
-#     cols = c(aSMR, SNR.clean),
-#     names_to = "variable",
-#     values_to = "value",
-#     values_drop_na = TRUE
-#   )
-# 
-# ggplot(
-#   env.long |>
-#     group_by(variable) |>
-#     mutate(alliance = fct_reorder(alliance, value, median, na.rm = TRUE)),
-#   aes(x = alliance, y = value)
-# ) +
-#   geom_boxplot(outlier.shape = NA) +
-#   geom_jitter(width = 0.2, alpha = 0.6) +
-#   facet_wrap(~variable, scales = "free_y") +
-#   theme_bw() +
-#   theme(
-#     axis.text.x = element_text(angle = 45, hjust = 1)
-#   )
-#   
-```
-
 ## Additional possible work
 
-5.  Classification accuracy
+### Random Forests
 
 If alliances are real compositional groups, you should be able to predict them.
 
 Random Forest rf \<- randomForest( x = comm, y = alliance )
 
-Investigate:
+Can hierarchical unit be predicted for new plots or hierarchical units?
 
-Overall accuracy Confusion matrix Important species
+### Klinka's Indicator plant analysis
 
-Questions:
-
-Which alliances are consistently confused? Which alliances are highly distinct?
-
-7.  Functional composition
-
-Since you already have lifeforms available, compare:
-
-Tree cover Shrub cover Herb cover Moss cover Lichen cover
-
-Calculate for each plot:
-
-community_summary \<- veg.dat %\>% group_by(PlotID, Lifeform) %\>% summarise(total_cover = sum(Cover))
-
-Then compare among alliances.
-
-This often reveals clearer patterns than species-level analyses.
-
-9.  Differential abundance
-
-Rather than just indicators, identify species significantly more abundant in particular alliances.
-
-Possible methods:
-
-ALDEx2 DESeq2 (presence/abundance transformed) mvabund
-
-Though indicator species analysis is often sufficient for vegetation studies.
+rich-poor, dry-moist, climatic groups (see Klinka 1989)
