@@ -9,7 +9,7 @@ format:
     toc-title: Contents
     section-numbering: 1.1.1
     columns: 1
-output-file: "CWH-Fd_HierarchyReport.pdf"
+output-file: "CWH_Generated_Hierarchy.pdf"
 editor: source
 execute:
   echo: false
@@ -255,16 +255,16 @@ dbDisconnect(becdb)
   #filter(Analysis_Group %in% "Forest-Coast_MH")
 
 # Keep only site units present in hierarchy table
-su3 <- su2 %>%
+su2 <- su2 %>%
   filter(SU_Label %in% BEC.hier$SU_Label)
-su.anal <- su3 %>%
+su.class <- su2 %>%
   left_join(BEC.hier, by = c("SiteUnit" = "SiteUnit", "SU_Label" = "SU_Label"))
 
 #------------------------------------------------------------
 # 7. Identify SiteUnits missing from hierarchy
 #------------------------------------------------------------
 
-missing_in_hierarchy <- su3 %>%
+missing_in_hierarchy <- su.class  %>%
   distinct(SiteUnit) %>%
   anti_join(BEC.hier %>% distinct(SiteUnit), by = "SiteUnit") %>%
   mutate(flag = "in_su2_not_hierarchy")
@@ -287,9 +287,10 @@ This code links Site Units to their BEC hierarchy classifications and determines
 #------------------------------------------------------------
 
 hierarchy <- c(
-  "Class", "Order", "Suborder", "Alliance", "Suballiance",
-  "Association","Working_Assoc",  "Subassociation", "generated_SubAss", "generated_Assoc", "generated_Alliance", "temp_Assoc_Code",
-  "tempSubass_Code", "SiteUnit"
+  "Class", "Order", "Suborder", "Alliance", "Suballiance","Association", "Subassociation", 
+  "generated_subass", "generated_association", "generated_alliance", 
+  "working_subass", "working_association", "working_alliance", 
+  "SiteUnit"
 )
 
 group.to.test <- "Association"## uses data for this field to initially group siteunits where applicablle
@@ -306,7 +307,7 @@ group.to.test <- "Association"## uses data for this field to initially group sit
 # 3. Join hierarchy onto su2 and reduce to anal.set
 #------------------------------------------------------------
 #anal.set = c("MH", "Bl", "CwHw", "Fd", "CWH-Fd", "CWH")  ## use this to find possible extra Order similar members
-su.anal1 <- su.anal %>%
+su.anal <- su.class %>%
   #left_join(BEC.hier, by = c("SiteSeries" = "SU_Label")) %>%
   filter(Analysis_Group %in% anal.set) #%>%   filter(Order %in% Order.set)
   
@@ -324,7 +325,7 @@ first_non_na <- function(df, cols) {
 }
 
 # compute anal.test
-su.anal1 <- su.anal1 %>%
+su.anal <- su.anal %>%
   mutate(
     anal.test = ifelse(
       !is.na(Analysis_Group),
@@ -337,17 +338,17 @@ su.anal1 <- su.anal1 %>%
 # 5. Compute SiteUnit.hier based on group.to.test
 #------------------------------------------------------------
 
-su.anal2 <- su.anal1 %>%
-  mutate(
-    SiteUnit.hier = coalesce(.data[[group.to.test]], SiteUnit)
-  ) %>%
-  dplyr::select(
-    PlotNumber, SiteUnit, SU_Label, generated_Alliance, generated_Assoc, generated_SubAss,
-    !!sym(group.to.test), anal.test, SiteUnit.hier
-  ) %>%
-  group_by(SiteUnit.hier) %>%# 6. remove any hierarchy units with fewer than 6 plots
-  filter(n() >= 1 | !is.na(!!sym(group.to.test))) %>%
-  ungroup()
+# su.anal1 <- su.anal %>%
+#   mutate(
+#     SiteUnit.hier = coalesce(.data[[group.to.test]], SiteUnit)
+#   ) %>%
+#   dplyr::select(
+#     PlotNumber, SiteUnit, SU_Label, generated_alliance, generated_association, generated_subass,
+#     !!sym(group.to.test), anal.test, SiteUnit.hier
+#   ) %>%
+#   group_by(SiteUnit.hier) %>%# 6. remove any hierarchy units with fewer than 6 plots
+#   filter(n() >= 1 | !is.na(!!sym(group.to.test))) %>%
+#   ungroup()
 
 ```
 
@@ -396,17 +397,18 @@ reduced.lifeforms  <- c(9, 10, 11)
 # 2. Prepare SiteUnit table for analysis
 #------------------------------------------------------------
 # SiteUnit.hier is replacing site unit with a previously determined Association group
-su_working <- su.anal2 #%>%   rename(SiteUnit.base = SiteUnit, SiteUnit = SiteUnit.hier)
+su_working <- su.anal#%>%   rename(SiteUnit.base = SiteUnit, SiteUnit = SiteUnit.hier)
 
 #------------------------------------------------------------
 # 3. Run pairwise vegetation similarity analysis
 #------------------------------------------------------------
 pairwise.params <- list(
   su                = su_working,
-  minconstancy          = 60,
+  su.field = "SiteUnit",
+  minconstancy          = 50,
   noiseconstancy        = 10,
   minplots              = 1,
-  minor                 = 1,
+  minor                 = 5,
   use.ksi               = FALSE,
   ksi   = key.site.indicators,
   ksi.value             = 1.5, ## change this to apply to creation of diagnostic potential as a factor ^1/2 by default
@@ -414,7 +416,9 @@ pairwise.params <- list(
   reduced.lifeforms     = reduced.lifeforms,
   reduction             = 0.1, ## keep this as a reduction of actual final diagnostic points
   reduced.exceptions    = reduced.exceptions,
-  add_vegsum_table      = NULL
+  add_vegsum_table      = NULL,
+  mindiff = .2, 
+  mindd = 0.35
 )
 
 vegsum.pairs <- do.call(
@@ -452,12 +456,10 @@ param.table %>%
     table.border.bottom.width = px(1)
   )
 
-
-
 #------------------------------------------------------------
 # 4. Extract comparison table
 #------------------------------------------------------------
-fwrite(vegsum.pairs, "./outputs/vegsum_pairs.csv")
+#fwrite(vegsum.pairs, "./outputs/vegsum_pairs.csv")
 
 ### return unit species information
 vegsum.pairs.spp <- vegsum.pairs |> dplyr::select(Unit1, Unit2, Species, ScientificName, MeanCov.unit1, Constancy.unit1, MeanCov.unit2, Constancy.unit2, diff.pts.unit1, diff.pts.unit2)
@@ -492,7 +494,7 @@ source("../BEC_R_working/_functions/_build_bec_distance_matrix.R")
 
 result <- build_bec_distance_matrix(
   vegsum_pairs = vegsum.pairs,
-  su_anal = su.anal2,
+  su_anal = su.anal,
   preclass_field = "Association",
   use_preclass = FALSE
 )
@@ -525,7 +527,7 @@ In the dendrograms, the red line represents the minimum threshold for separating
 #| fig-width: 8
 #| fig-height: 12
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
-dendro_hc <- create_dendro_all(unit.compare2, threshold.low = .45)
+dendro_hc <- create_dendro_all(unit.compare2, threshold.low = .8)
 ```
 
 ### Draw cluster diagram subsets from tree split at set dissimilarity level
@@ -534,7 +536,7 @@ dissimilarity of 17-20% is an approximate threshold for association differentiat
 
 ```{r split first cluster}
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
-singles <- draw_dendro_split(unit.compare.tbl = unit.compare2, cut.level=.5, show.singles = TRUE)
+singles <- draw_dendro_split(unit.compare.tbl = unit.compare2, cut.level=.4, show.singles = TRUE)
 ```
 ```{r, echo=FALSE}
 #| label: tab-too-few-plots
@@ -544,7 +546,7 @@ singles <- draw_dendro_split(unit.compare.tbl = unit.compare2, cut.level=.5, sho
 #| tab-align: "left"
 
 # Identify Site Units with fewer than 8 plots
-ss_too.few <- unit.compare %>%
+ss_too.few <- unit.compare.temp %>%
   dplyr::select(Unit1, nplots.unit1) %>%
   filter(nplots.unit1 < 6 & nplots.unit1>0) %>%
   distinct() %>%
@@ -574,7 +576,7 @@ gt::gt(ss_too.few) %>%
 #| warning: false
 #| tbl-align: "left"
 
-ss_low.diag <- unit.compare %>%
+ss_low.diag <- unit.compare.temp %>%
   dplyr::select(Unit1, unit.diag.sum.unit1)  %>% 
   filter(unit.diag.sum.unit1 < 24 & unit.diag.sum.unit1 >0) %>% 
   rename("Diagnostic Potential" = unit.diag.sum.unit1, "SiteUnit" = Unit1) %>%
@@ -614,39 +616,39 @@ dendro_hc <- create_dendro_all(unit.compare2, output = FALSE)
 clusters <- cutree(dendro_hc, h = 0.10)
 cluster_subass<- data.table(
   SiteUnit = names(clusters),
-  generated_SubAss= paste0(anal.set, "_generated_Subass_", clusters)
+  generated_SubAss= paste0(anal.set, "_generated_subass_", clusters)
 )
 clusters <- cutree(dendro_hc, h = 0.20)
 cluster_assoc <- data.table(
   SiteUnit = names(clusters),
-  generated_Assoc = paste0(anal.set,"_generated_Assoc_", clusters)
+  generated_Assoc = paste0(anal.set,"_generated_association_", clusters)
 )
   clusters <- cutree(dendro_hc, h = 0.30)
 cluster_suball <- data.table(
   SiteUnit = names(clusters),
-  generated_SubAll = paste0(anal.set,"_generated_Suball_", clusters)
+  generated_SubAll = paste0(anal.set,"_generated_suball_", clusters)
 )
 clusters <- cutree(dendro_hc, h = 0.40)
 cluster_alli <- data.table(
   SiteUnit = names(clusters),
-  generated_Alliance = paste0(anal.set,"_generated_Alli_", clusters)
+  generated_Alliance = paste0(anal.set,"_generated_alliance_", clusters)
 )
 
 clusters <- cutree(dendro_hc, h = 0.60)
 cluster_subord <- data.table(
   SiteUnit = names(clusters),
-  generated_SubOrd= paste0(anal.set,"_generated_SubOrd_", clusters)
+  generated_SubOrd= paste0(anal.set,"_generated_subord_", clusters)
 )
 clusters <- cutree(dendro_hc, h = 0.80)
 cluster_ord <- data.table(
   SiteUnit = names(clusters),
-  generated_Order= paste0(anal.set,"_generated_Order_", clusters)
+  generated_Order= paste0(anal.set,"_generated_order_", clusters)
 )
-clusters <- cutree(dendro_hc, h = 0.99)
-cluster_class <- data.table(
-  SiteUnit = names(clusters),
-  generated_Class= paste0(anal.set,"_generated_Class_", clusters)
-)
+# clusters <- cutree(dendro_hc, h = 0.99)
+# cluster_class <- data.table(
+#   SiteUnit = names(clusters),
+#   generated_Class= paste0(anal.set,"_generated_Class_", clusters)
+# )
 
 # Combine
 cluster_table <- Reduce(
@@ -657,15 +659,18 @@ cluster_assoc,
 cluster_suball,
 cluster_alli,
 cluster_subord,
-cluster_ord,
-cluster_class)
+cluster_ord)#,
+#cluster_class)
 )
 
-cluster_table
+#cluster_table
 ## merge back to retrieve SiteUnit for all and the coalesce.
-orig.SU <- su.anal1 %>% dplyr::select(SU_Label, SiteUnit, working_Alliance, working_association, working_subass) %>% distinct
+orig.SU <- su.anal %>% dplyr::select(SU_Label, SiteUnit, working_alliance, working_association, working_subass) %>% distinct
 generated.hier <- cluster_table %>%
-  left_join(orig.SU, by = c("SiteUnit" = "SiteUnit")) |> group_by(working_association) |> add_count(working_association) |> select(n, everything())
+  left_join(orig.SU, by = c("SiteUnit" = "SiteUnit")) |> group_by(working_association) |> add_count(working_association) |> ungroup() |>
+  left_join(n_plots) |>  select(n_plots, assoc_n_siteunit= n, everything())
+
+
 fwrite(generated.hier, paste0("./hierarchy/", anal.set, "_generated_hierclasses.csv"))
 
 
@@ -698,7 +703,8 @@ similar_units <- export_similar_units(
   unit.compare = unit.compare2,
   generated.hier = generated.hier,
   anal.set = anal.set,
-  same.threshold = 0.7
+  same.threshold = 0.6,
+  out.dir = "./review_materials"
 )
 #check that equal number of pair comparisons
 #similar_counts <- similar_units %>%
@@ -715,7 +721,7 @@ See excel vegsummary table for each Focal unit compared to all similar units for
 source("../BEC_R_working/_functions/_create_focalunit_summary_workbook.R")
 
 create_focalunit_summary_workbook(
-  su.anal = su.anal1,
+  su.anal = su.anal,
   similar.units = similar_units,
   veg.dat = veg.dat2,
   taxon.lifeform = taxon.lifeform,
@@ -741,28 +747,31 @@ Each sheet has all site units for a proposed alliance on a single sheet grouped,
 # BEC.hier.temp <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") #%>% dplyr::select(-SiteUnit)
 # dbDisconnect(becdb)
 
- group.to.test = "generated_Alliance"
-BEC.hier.temp <- generated.hier |>
-  filter(!is.na(.data[[group.to.test]]))
-
-su.anal.new <- su.anal1 %>% dplyr::select(PlotNumber, SU_Label) %>% left_join(BEC.hier.temp, by = c("SU_Label" = "SU_Label")) %>% #rename(SiteUnit = SiteSeries) %>%
-  mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", ""),# ignore phases
-         SiteUnit = if_else(
-           str_detect(SiteUnit, "101"),
-           str_replace(SiteUnit, "\\.[123]$", ""), # remove zonal variations
-           SiteUnit
-         ))
+#  group.to.test = "generated_Alliance"
+# BEC.hier.temp <- generated.hier |>
+#   filter(!is.na(.data[[group.to.test]]))
+# 
+# su.anal.new <- su.anal1 %>% dplyr::select(PlotNumber, SU_Label) %>% left_join(BEC.hier.temp, by = c("SU_Label" = "SU_Label")) %>% #rename(SiteUnit = SiteSeries) %>%
+#   mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", ""),# ignore phases
+#          SiteUnit = if_else(
+#            str_detect(SiteUnit, "101"),
+#            str_replace(SiteUnit, "\\.[123]$", ""), # remove zonal variations
+#            SiteUnit
+#          ))
 
 source("../BEC_R_working/_functions/_create_veg_summary_workbook.R")
 
 create_veg_summary_workbook(
-  su.anal = su.anal.new,
+  su.anal,
   veg.dat = veg.dat2,
-  taxon.lifeform = taxon.lifeform,  
-  generated.hier = BEC.hier.temp,
-  group.to.test = group.to.test,
-  anal.set = anal.set
+  taxon.lifeform = taxon.lifeform,
+  group_level = "SiteUnit",
+  within_level = "generated_alliance",
+  classification = "generated",
+  anal.set = anal.set,
+  out.dir = "./review_materials"
 )
+
 
 ```
 
@@ -772,40 +781,40 @@ create_veg_summary_workbook(
 Edits to membership can be made to the working units in the spreadsheet for incorporation in the assessment scripts.
 
 ```{r}
-orig.SU <- su.anal1 %>% dplyr::select(SU_Label, SiteUnit, working_Alliance, working_association, working_subass) %>% distinct
-generated.hier <- cluster_table %>%
-  left_join(orig.SU, by = c("SiteUnit" = "SiteUnit")) |> group_by(working_association) |> add_count(working_association) |> select(n_su_in_assoc = n, everything())
-
-# Keep SiteUnit plus columns that are not already in generated.hier
-cols.keep <- c("SiteUnit", setdiff(names(BEC.hier), names(generated.hier)))
-BEC.hier.join <- BEC.hier %>% select(all_of(cols.keep))
-BEC.hier.new <- left_join(
-  generated.hier,
-  BEC.hier.join,
-  by = "SiteUnit"
-)%>% select(all_of(names(BEC.hier)))
-
-openxlsx::write.xlsx(
-  x = BEC.hier.new,
-  file = paste0("./review_materials/", anal.set, "_BECdb_table_for_edit.xlsx"),
-  rowNames = FALSE )
-
-
-
-## write into BECdb a working file to update the tempAssoc field
-becdb <- dbConnect(
-  odbc::odbc(),
-  .connection_string =
-    "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
-     DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;"
-)
-dbWriteTable(
-  becdb,
-  paste0(anal.set,"_generated_hier"),
-  BEC.hier.new, append=FALSE,
-  overwrite = TRUE,
-  batch_rows = 1
-)
-dbDisconnect(becdb)
+# orig.SU <- su.anal1 %>% dplyr::select(SU_Label, SiteUnit, working_alliance, working_association, working_subass) %>% distinct
+# generated.hier <- cluster_table %>%
+#   left_join(orig.SU, by = c("SiteUnit" = "SiteUnit")) |> group_by(working_association) |> add_count(working_association) |> select(n_su_in_assoc = n, everything())
+# 
+# # Keep SiteUnit plus columns that are not already in generated.hier
+# cols.keep <- c("SiteUnit", setdiff(names(BEC.hier), names(generated.hier)))
+# BEC.hier.join <- BEC.hier %>% select(all_of(cols.keep))
+# BEC.hier.new <- left_join(
+#   generated.hier,
+#   BEC.hier.join,
+#   by = "SiteUnit"
+# )%>% select(all_of(names(BEC.hier)))
+# 
+# openxlsx::write.xlsx(
+#   x = BEC.hier.new,
+#   file = paste0("./review_materials/", anal.set, "_BECdb_table_for_edit.xlsx"),
+#   rowNames = FALSE )
+# 
+# 
+# 
+# ## write into BECdb a working file to update the tempAssoc field
+# becdb <- dbConnect(
+#   odbc::odbc(),
+#   .connection_string =
+#     "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
+#      DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;"
+# )
+# dbWriteTable(
+#   becdb,
+#   paste0(anal.set,"_generated_hier"),
+#   BEC.hier.new, append=FALSE,
+#   overwrite = TRUE,
+#   batch_rows = 1
+# )
+# dbDisconnect(becdb)
 ```
 
