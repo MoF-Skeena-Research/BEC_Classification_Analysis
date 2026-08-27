@@ -80,10 +80,10 @@ plots_per_SU <- bind_rows(plots_per_SS, plots_per_SU) %>% distinct
 ## Write into Correlation database
 master_su <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
 DBQ=D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb;")
-dbWriteTable(master_su, "All_BECv13_published_SU",  SU_all, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
+dbWriteTable(master_su, "All_BECv14_working_SU",  SU_all, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
 dbWriteTable(master_su, "nplots_per_siteunit",  plots_per_SU, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
 dbDisconnect(master_su)
-fwrite(SU_all, "./clean_tabs/All_BECv13_published_SU.csv")
+fwrite(SU_all, "./clean_tabs/All_BECv14_working_SU.csv")
 ## for updating the plot count in the tbl_BEC_Hierarchy_Class
  becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;")
 dbWriteTable(becdb, "nplots_per_siteunit",  plots_per_SU, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
