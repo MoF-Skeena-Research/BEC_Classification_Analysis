@@ -1,5 +1,5 @@
 ---
-title: "Build Associations for LMH77"
+title: "Generate Associations by Analysis Group"
 author: "William H MacKenzie"
 date: today
 format:
@@ -9,7 +9,6 @@ format:
     toc-title: Contents
     section-numbering: 1.1.1
     columns: 1
-output-file: "CWH_Generated_Hierarchy.pdf"
 editor: source
 execute:
   echo: false
@@ -29,11 +28,14 @@ execute:
   dpi: 600
   fig.asp: 1.5
   fig.path: "./figures/"
+output-file: "FdPy_Generated_Hierarchy.pdf"
 ---
 
 ```{r}
 ## Choose analysis set and change name of output-file above
-anal.set <- c("MH")# "CWH-wetfor" # "CWH"  "MH" "CWH-Fd" "Act" "Beachland" "Estuarine"
+#anal.set <- c("CWH-HwBa-rich")# "CWH-102" "CWH-HwBa" "CWH-HwBa-rich"  "CWH-HwFd" "CWH-HwFd-rich" "coast-wetfor" "MH" "Act"
+anal.set <- c("FdPy")# "CWH-102" "CWH-HwBa" "CWH-HwBa-rich"  "CWH-HwFd" "CWH-HwFd-rich" "coast-wetfor" "MH" "Act"
+#anal.set <- c("AllFor")
 ```
 
 ```{r setup, include=FALSE}
@@ -100,27 +102,30 @@ source("../BEC_R_working/_functions/_baselga_diagnostics.R")
 
 # Introduction
 
-This script compares site unit summary vegetation data to identify associations and subassociations within the CoastArea using published sorts from LMH68 and LMH77. The analysis is based on a agglomerative clustering approach, which groups site units based on their vegetation characteristics. The process of correlation is iterative. Review of the site series for consistency is performed as part of the guide review process so the working root units are considered valid and not modified in this process. As part of correlation the first test the membership of zonal sites for proper designation in BGC mapping. On confirmation of these units, the Association is assigned. All hierarchical membership of site units is stored in the tblBEC_Hierarchy_Class table of the BECdb.
+This script compares site unit summary vegetation data to identify associations and subassociations. The analysis is based on a agglomerative clustering approach, which groups site units based on their vegetation community similarity. A BEC similarity metric is constructed from site unit summary data with species diagnostic value assigned to both constancy and mean cover. Following Pojar and Klinka only species with high constancy in a focal unit contribute to diagnostic potential of a unit and only species with high mean cover are assigned dominant differential value.
 
-1.  The analysis is done by correlator temporary assigned analysis group which is assigned in the tblBEC_Hierarchy_Class. These analysis groups will largely reflect orders or classes. A complete set of site units relevant to a analysis group/order is a requisite for proper analysis.
+The process in brief
 
-2.  There maybe initial assigned associations (usually done through targeted analysis or expert decisions) such as subzone zonal ecosystems, non-forested associations, or 102 conceptual groups. These can be/should be applied a priori in the analysis. Subsequent testing of these should be carried out to verify.
+1.  Analysis group to select related ecosystems and reduce the size of the analysis for review
 
-3.  Quantitative analysis of site units with few plots, or low diagnostic potential may not be reliable. For this initial analysis, we include all site units but those with fewer than 6 plots or very low (\<25) diagnostic potential should be subsequently reviewed from proper membership.
+2.  Site Unit summary values are generated from published sorts and a pair-wise comparison of all units to generate a BEC similarity metric for the paired comparison
 
-4.  The dissimilarity matrix is run through a cluster algorithm and the resulting dendrogram is cut as dissimilarity values to assign initial hierachical groupings for all taxonomic levels. These units are assigned an algorithm generated unit number.
+3.  The dissimilarity matrix from the pair-wise function is submitted to an AGNES agglomerative clustering analysis and a dendrogram tree produced
 
-5.  Review materials from the quantitative analysis are produced with a focus on the Association. These materials are reviewed for consistency in vegetation and environment. Potential alternatives are identified from the dissimilarity matrix for units of questionable initial placement. Single units that do not match at the association level should be reviewed for distinctiveness and whether merging with other units should be enforced.
+4.  Generated hierarchy units are generated but cutting the cluster tree at different similarity thresholds. These initial thresholds were chosen based on tests and iterations to match historical concepts of the levels by Meidinger, Pojar, and Klinka
+- 80% similar are Associations
+- 60% similar are Alliances
+- 20% similar are Orders
 
-    - A vegetation summary workbook by site unit, on separate alliance sheets and colour themed by Association. The themeing is completed by macro in Excel.
+5.  Review materials from the quantitative analysis are produced with a focus on the Association and Alliance. 
 
-    - A table of alternate association membership for site series based on similarity.
+  - A vegetation summary workbook by site unit, on separate alliance sheets and colour themed by Association. The themeing is completed by macro in Excel.
 
-    - Edatopic and climate space comparisons for units
-
-## Read in data
-
-Vegetation data is read in from saved BECMaster.RDS file generated from the BECMaster cleaning scripts. A compiled SU table is build from all BGC_SU tables stored in the coast guides Vpro database. Taxonomy is read in from the species taxonomy database. A species lumping code table is read in from the Correlation2_Spp_lump.accdb database and the vegetation data is lumped using the combine_taxa function.
+  - A table of possible alternate association membership for site series based on similarity.
+  
+  - A summary vegetation workbook with each site unit as a focal unit with all other units with high similarity and those units generated Association and Alliance indicated.
+  
+  - A PCA of edaphic and climate characteristics of siteunits within generated associations to look for outliers and potentially misplaced site units. 
 
 ```{r load data, echo=FALSE}
 #------------------------------------------------------------
@@ -165,7 +170,7 @@ veg.dat2 <- combine_taxa(vegdata = veg.dat, lump, use.subtaxa = FALSE)%>%
 # 3. Load SiteUnit data from two LMH databases
 #------------------------------------------------------------
 
-db <- "D:/BC_Correlation2_Vpro_2023/Sorts_published_LMH/LMH77_Coast_Sorts.accdb"
+#db <- "D:/BC_Correlation2_Vpro_2023/Sorts_published_LMH/LMH77_Coast_Sorts.accdb"
 #db2 <- "D:/BC_Correlation2_Vpro_2023/Sorts_published_LMH/LMH68_HG_Sorts.accdb"
 db <- "D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb"
 su <- rbind(combined_su(db))#, combined_su(db2))
@@ -210,8 +215,10 @@ becmaster <- dbConnect(
 
 plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
 plot.edatope <- dbReadTable(becmaster, "BECMaster_fixing_edatopic")
+plot.info <- dbReadTable(becmaster, "BECMaster_fixing_Admin")
 
 dbDisconnect(becmaster)
+
 
 #------------------------------------------------------------
 # 6. Write n_plots to BECdb and load hierarchy + edatopic
@@ -219,7 +226,7 @@ dbDisconnect(becmaster)
 
 becdb <- dbConnect(
   odbc::odbc(),
-  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;"
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v1.accdb;"
 )
 
 dbWriteTable(becdb, "n_plots", n_plots, append = FALSE, overwrite = TRUE,
@@ -352,9 +359,9 @@ su.anal <- su.anal %>%
 
 ```
 
-## Add in summary data from adjacent juridictions for comparison
+## Option to add summary data from adjacent juridiction site units for comparison
 
-Other summary tables for comparison (e.g. USA) table can be added to the analysis for comparison in do.pairwise function.
+Other constancy tables for comparison (e.g. USA) table can be added to the analysis for comparison in do.pairwise function.
 
 ```{r add extra summary units}
 usa_units <- fread("./usa.summary.units/USA_prepped_units3.csv") %>% dplyr::select(-ScientificName) %>% 
@@ -374,9 +381,6 @@ usa_units <- usa_units %>%
 
 ## Run pairwise vegetation similarity analysis
 
-This code prepares Site Units for vegetation similarity analysis by assigning each plot to its working hierarchical unit and defining key indicator species and reduction rules. It then runs a pairwise vegetation comparison using do_pairwise(), producing similarity metrics for all Site Unit combinations. From these results, the script extracts a clean comparison table and generates a full BEC similarity distance matrix based on minimum similarity values. The resulting matrix is exported for downstream clustering, ordination, or classification work. One possible option here is to adjust pair-wise similarity downward where environmental differences are significant.
-
-Potentially change the ksi and reduction to exponential factors where by default ksi is sqrt and reduced is \^1/4 rather than an arbitrary points reduction. For Order analysis it might be tree species that get ksi. Mosses would get reduced
 
 ```{r build pair.wise similarity matrix, echo=FALSE, message=FALSE, warning=FALSE}
 
@@ -496,7 +500,7 @@ result <- build_bec_distance_matrix(
   vegsum_pairs = vegsum.pairs,
   su_anal = su.anal,
   preclass_field = "Association",
-  use_preclass = FALSE
+  use_preclass = TRUE
 )
 
 unit.compare2 <- result$unit_compare
@@ -512,7 +516,7 @@ bec.dist <- result$bec_dist
 
 ## Cluster analysis and dendrogram of all good site series and merged site units
 
-The agglomerative clustering algorithm AGNES successively groups site units based on dissimilarity from the bottom up (most similar units get grouped first). Because units or initial clusters may have near equal dissimilarity to neighbours in two directions, the algorithm may not be able to maintain an exact ordering of dissimilarity. We evaluate the cluster analysis using two metrics. 1) The cophenetic correlation coefficient (CCC) evaluate how well a hierarchical clustering dendrogram preserves the original pairwise distances between observations. The closer CCC is to 1, the better it represents the original distance matrix. Lower numbers indicate that some branchlets of the dendrogram can be associated with more than one branch. 2) The agglomerative coefficient (AC) is a metric that quantifies the strength of the clustering structure. The closer AC is to 1 indicates strong clustering structure and the observations are tightly grouped by low dissimilarity. This will be affected by the breadth/size of the analysis where a larger number of site units will tend to have lower AC values.
+The agglomerative clustering algorithm AGNES successively groups site units based on dissimilarity from the bottom up (most similar units get grouped first). Because units or initial clusters may have near equal dissimilarity to neighbours in two directions, the algorithm may not be able to maintain an exact ordering of dissimilarity. We evaluate the cluster analysis using two metrics. 1) The cophenetic correlation coefficient (CCC) evaluate how well a hierarchical clustering dendrogram preserves the original pairwise distances between observations. The closer CCC is to 1, the better it represents the original distance matrix. Lower numbers indicate that some branchlets of the dendrogram can be associated with more than one branch. Lower CCC values suggest that more review of higher level position of units is warranted 2) The agglomerative coefficient (AC) is a metric that quantifies the strength of the clustering structure. The closer AC is to 1 indicates strong clustering structure and the observations are tightly grouped by low dissimilarity. This will be affected by the breadth/size of the analysis where a larger number of site units will tend to have lower AC values.
 
 We chose to use the clustering method that maximizes the CCC. We tested a number of methods: complete, average, single, ward, weighted, and flexible (at a wide range of settings). The "average" method consistently produced the highest cophenetic values so we applied this as the standard method for clustering.
 
@@ -520,35 +524,56 @@ In the dendrograms, the red line represents the minimum threshold for separating
 
 ```{r }
 #| label: fig-first-cluster
-#| fig-cap: ("Cluster of Site Units (including initial predefined groups)")
+#| fig-cap: Cluster of Site Units (including initial predefined groups
 #| fig-cap-location: bottom
 #| warning: false
 #| fig-align: "center"
 #| fig-width: 8
 #| fig-height: 12
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
-dendro_hc <- create_dendro_all(unit.compare2, threshold.low = .8)
+dendro_hc <- create_dendro_all(unit.compare2, threshold.low = .4)
 ```
 
-### Draw cluster diagram subsets from tree split at set dissimilarity level
+### Cluster diagram subsets from cut.level
 
-dissimilarity of 17-20% is an approximate threshold for association differentiation.
+Below are branches of the complete dendrogram cut at a selected similar threshold. In this report, a dissimilarity of 40% is used representing prospective Alliance level units. Units that are singles at this threshold presented in table form.
 
 ```{r split first cluster}
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
-singles <- draw_dendro_split(unit.compare.tbl = unit.compare2, cut.level=.4, show.singles = TRUE)
+singles <- draw_dendro_split(unit.compare.tbl = unit.compare2, cut.level=.4, show.singles = FALSE)
+singles |> 
+dplyr::arrange(SiteUnit) 
+gt(singles) |> 
+  tab_header(
+    title = "Single Units"
+  ) |>
+  tab_options(
+    column_labels.hidden = TRUE,
+    table.font.size = px(9),
+    data_row.padding = px(1),
+    row.striping.include_table_body = FALSE
+  ) |>
+  cols_width(
+    everything() ~ px(80)
+  ) |>
+  opt_vertical_padding(scale = 0.3)
+
 ```
-```{r, echo=FALSE}
+
+## Site Units where quantitative analysis is unreliable
+
+Units with few plots (=<6) or low diagnostic potential (low number of high constancy species) are often not properly assigned to associations in the quantitative analysis. These units will generally require more scrutiny and expert reassignment. 
+```{r}
 #| label: tab-too-few-plots
 #| tab-cap: "Site Units with Fewer than 6 Plots"
 #| tbl-cap-location: top
 #| warning: false
-#| tab-align: "left"
+#| tab-align: "center"
 
 # Identify Site Units with fewer than 8 plots
 ss_too.few <- unit.compare.temp %>%
   dplyr::select(Unit1, nplots.unit1) %>%
-  filter(nplots.unit1 < 6 & nplots.unit1>0) %>%
+  filter(nplots.unit1 <= 6 & nplots.unit1>0) %>%
   distinct() %>%
   rename(
     "SiteUnit"      = Unit1,
@@ -567,15 +592,6 @@ gt::gt(ss_too.few) %>%
   gt::cols_label(SiteUnit = col_label) %>%
   gt::tab_options(table.font.size = 8)
 
-```
-
-```{r,  echo=FALSE}
-#| label: tab-low-diagnostic
-#| tbl-cap-location: top
-#| tbl-cap: "Site Units with Low Diagnostic Potential"
-#| warning: false
-#| tbl-align: "left"
-
 ss_low.diag <- unit.compare.temp %>%
   dplyr::select(Unit1, unit.diag.sum.unit1)  %>% 
   filter(unit.diag.sum.unit1 < 24 & unit.diag.sum.unit1 >0) %>% 
@@ -592,11 +608,41 @@ col_label <- paste0("Site Unit (", num_units, ")")
   gt::tab_options(table.font.size = 8) %>%
   gt::cols_label(SiteUnit = col_label) %>% 
   gt::tab_options(table.font.size = 8)
+
 ```
 
-### Create initial hierarchy from clusters to group and write into BECdb
+```{r,  echo=FALSE}
+#| label: tab-low-diagnostic
+#| tbl-cap-location: top
+#| tbl-cap: "Site Units with Low Diagnostic Potential"
+#| warning: false
+#| tbl-align: "center"
 
-In the BECdb query to write the initial units in the the tempAssoc_Code field of tblBECHierarchy_Class table for subsequent use in analytics Also return alternate possible site unit matches for review by returning other units with similarity that falls below threshold.
+# ss_low.diag <- unit.compare.temp %>%
+#   dplyr::select(Unit1, unit.diag.sum.unit1)  %>% 
+#   filter(unit.diag.sum.unit1 < 24 & unit.diag.sum.unit1 >0) %>% 
+#   rename("Diagnostic Potential" = unit.diag.sum.unit1, "SiteUnit" = Unit1) %>%
+#   distinct()
+# 
+# num_units <- ss_low.diag %>% 
+#   pull(SiteUnit) %>% 
+#   n_distinct()
+# col_label <- paste0("Site Unit (", num_units, ")")
+# 
+#   gt::gt(ss_low.diag) %>%
+#   gt::fmt_number(columns = "Diagnostic Potential", decimals = 0) %>%
+#   gt::tab_options(table.font.size = 8) %>%
+#   gt::cols_label(SiteUnit = col_label) %>% 
+#   gt::tab_options(table.font.size = 8)
+```
+
+## Create generated hierarchy units
+
+From set dissimilarity level cuts in the dendrogram, initial hierarchy unit membership is assigned and the labels exported to spreadsheet for review and are identified by a generated_ suffix. In this table, expert review should then assign a unit to the working_ unit fields and the reason for the assignment given.
+if the same as the generated then "analysis"
+if the unit is a singleton and get merged with other units then "best fit"
+if the unit gets moved from one association to a different association then "alternate"
+This table is designed for import into the BECdb tblBECHierarchy_Class table to manage the classification
 
 ```{r, echo=FALSE, results= 'hide'}
 #| label: fig-second-cluster
@@ -616,33 +662,33 @@ dendro_hc <- create_dendro_all(unit.compare2, output = FALSE)
 clusters <- cutree(dendro_hc, h = 0.10)
 cluster_subass<- data.table(
   SiteUnit = names(clusters),
-  generated_SubAss= paste0(anal.set, "_generated_subass_", clusters)
+  generated_subass = paste0(anal.set, "_generated_subass_", clusters)
 )
 clusters <- cutree(dendro_hc, h = 0.20)
 cluster_assoc <- data.table(
   SiteUnit = names(clusters),
-  generated_Assoc = paste0(anal.set,"_generated_association_", clusters)
+  generated_association = paste0(anal.set,"_generated_association_", clusters)
 )
   clusters <- cutree(dendro_hc, h = 0.30)
 cluster_suball <- data.table(
   SiteUnit = names(clusters),
-  generated_SubAll = paste0(anal.set,"_generated_suball_", clusters)
+  generated_suball = paste0(anal.set,"_generated_suball_", clusters)
 )
 clusters <- cutree(dendro_hc, h = 0.40)
 cluster_alli <- data.table(
   SiteUnit = names(clusters),
-  generated_Alliance = paste0(anal.set,"_generated_alliance_", clusters)
+  generated_alliance = paste0(anal.set,"_generated_alliance_", clusters)
 )
 
 clusters <- cutree(dendro_hc, h = 0.60)
 cluster_subord <- data.table(
   SiteUnit = names(clusters),
-  generated_SubOrd= paste0(anal.set,"_generated_subord_", clusters)
+  generated_subord= paste0(anal.set,"_generated_subord_", clusters)
 )
 clusters <- cutree(dendro_hc, h = 0.80)
 cluster_ord <- data.table(
   SiteUnit = names(clusters),
-  generated_Order= paste0(anal.set,"_generated_order_", clusters)
+  generated_order= paste0(anal.set,"_generated_order_", clusters)
 )
 # clusters <- cutree(dendro_hc, h = 0.99)
 # cluster_class <- data.table(
@@ -667,8 +713,24 @@ cluster_ord)#,
 ## merge back to retrieve SiteUnit for all and the coalesce.
 orig.SU <- su.anal %>% dplyr::select(SU_Label, SiteUnit, working_alliance, working_association, working_subass) %>% distinct
 generated.hier <- cluster_table %>%
-  left_join(orig.SU, by = c("SiteUnit" = "SiteUnit")) |> group_by(working_association) |> add_count(working_association) |> ungroup() |>
+  left_join(orig.SU, by = c("SiteUnit" = "SiteUnit")) |> group_by(generated_association) |> add_count(generated_association) |> ungroup() |>
   left_join(n_plots) |>  select(n_plots, assoc_n_siteunit= n, everything())
+
+hier.fields <- c(
+  "generated_order",
+  "generated_subord",
+  "generated_alliance",
+  "generated_suball",
+  "generated_association",
+  "generated_subass"
+)
+
+su.anal <- su.anal %>%
+  select(-any_of(hier.fields)) %>%
+  left_join(
+    cluster_table, 
+    by = "SiteUnit"
+  )
 
 
 fwrite(generated.hier, paste0("./hierarchy/", anal.set, "_generated_hierclasses.csv"))
@@ -679,7 +741,7 @@ becdb <- dbConnect(
   odbc::odbc(),
   .connection_string =
     "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
-     DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;"
+     DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v1.accdb;"
 )
 dbWriteTable(
   becdb,
@@ -695,7 +757,7 @@ dbDisconnect(becdb)
 
 ## Review placement of site units with more than one possible pairing at Association level
 
-See excel table for Focal units with more than one similar unit Highlights other similar units that are not in the same association for review This will look for unit pairs that fall below a similarity threshold and then identify where they have not been put into the same Association
+**See file "*_other_similar_units.xlsx" in review materials**for Focal units with more than one similar unit Highlights other similar units that are not in the same association for review This will look for unit pairs that fall below a similarity threshold and then identify where they have not been put into the same Association. We have set the minimum threshold at 65% similar.
 
 ```{r create alternate su matches table}
 source("../BEC_R_working/_functions/_export_similar_units.R")
@@ -703,7 +765,7 @@ similar_units <- export_similar_units(
   unit.compare = unit.compare2,
   generated.hier = generated.hier,
   anal.set = anal.set,
-  same.threshold = 0.6,
+  same.threshold = 0.65,
   out.dir = "./review_materials"
 )
 #check that equal number of pair comparisons
@@ -714,7 +776,7 @@ similar_units <- export_similar_units(
 # similar_counts
 ```
 
-See excel vegsummary table for each Focal unit compared to all similar units for review Headers with n_plots, similarity metric, and hierarchy placement (Subass, Assoc, Alliance)
+**See file "*_FocalUnit_Comparisons.xlsx" in review materials** where each Focal unit has a worksheet showing its summary vegetation compared to all suitably similar units. This table is particularly useful when looking for either best fit or alternative units.  The summaries include header rows showing n_plots, similarity (to focal unit), and generated hierarchy placement of each unit (Subass, Assoc, Alliance)
 
 ```{r summary table of similar units}
 
@@ -730,40 +792,19 @@ create_focalunit_summary_workbook(
 
 ```
 
-
-
 ## Constancy and cover tables
 
-Generate vegetation summary for all site units by generated alliance colour-themed by generated association and subassociation for review.
+Generate vegetation summary for all site units by generated alliance colour-themed by generated association and subassociation for review. **See file "*_SiteUnit_by_generated_alliance.xlsx" in review materials**
 
-Each sheet has all site units for a proposed alliance on a single sheet grouped, labelled, and colour-themed by generated Association  to help review and editing of membership. This will be used to review the proposed alliances and make decisions about which site units should be merged into associations, which should be separated into new associations, and which should be left as singletons. The vegetation summary tables will also be used to identify potential diagnostic species for each alliance and to compare the vegetation composition of different alliances.
+Each sheet has all site units for a generated alliance on a single sheet grouped, labelled, and colour-themed by generated Association for initial review and observation of questionable plot placement. This will be used to review the proposed alliances and make decisions about which site units should be merged into associations, which should be separated into new associations, and which should be left as singletons. The vegetation summary tables will also be used to identify potential diagnostic species for each alliance and to compare the vegetation composition of different alliances.
 
 ```{r summary table association within alliances}
-# compute anal.test
-# becdb <- dbConnect(
-#   odbc::odbc(),
-#   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;"
-# )
-# BEC.hier.temp <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") #%>% dplyr::select(-SiteUnit)
-# dbDisconnect(becdb)
-
-#  group.to.test = "generated_Alliance"
-# BEC.hier.temp <- generated.hier |>
-#   filter(!is.na(.data[[group.to.test]]))
-# 
-# su.anal.new <- su.anal1 %>% dplyr::select(PlotNumber, SU_Label) %>% left_join(BEC.hier.temp, by = c("SU_Label" = "SU_Label")) %>% #rename(SiteUnit = SiteSeries) %>%
-#   mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", ""),# ignore phases
-#          SiteUnit = if_else(
-#            str_detect(SiteUnit, "101"),
-#            str_replace(SiteUnit, "\\.[123]$", ""), # remove zonal variations
-#            SiteUnit
-#          ))
-
 source("../BEC_R_working/_functions/_create_veg_summary_workbook.R")
 
 create_veg_summary_workbook(
-  su.anal,
+  su.anal = su.anal,
   veg.dat = veg.dat2,
+  hier.tbl = generated.hier,
   taxon.lifeform = taxon.lifeform,
   group_level = "SiteUnit",
   within_level = "generated_alliance",
@@ -775,46 +816,261 @@ create_veg_summary_workbook(
 
 ```
 
+```{r prep env data}
+plot.env2 <- plot.env %>% mutate(lon = ifelse(Longitude<0, Longitude, 0-Longitude)) %>% mutate(Date = as_date(Date)) |> 
+  filter(PlotNumber %in% su.anal$PlotNumber) |>
+  dplyr::select(PlotNumber, lon, lat = Latitude, elev = Elevation, special = Exposure1, rSMR = MoistureRegime, rSNR = NutrientRegime, slope = SlopeGradient, aspect = Aspect ) 
+ plot.info <- plot.info |> dplyr::select(Plot, BECSiteUnit, UserSiteUnit, HumusThickness, BGC=GIS_BGC)  |> filter(Plot %in% su.anal$PlotNumber)
+plot.env2 <- left_join(plot.env2, plot.info, by = c("PlotNumber" = "Plot")) |> filter(!is.na (rSMR))
 
-## Export table from generated values and BECdb table tbl_BEC_Hierarchy_Class
 
-Edits to membership can be made to the working units in the spreadsheet for incorporation in the assessment scripts.
+## extract climate data for plots from climr
+require(climr)
+plot.locs <- plot.env2 %>% dplyr::select(id=PlotNumber, BGC, lon,lat,elev) |> drop_na(lat)
+plot.climate <- climr::downscale(setDT(plot.locs),
+                              vars = list_vars(set = c("Annual", "Seasonal", "Monthly")),
+                              return_refperiod = TRUE,
+                              db_option = "local",
+                              cache = TRUE)
+## calculate aSMR
+plot.env3 <- plot.climate |> select(PlotNumber = id, everything()) |> left_join(plot.env2) |> 
+  mutate(
+    moist = rowSums(
+      across(c(PPT_05, PPT_06, PPT_07, PPT_08, PPT_09), ~ .x >= 90),
+      na.rm = TRUE
+    ),
+    moist = ifelse(moist > 4, 1, 0),
+    ratio = moist / 5,
+    multiplier = 1 + ratio,
+    CMD = CMD_an / multiplier
+  ) |> mutate(PPT.dorm = PPT_at + PPT_wt) |> 
+  mutate(Def = ifelse(CMD >=350, 350 - PPT.dorm, CMD)) |> 
+  mutate(CMD.total = CMD + Def) |> 
+  mutate(CMD.site = ifelse(slope > 35 & (aspect >180 & aspect <270), CMD.total *1.25,
+                           ifelse(slope> 35 & (aspect>315 | aspect <45), CMD.total *0.85, CMD.total))) |> arrange(PlotNumber) |> 
+  mutate(
+    rSMR.clean = sub("^.*?(\\d+).*$", "\\1", rSMR)) |> 
+  mutate(rSMR.clean = as.numeric(rSMR.clean),
+  SNR.clean = recode(
+    substr(trimws(rSNR), 1, 1),
+    "A" = 1L,
+    "B" = 2L,
+    "C" = 3L,
+    "D" = 4L,
+    "E" = 5L,
+    "F" = 6L,
+    .default = NA_integer_
+  ))
+  ####To adjust in zones with prolonged snowpack remove CMD from early growing season months
+## BGCs with or below heavy snow packs
+# BGC_Special <- fread("./inputs/BGC_Special.csv", data.table = FALSE)
+# allDat2 <- left_join(allDat2,BGC_Special, by = c("BGC" = "BGC"))
+# allDat2 <- allDat2 %>% mutate(CMD = ifelse(is.na(Special), CMD, CMD_08)) %>% select(-Special, -CMD_08) %>% drop_na()
+#rules <- read.csv("./inputs/aSMR_growingseason_Rules_HalfStep_v13_13Sept2025.csv")
+rules <- read.csv("./inputs/aSMR_Rules_HalfStep_v13_23June2025.csv") |>
+  mutate(
+    rSMR.rule = sub("^rSMR", "", rSMR)) |> dplyr::select(-rSMR)
 
-```{r}
-# orig.SU <- su.anal1 %>% dplyr::select(SU_Label, SiteUnit, working_alliance, working_association, working_subass) %>% distinct
-# generated.hier <- cluster_table %>%
-#   left_join(orig.SU, by = c("SiteUnit" = "SiteUnit")) |> group_by(working_association) |> add_count(working_association) |> select(n_su_in_assoc = n, everything())
-# 
-# # Keep SiteUnit plus columns that are not already in generated.hier
-# cols.keep <- c("SiteUnit", setdiff(names(BEC.hier), names(generated.hier)))
-# BEC.hier.join <- BEC.hier %>% select(all_of(cols.keep))
-# BEC.hier.new <- left_join(
-#   generated.hier,
-#   BEC.hier.join,
-#   by = "SiteUnit"
-# )%>% select(all_of(names(BEC.hier)))
-# 
-# openxlsx::write.xlsx(
-#   x = BEC.hier.new,
-#   file = paste0("./review_materials/", anal.set, "_BECdb_table_for_edit.xlsx"),
-#   rowNames = FALSE )
-# 
-# 
-# 
-# ## write into BECdb a working file to update the tempAssoc field
-# becdb <- dbConnect(
-#   odbc::odbc(),
-#   .connection_string =
-#     "Driver={Microsoft Access Driver (*.mdb, *.accdb)};
-#      DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;"
+plot_asmr <- plot.env3 %>% select(PlotNumber, rSMR, CMD.site) |> 
+  left_join(rules, by = c("rSMR" = "rSMR.rule")) %>%
+  filter(CMD.site <= CMD) %>%
+  group_by(PlotNumber) %>%  # ensure row-wise logic if needed
+  slice_max(aSMR, with_ties = FALSE) %>%
+  ungroup() %>% select(PlotNumber, aSMR)
+
+plot.env3 <- left_join(plot.env3, plot_asmr)
+
+plot.env3 <- plot.env3 |>
+  left_join(
+    su.anal, 
+    by = "PlotNumber")
+ 
+plot.env.vars <- plot.env3 |>   select(-SiteUnit, -working_association, -working_alliance) |> 
+   select(PlotNumber, PAS_an,CMD.site, MSP, aSMR , SNR = SNR.clean, Tmin = Tmin_an, AHM,FFP, DD5 = DD5_an, DD18_sm ) |> arrange(PlotNumber)
+ keep.rows <- complete.cases(plot.env.vars)
+
+  su.env <- plot.env3 |> rename(assoc = generated_association, alliance = generated_alliance) |> 
+  filter(!is.na(alliance)) |> arrange(SiteUnit) |> 
+  group_by(SiteUnit, assoc, alliance) |>
+    summarise(
+  PAS_an = mean(PAS_an, na.rm = TRUE),
+  CMD.site = mean(CMD.site, na.rm = TRUE),
+  MSP   = mean(MSP, na.rm = TRUE),
+  aSMR = mean(aSMR, na.rm = TRUE),
+  SNR = mean(SNR.clean, na.rm = TRUE),
+  AHM = mean(AHM, na.rm = TRUE),
+  #lat = mean(lat, na.rm = TRUE),
+  FFP   = mean(FFP, na.rm = TRUE),
+  DD5 = mean(DD5_an, na.rm = TRUE),
+  DD18_sm = mean(DD18_sm, na.rm = TRUE),
+  Tmin = mean(Tmin_an, na.rm = TRUE),
+  .groups = "drop"
+)
+
+#     summarise(
+#   across(
+#     where(is.numeric) & !c(lat, lon),
+#     ~ mean(.x, na.rm = TRUE)
+#   ),
+#   .groups = "drop"
 # )
-# dbWriteTable(
-#   becdb,
-#   paste0(anal.set,"_generated_hier"),
-#   BEC.hier.new, append=FALSE,
-#   overwrite = TRUE,
-#   batch_rows = 1
-# )
-# dbDisconnect(becdb)
+
+# ==============================================================================
+# Climate variables for PCA
+#==============================================================================
+  env.vars <- su.env |>
+  select(-assoc, -alliance) 
+
+# Remove rows with missing values
+keep.rows <- complete.cases(env.vars)
+
+env.vars <- env.vars[keep.rows, ]
+
+# Remove constant variables if any
+env.vars.filt <- env.vars |>
+  select(-SiteUnit) |>
+  dplyr::select(
+    where(~ is.numeric(.x) && sd(.x, na.rm = TRUE) > 0)
+  )
+
+keep.rows <- complete.cases(env.vars.filt)
+
+#su.env <- env.vars[keep.rows, ]
+su.env <- su.env |>
+  dplyr::select(
+    SiteUnit, assoc, alliance,
+    where(~ is.numeric(.x) && sd(.x, na.rm = TRUE) > 0)
+  )
+
 ```
 
+```{=typst}
+#pagebreak()
+```
+# Environmental differentiation between units
+
+## PCA of environment variables for analysis group
+PCA from a limited set of edaphic (aSMR, SNR) and climatic (DD5, DD18_sm, FFP, Tmin_wt, CMD.site, AHM, MSP, PAS, )
+
+```{r}
+#| label: fig-env_pca
+#| fig-cap: ("3D environment PCA graphic for SiteUnits within working Alliances")
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 8
+
+
+source("../BEC_R_working/_functions/_plot_pca_hierarchy.R")
+library(forcats)
+require(ggrepel)
+
+su.env2 <- su.env |> select(siteunit = SiteUnit, everything())
+
+pca.env <- plot_pca_hierarchy(su.env2,
+                    n_vectors = 10,
+    output_file = NULL,
+    save_html = FALSE)
+
+pca.env$plot
+
+
+```
+
+## Review environmental space of site units within alliances
+
+Boxplot of siteunits along PCA axes by Allaince. Look for environmental site units outliers for membership reassessment.
+```{r}
+#| label: fig-PCA_boxplot
+#| fig-cap: ("Environment PCA scores for SiteUnits within working Alliances")
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 10
+
+source("../BEC_R_working/_functions/_plot_pca_boxplots.R")
+pca.boxplots <- plot_pca_boxplots(
+  pca = pca.env,
+  group_var = "assoc"
+)
+
+pca.boxplots
+
+```
+
+```{r}
+orig.SU <- su.anal %>% dplyr::select(SU_Label, SiteUnit, working_alliance, working_association, working_subass) %>% distinct
+generated.hier <- cluster_table %>%
+  left_join(orig.SU, by = c("SiteUnit" = "SiteUnit"))# |> group_by(working_association) |> add_count(working_association) |> select(n_su_in_assoc = n, everything())
+
+# Keep SiteUnit plus columns that are not already in generated.hier
+cols.keep <- c("SiteUnit", setdiff(names(BEC.hier), names(generated.hier)))
+BEC.hier.join <- BEC.hier %>% select(all_of(cols.keep))
+BEC.hier.new <- left_join(
+  generated.hier,
+  BEC.hier.join,
+  by = "SiteUnit"
+)%>% select(all_of(names(BEC.hier))) |> group_by(working_association) |> add_count(working_association) |>   mutate(n = as.numeric(n)) |> 
+  select(n_siteunits_working = n, everything()) |> ungroup()|>
+  group_by(generated_association) |> add_count(generated_association) |> mutate(n = as.numeric(n)) |> select(n_siteunits_gen = n, everything()) |> ungroup()
+
+
+
+
+BEC.hier.new <-BEC.hier.new |> select(Analysis_Group,	SpecialCode,	SU_Label,	n_plots,	SiteUnitLongName,	 working_association,working_subass, working_alliance,	association_decision,	n_siteunits_gen, n_siteunits_working,	generated_subass, generated_association,	generated_suball,	generated_alliance,	generated_subord,	generated_order,	working_suball,	working_subord,	working_order, Comments)
+
+
+library(openxlsx)
+redFill <- createStyle(fgFill = "#F4CCCC")
+ylwFill <- createStyle(fgFill = "#FFF2CC")
+grnFill <- createStyle(fgFill = "#D9EAD3")
+orgFill <- createStyle(fgFill = "#F4B183")
+
+wb <- createWorkbook()
+
+addWorksheet(wb, "BEC_hier")
+
+writeData(
+  wb,
+  "BEC_hier",
+  BEC.hier.new
+)
+
+setColWidths(
+  wb,
+  sheet = "BEC_hier",
+  cols = 1:ncol(BEC.hier.new),
+  widths = "auto"
+)
+low_n_plots <- which(BEC.hier.new$n_plots < 7) + 1  # +1 for header row
+plot_col <- which(names(BEC.hier.new) == "n_plots")
+addStyle(
+  wb,
+  sheet = "BEC_hier",
+  style = redFill,
+  rows = low_n_plots,
+  cols = plot_col,
+  gridExpand = TRUE
+)
+singletons <- which(BEC.hier.new$n_siteunits_gen < 2) + 1  # +1 for header row
+plot_col2 <- which(names(BEC.hier.new) == "n_siteunits_gen")
+cols_to_style <- plot_col2:(plot_col2 + 5)
+
+addStyle(
+  wb,
+  sheet = "BEC_hier",
+  style = orgFill,
+  rows = singletons,
+  cols = cols_to_style,
+  gridExpand = TRUE
+)
+
+saveWorkbook(
+  wb,
+  paste0("./review_materials/0_", anal.set, "_BECdb_table_for_edit.xlsx"),
+  overwrite = TRUE
+)
+
+```
