@@ -1,0 +1,547 @@
+---
+title: "Final Hierarchy Unit Materials"
+author: "William H MacKenzie"
+date: today
+format:
+  typst:
+    toc: false
+    toc-depth: 1
+    toc-title: Contents
+    section-numbering: 1.1.1
+    columns: 1
+editor: source
+execute:
+  echo: false
+  error: false
+  warning: false
+  message: false
+  fig.width: 6
+  fig.height: 4
+  fig.align: 'center'
+  fig.cap: true
+  fig.pos: H
+  out.width: '100%'
+  dev: pdf
+  fig.ext: pdf
+  cache: false
+  fig.retina: 2
+  dpi: 600
+  fig.asp: 1.5
+  fig.path: "./figures/"
+output-file: "FdPy_Generated_Hierarchy.pdf"
+---
+```{r}
+knitr::opts_chunk$set(echo = FALSE)
+require(tidyverse)
+require(DBI)
+require(data.table)
+require(cluster)
+require(dendextend)
+require(dynamicTreeCut)
+require(gtable)
+require(gtsummary)
+require(colorspace)
+require(openxlsx)
+require(tictoc)
+require(labdsv)
+require(indicspecies)
+require(Polychrome)
+require(ggdendro)
+require(purrr)
+require(ggplotify)
+require(grid)
+require(data.tree)
+library(stats)
+library(overlapping)
+require(gt)
+require(vegan)
+library(tidytext)
+library(stringr)
+
+set.seed(1279)
+source("../BEC_R_working/_functions/_bec_dist.R")
+source("../BEC_R_working/_functions/_bec_dist_matrix.R")
+source("../BEC_R_working/_functions/_combine_taxa.R")
+source("../BEC_R_working/_functions/_combine_taxa_strata.R")
+source("../BEC_R_working/_functions/_create_su_vegdata.R")
+source("../BEC_R_working/_functions/_create_analysis_vegsum.R")
+source("../BEC_R_working/_functions/_TabletoTree.R")
+source("../BEC_R_working/_functions/_TreetoTable.R")
+source("../BEC_R_working/_functions/_add_vars.R")
+source("../BEC_R_working/_functions/_do_pairwise.R")
+source("../BEC_R_working/_functions/_create_diagnostic_veg.R")
+source("../BEC_R_working/_functions/_return_similar_pairs.R")
+source("../BEC_R_working/_functions/_read_sppmaster.R")
+source("../BEC_R_working/_functions/_combined_su.R")
+source("../BEC_R_working/_functions/_create_veg_sum.R")
+source('../BEC_R_working/_functions/_create_veg_sum_all.R')
+source('../BEC_R_working/_functions/_build_species_ordering.R')
+source('../BEC_R_working/_functions/_format_veg_table.R')
+source('../BEC_R_working/_functions/_format_veg_table_strata.R')
+source('../BEC_R_working/_functions/_format_veg_table_nostrata.R')
+source('../BEC_R_working/_functions/_encode_veg_sum.R')
+source('../BEC_R_working/_functions/_create_dendro.R')
+source('../BEC_R_working/_functions/_create_dendro_all.R')
+source('../BEC_R_working/_functions/_create_dendro_bybgc.R')
+source('../BEC_R_working/_functions/_draw_dendro_split.R')
+source('../BEC_R_working/_functions/_cluster_groups.R')
+source('../BEC_R_working/_functions/_TabletoTree.R')
+source('../BEC_R_working/_functions/_build_species_ordering_hier.R')
+source("../BEC_R_working/_functions/_cluster_by_spp_group.R")
+source("../BEC_R_working/_functions/_generate_bec_hierarchy.R")
+source("../BEC_R_working/_functions/_link_su_to_hierarchy.R")
+source("../BEC_R_working/_functions/_load_veg_data.R")
+source("../BEC_R_working/_functions/_load_siteunits.R")
+source("../BEC_R_working/_functions/_run_pairwise_similarity.R")
+source("../BEC_R_working/_functions/_generate_hierarchy_units.R")
+source("../BEC_R_working/_functions/_generate_review_workbooks.R")
+```
+
+# This script will generate the material for and a formatted report of units from a hierarchical analysis.
+
+For each hierarchical level chosen:
+  - mapped distribution of plots and shaded BGCs (OK)
+  - vegetation summary table for unit or optionally member site units or subassociations
+  - actual edatopic grid unit with plot count and shade cells (extrapolated)
+  - summary of environment and climate variables
+  - table and figure of related concepts (high similarity)
+  - Photo
+  - ID type plot
+  - Tichy profile
+
+```{r load data}
+veg.dat <- load_veg_data(veg_file = "./clean_data/Analysis_BECMaster_Veg.rds",
+                   veg_combine_db = "D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb",
+                   veg_combine_tbl = "CorrelationII_Lump")
+veg.dat2 <- veg.dat$veg_dat_lumped
+
+becdb <- dbConnect(
+  odbc::odbc(),
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v1.accdb;"
+)
+BGC_all <- dbReadTable(becdb, "tblBGC_UnitsWorkingandArchive") %>%
+  filter(is.na(BGCVersionRetired)) %>%
+  dplyr::select(FSRegion, BGC_NoSpace)
+
+BEC.hier <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") %>%
+  #filter(SU_Label %in% su2$SU_Label) %>%
+  mutate(SiteUnit = str_replace_all(SU_Label, c("/" = "_", " " = "")))
+
+bgcv14 <- dbReadTable(becdb, "tblBGC_UnitsWorkingandArchive") %>%
+  filter(is.na(BGCVersionRetired)) %>%
+  dplyr::select(BGC_NoSpace, SiteClassificationStatus)
+
+edatopic <- dbReadTable(becdb, "Edatopic_v13_3") %>%
+  mutate(
+    rSMR = paste0("rSMR", substr(Edatopic, 2, 2)),
+    SNR = substr(Edatopic, 1, 1)
+  ) %>%
+  filter(startsWith(Source, "BEC")) %>%
+  dplyr::select(BGC, rSMR, SNR, SS_NoSpace, Edatopic) %>%
+  distinct() %>%
+  mutate(SiteUnit = gsub("/", "_", SS_NoSpace))
+
+dbDisconnect(becdb)
+
+becmaster <- dbConnect(
+  odbc::odbc(),
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;"
+)
+plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
+plot.info <- dbReadTable(becmaster, "BECMaster_fixing_Admin") |> rename( BGC = GIS_BGC) |> mutate(BGC = gsub("\\s+", "", BGC))
+dbDisconnect(becmaster)
+
+db <- "D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb"
+su <- rbind(combined_su(db))#, combined_su(db2))
+
+su <- su %>%
+  filter(!grepl("X|unplaced|omit|support|nudum|Ww|!", SiteUnit)) %>%
+  arrange(SiteUnit)
+su2 <- su %>%
+  mutate(SiteUnit = str_replace(SiteUnit, "[abc]$", ""),# ignore phases
+         # SiteUnit = if_else(
+         #   str_detect(SiteUnit, "101"),
+         #   str_replace(SiteUnit, "\\.[123]$", ""), # remove zonal variations
+           SiteUnit
+         ) %>%
+    mutate( SU_Label = str_replace(SiteUnit.orig, "[abc]$", ""))
+
+su.class <- su2 %>%
+  left_join(BEC.hier, by = c("SiteUnit" = "SiteUnit", "SU_Label" = "SU_Label"))
+
+```
+
+```{r prep env data}
+plot.env2 <- plot.env %>% mutate(lon = ifelse(Longitude<0, Longitude, 0-Longitude)) %>% mutate(Date = as_date(Date)) |> 
+  filter(PlotNumber %in% su.class$PlotNumber) |>
+  dplyr::select(PlotNumber, lon, lat = Latitude, elev = Elevation, special = Exposure1, rSMR = MoistureRegime, rSNR = NutrientRegime, slope = SlopeGradient, aspect = Aspect ) 
+ plot.info <- plot.info |> dplyr::select(Plot, BECSiteUnit, UserSiteUnit, HumusThickness, BGC)  |> filter(Plot %in% su.class$PlotNumber)
+plot.env2 <- left_join(plot.env2, plot.info, by = c("PlotNumber" = "Plot")) |> filter(!is.na (rSMR))
+
+
+## extract climate data for plots from climr
+require(climr)
+plot.locs <- plot.env2 %>% dplyr::select(id=PlotNumber, BGC, lon,lat,elev) |> drop_na(lat)
+plot.climate <- climr::downscale(setDT(plot.locs),
+                              vars = list_vars(set = c("Annual", "Seasonal", "Monthly")),
+                              return_refperiod = TRUE,
+                              db_option = "local",
+                              cache = TRUE)
+## calculate aSMR
+plot.env3 <- plot.climate |> select(PlotNumber = id, everything()) |> left_join(plot.env2) |> 
+  mutate(
+    moist = rowSums(
+      across(c(PPT_05, PPT_06, PPT_07, PPT_08, PPT_09), ~ .x >= 90),
+      na.rm = TRUE
+    ),
+    moist = ifelse(moist > 4, 1, 0),
+    ratio = moist / 5,
+    multiplier = 1 + ratio,
+    CMD = CMD_an / multiplier
+  ) |> mutate(PPT.dorm = PPT_at + PPT_wt) |> 
+  mutate(Def = ifelse(CMD >=350, 350 - PPT.dorm, CMD)) |> 
+  mutate(CMD.total = CMD + Def) |> 
+  mutate(CMD.site = ifelse(slope > 35 & (aspect >180 & aspect <270), CMD.total *1.25,
+                           ifelse(slope> 35 & (aspect>315 | aspect <45), CMD.total *0.85, CMD.total))) |> arrange(PlotNumber) |> 
+  mutate(
+    rSMR.clean = sub("^.*?(\\d+).*$", "\\1", rSMR)) |> 
+  mutate(rSMR.clean = as.numeric(rSMR.clean),
+  SNR.clean = recode(
+    substr(trimws(rSNR), 1, 1),
+    "A" = 1L,
+    "B" = 2L,
+    "C" = 3L,
+    "D" = 4L,
+    "E" = 5L,
+    "F" = 6L,
+    .default = NA_integer_
+  ))
+  ####To adjust in zones with prolonged snowpack remove CMD from early growing season months
+## BGCs with or below heavy snow packs
+# BGC_Special <- fread("./inputs/BGC_Special.csv", data.table = FALSE)
+# allDat2 <- left_join(allDat2,BGC_Special, by = c("BGC" = "BGC"))
+# allDat2 <- allDat2 %>% mutate(CMD = ifelse(is.na(Special), CMD, CMD_08)) %>% select(-Special, -CMD_08) %>% drop_na()
+#rules <- read.csv("./inputs/aSMR_growingseason_Rules_HalfStep_v13_13Sept2025.csv")
+rules <- read.csv("./inputs/aSMR_Rules_HalfStep_v13_23June2025.csv") |>
+  mutate(
+    rSMR.rule = sub("^rSMR", "", rSMR)) |> dplyr::select(-rSMR)
+
+plot_asmr <- plot.env3 %>% select(PlotNumber, rSMR, CMD.site) |> 
+  left_join(rules, by = c("rSMR" = "rSMR.rule")) %>%
+  filter(CMD.site <= CMD) %>%
+  group_by(PlotNumber) %>%  # ensure row-wise logic if needed
+  slice_max(aSMR, with_ties = FALSE) %>%
+  ungroup() %>% select(PlotNumber, aSMR)
+
+plot.env3 <- left_join(plot.env3, plot_asmr)
+
+plot.env3 <- plot.env3 |>
+  left_join(
+    su.class, 
+    by = "PlotNumber")
+ 
+plot.env.vars <- plot.env3 |>   select(-SiteUnit, -working_association, -working_alliance) |> 
+   select(PlotNumber, PAS_an,CMD.site, MSP, aSMR , SNR = SNR.clean, Tmin = Tmin_an, AHM,FFP, DD5 = DD5_an, DD18_sm ) |> arrange(PlotNumber)
+ keep.rows <- complete.cases(plot.env.vars)
+
+  su.env <- plot.env3 |> rename(assoc = working_association, alliance = working_alliance) |> 
+  filter(!is.na(alliance)) |> arrange(SiteUnit) |> 
+  group_by(SiteUnit, assoc, alliance) |>
+    summarise(
+  PAS_an = mean(PAS_an, na.rm = TRUE),
+  CMD.site = mean(CMD.site, na.rm = TRUE),
+  MSP   = mean(MSP, na.rm = TRUE),
+  aSMR = mean(aSMR, na.rm = TRUE),
+  SNR = mean(SNR.clean, na.rm = TRUE),
+  AHM = mean(AHM, na.rm = TRUE),
+  #lat = mean(lat, na.rm = TRUE),
+  FFP   = mean(FFP, na.rm = TRUE),
+  DD5 = mean(DD5_an, na.rm = TRUE),
+  DD18_sm = mean(DD18_sm, na.rm = TRUE),
+  Tmin = mean(Tmin_an, na.rm = TRUE),
+  .groups = "drop"
+)
+
+#     summarise(
+#   across(
+#     where(is.numeric) & !c(lat, lon),
+#     ~ mean(.x, na.rm = TRUE)
+#   ),
+#   .groups = "drop"
+# )
+
+# ==============================================================================
+# Climate variables for PCA
+#==============================================================================
+  env.vars <- su.env |>
+  select(-assoc, -alliance) 
+
+# Remove rows with missing values
+keep.rows <- complete.cases(env.vars)
+
+env.vars <- env.vars[keep.rows, ]
+
+# Remove constant variables if any
+env.vars.filt <- env.vars |>
+  select(-SiteUnit) |>
+  dplyr::select(
+    where(~ is.numeric(.x) && sd(.x, na.rm = TRUE) > 0)
+  )
+
+keep.rows <- complete.cases(env.vars.filt)
+
+#su.env <- env.vars[keep.rows, ]
+su.env <- su.env |>
+  dplyr::select(
+    SiteUnit, assoc, alliance,
+    where(~ is.numeric(.x) && sd(.x, na.rm = TRUE) > 0)
+  )
+
+```
+
+
+## choose alliance
+```{r}
+alls <- unique(su.class$working_alliance)
+alls
+anal.set = "CWH_HwBa"
+su.anal <- su.class |> filter(working_alliance %in% anal.set)
+```
+
+
+## Distribution Map for each unit
+```{r}
+#| label: fig-sites
+#| fig-cap: "Locations of plots for alliance"
+#| message: false
+#| warning: false
+
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(grid)
+
+plots <- plot.env3 |> select(alliance = working_alliance, assoc = working_association, lon, lat, bgc, PlotNumber)%>%
+filter(!is.na(lon),!is.na(lat),!is.na(assoc))
+# plots.bgc.good <- plots |> add_count(alliance, BGC) |> filter (n>3)
+# plots.bgc.bad <- plots |> group_by(alliance) |> add_count(BGC) |> filter (n<=3)
+
+plots_sf <- st_as_sf(plots, coords=c("lon", "lat"), crs = 4326)
+
+bgc.anal <- st_read("D:/OneDrive - Government of BC/CommonTables/BGC_maps/BGCv13_simplified.gpkg") |> filter(BGC %in% plots$bgc)
+
+#----------------------------------------
+# Site locations
+#----------------------------------------
+
+
+plots_sf$assoc <- factor(
+  plots_sf$assoc) 
+#----------------------------------------
+# Basemap layers
+#----------------------------------------
+
+bc <- ne_states(
+  country = c(
+    "Canada",
+    returnclass = "sf" #"United States of America"
+  )) |> 
+  filter(name_en == "British Columbia")
+
+lakes <- ne_download(
+  scale = 10,
+  type = "lakes",
+  category = "physical",
+  returnclass = "sf"
+)
+
+rivers <- ne_download(
+  scale = 10,
+  type = "rivers_lake_centerlines",
+  category = "physical",
+  returnclass = "sf"
+)
+
+# Optional towns if needed later
+towns <- ne_download(
+  scale = "small",
+  type = "populated_places",
+  category = "cultural",
+  returnclass = "sf"
+)
+
+towns_bc <- st_crop(
+  towns,
+  st_bbox(plots_sf) + c(-1, -1, 1, 1)
+)
+
+#----------------------------------------
+# Map
+#----------------------------------------
+
+
+ggplot() +
+  geom_sf(data = bc, fill = "grey95", colour = "black") +
+  geom_sf(data = lakes, fill = "lightblue", colour = NA) +
+  geom_sf(data = rivers, colour = "lightblue3", linewidth = 0.2) +
+  geom_sf(
+    data = bgc.anal,
+    aes(fill = BGC),
+    colour = NA,
+    alpha = 1
+  ) +
+  geom_sf(
+    data = plots_sf,
+    aes(colour = assoc),
+    size = 1.5,
+    alpha = 0.8
+  ) +
+  coord_sf(expand = FALSE) +
+  scale_colour_viridis_d(option = "turbo") +
+  theme_bw() +
+  theme(
+    legend.position = "right"
+  ) +
+  labs(
+    colour = "Association",
+    title = paste0("Plot Locations ", anal.set, " Alliance")
+  )+
+
+  coord_sf(
+    xlim = c(
+      min(plots$lon) - 3,
+      max(plots$lon) + 3
+    ),
+    ylim = c(
+      min(plots$lat) - 1,
+      max(plots$lat) + 1
+    )
+  ) +
+
+  labs(
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+      theme_bw(base_size = 10) +
+
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+
+    panel.border = element_rect(
+      colour = "black",
+      fill = NA
+    ),
+
+    legend.position = "right",
+    legend.direction = "vertical",
+
+    legend.title = element_text(
+      face = "bold"
+    ),
+
+    legend.text = element_text(
+      size = 9
+    ),
+
+    legend.key = element_blank()
+  ) +
+
+  guides(
+    shape = guide_legend(
+      nrow = 1,
+      byrow = TRUE
+    )
+  )
+```
+
+
+
+```{r build veg guide summary and export to excel, echo = FALSE, warning=FALSE, message=FALSE}
+require(openxlsx)
+require(tictoc)
+library(stringr)
+data.path = "D:/OneDrive - Government of BC/GitHub_data"
+author <- "test.assoc1"
+assoc.list <- bgcv13 %>% filter(!is.na(Association_Code)) %>% group_by(Association_Code) %>% mutate(n=n()) %>% filter(n>2) %>% distinct(Association_Code) %>% pull(Association_Code)
+
+vegsum.wbk <- createWorkbook()
+for(assoc.choose in assoc.list){
+#assoc.choose = "assoc-13"
+assoc <- bgcv13 %>% filter(Association_Code %in% assoc.choose) %>% select(SS_Label, Association_Code) %>% mutate(SiteUnit = gsub(" ", "", SS_Label)) %>% mutate(SiteUnit = str_replace(SiteUnit, "/", "_"))
+su.assoc <- left_join(assoc, su, by = "SiteUnit") %>%  mutate(SiteUnit = str_replace(SiteUnit, "b$|a$", "")) %>% distinct() 
+veg.dat.assoc <- veg.dat2 %>% filter(PlotNumber %in% su.assoc$PlotNumber)
+# vegsum.wbk <- createWorkbook()
+# #bgc.choose = "CDFmmtab2"
+# #for(bgc.choose in bgc.list){
+vegSum <-
+  create_veg_sum_all(vdat = veg.dat.assoc, siteUnits = su.assoc, strata.by = "Lifeform")
+
+indic.order <- build_species_ordering_hier(vdat = veg.dat.assoc, vsum = vegSum, code.lump=lump, siteUnits = su.assoc, hier.level = "Association_Code")
+veg.sum.table <- format_veg_table2(vsum = vegSum, spp=taxon.lifeform)
+openxlsx::addWorksheet(vegsum.wbk, sheetName = assoc.choose)
+openxlsx::writeData(vegsum.wbk, sheet = assoc.choose, veg.sum.table) 
+}
+
+saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_assoc_tables_", author, ".xlsx"), overwrite = TRUE)
+
+```
+# Polished Ecosystem Unit Summary Report scripts from a copilot session
+```{r}
+# Load required packages
+library(dplyr)
+library(readr)
+library(sf)
+library(ggplot2)
+library(glue)
+
+# 1. Import species abundance data
+# species_abundance <- read_csv("species_abundance.csv")
+# 
+# # 2. Import distribution map (shapefile or GeoJSON)
+# distribution_map <- st_read("distribution_map.shp")
+# 
+# # 3. Import environmental summary table
+# environment_summary <- read_csv("environment_summary.csv")
+# 
+# # 4. Summarize species abundance
+# top_species <- species_abundance %>%
+#   arrange(desc(Abundance)) %>%
+#   slice_head(n = 5)
+# 
+# dominant_species <- paste(top_species$Species, collapse = ", ")
+# 
+# # 5. Spatial summary (example: count occurrences per species)
+# spatial_summary <- distribution_map %>%
+#   st_drop_geometry() %>%
+#   count(Species, name = "Occurrences") %>%
+#   arrange(desc(Occurrences))
+# 
+# # 6. Environmental drivers
+# env_vars <- paste(environment_summary$Variable, collapse = ", ")
+# 
+# # 7. Generate polished ecosystem summary
+# ecosystem_summary <- glue(
+#   "Ecosystem Unit Summary:\n\n",
+#   "The community is dominated by {dominant_species}, ",
+#   "with {top_species$Species[1]} showing the highest abundance. ",
+#   "Spatial distribution analysis indicates that {spatial_summary$Species[1]} ",
+#   "is most widespread, with {spatial_summary$Occurrences[1]} mapped occurrences. ",
+#   "Environmental drivers shaping this unit include {env_vars}, ",
+#   "suggesting strong ecological gradients influencing species composition.\n\n",
+#   "Together, these patterns highlight the interplay between biological dominance, ",
+#   "spatial distribution, and environmental context in structuring the ecosystem."
+# )
+# 
+# cat(ecosystem_summary)
+# 
+# # 8. Optional visualization
+# ggplot(distribution_map) +
+#   geom_sf(aes(color = Species)) +
+#   theme_minimal() +
+#   labs(title = "Species Distribution Map")
+```
+
+
