@@ -9,7 +9,8 @@ format:
     toc-title: Contents
     section-numbering: 1.1.1
     columns: 1
-output-file: "MH_Hierarchy_Assessment.pdf"
+    mainfont: "Calibri"
+    fontsize: 10pt
 editor: source
 execute:
   echo: false
@@ -29,10 +30,12 @@ execute:
   dpi: 600
   fig.asp: 1.5
   fig.path: "./figures/"
+output-file: "FdPy_Generated_Hierarchy.pdf"
 ---
 
 ```{r}
-anal.set = "MH"
+anal.set <- c("FdPy")# "CWH-102" "CWH-HwBa" "CWH-HwBa-rich"  "CWH-HwFd" "CWH-HwFd-rich" "coast-wetfor"  "MH" "Act"
+
 ```
 
 ```{r setup, include=FALSE}
@@ -95,6 +98,7 @@ source("../BEC_R_working/_functions/_cluster_by_spp_group.R")
 source("../BEC_R_working/_functions/_baselga_diagnostics.R")
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
 ```
+
 
 ```{r load data, echo=FALSE}
 #------------------------------------------------------------
@@ -168,11 +172,9 @@ becmaster <- dbConnect(
   odbc::odbc(),
   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;"
 )
-
 plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
 plot.edatope <- dbReadTable(becmaster, "BECMaster_fixing_edatopic")
 plot.info <- dbReadTable(becmaster, "BECMaster_fixing_Admin")
-
 dbDisconnect(becmaster)
 
 #------------------------------------------------------------
@@ -181,7 +183,7 @@ dbDisconnect(becmaster)
 
 becdb <- dbConnect(
   odbc::odbc(),
-  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;"
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v1.accdb;"
 )
 
 BGC_all <- dbReadTable(becdb, "tblBGC_UnitsWorkingandArchive") %>%
@@ -303,7 +305,7 @@ plot.env3 <- plot.env3 |>
     by = "PlotNumber")
  
 plot.env.vars <- plot.env3 |>   select(-SiteUnit, -working_association, -working_alliance) |> 
-   select(PlotNumber, PAS_an,CMD.site, MSP, aSMR , SNR = SNR.clean, AHM,FFP, DD5 = DD5_an, DD18_sm ) |> arrange(PlotNumber)
+   select(PlotNumber, PAS_an,CMD.site, MSP, aSMR , SNR = SNR.clean, Tmin = Tmin_an, AHM,FFP, DD5 = DD5_an, DD18_sm ) |> arrange(PlotNumber)
  keep.rows <- complete.cases(plot.env.vars)
 
   su.env <- plot.env3 |> rename(assoc = working_association, alliance = working_alliance) |> 
@@ -320,7 +322,7 @@ plot.env.vars <- plot.env3 |>   select(-SiteUnit, -working_association, -working
   FFP   = mean(FFP, na.rm = TRUE),
   DD5 = mean(DD5_an, na.rm = TRUE),
   DD18_sm = mean(DD18_sm, na.rm = TRUE),
-  #EXT = mean(EXT, na.rm = TRUE),
+  Tmin = mean(Tmin_an, na.rm = TRUE),
   .groups = "drop"
 )
 
@@ -371,7 +373,7 @@ This script is to be used iteratively to assess current working unit membership 
 
 Subsequent analysis here will substantiate the existing working units or suggest where association membership in alliances should be adjusted to maximize indicator species separation and environmental space.
 
-### Core analyses are:
+Core analyses are:
 
 1.  NMDS ordination of plant communities showing Alliance, Association and SiteUnits with envfit joint plot for edaphic and select climatic parameters.
 
@@ -387,7 +389,7 @@ Together these answer:
 
 Are alliances and associations compositionally distinct from one another? How internally consistent are they? How distinct are they? Which species define them? Which alliances overlap? What environmental gradients drive differences?
 
-```{r read in SU data}
+```{r read in SU data, message=FALSE}
 # anal.set = "MH"
 # 
 # 
@@ -464,7 +466,12 @@ bec.dist <- result$bec_dist
 
 ```
 
-### 3D NMDS ordination plot
+```{=typst}
+#pagebreak()
+```
+# Vegetation difference between units
+
+## 3D NMDS ordination plot
 
 NMDS based on BEC dissimilarity using siteunits., working alliances and associations
 
@@ -474,21 +481,55 @@ Visual review: do alliances form distinct clusters? Which alliances overlap? Are
 
 ```{r}
 #| label: fig-nmds
-#| fig-cap: ("3D NMDS for SiteUnits within working Alliances")
+#| fig-cap: "3D NMDS for SiteUnits within working Alliances"
 #| fig-cap-location: bottom
 #| warning: false
 #| fig-align: "center"
 #| fig-width: 8
-#| fig-height: 12
+#| fig-height: 8
 
 source("../BEC_R_working/_functions/_plot_nmds_hierarchy.R")
+library(dplyr)
 
+# Units present in each object
+env_units  <- unique(su.env$SiteUnit)
+anal_units <- unique(su.anal$SiteUnit)
+dist_units <- rownames(as.matrix(bec.dist))
+
+# Units present in all three
+common_units <- Reduce(intersect, list(env_units, anal_units, dist_units))
+
+# Report missing units
+missing_from_env  <- setdiff(union(anal_units, dist_units), env_units)
+missing_from_anal <- setdiff(union(env_units, dist_units), anal_units)
+missing_from_dist <- setdiff(union(env_units, anal_units), dist_units)
+
+cat("Units removed because not present in all datasets:\n")
+cat("From su.env :", length(setdiff(env_units, common_units)), "\n")
+print(setdiff(env_units, common_units))
+
+cat("\nFrom su.anal:", length(setdiff(anal_units, common_units)), "\n")
+print(setdiff(anal_units, common_units))
+
+cat("\nFrom bec.dist:", length(setdiff(dist_units, common_units)), "\n")
+print(setdiff(dist_units, common_units))
+
+# Filter datasets
+su.env.filt <- su.env %>%
+  filter(SiteUnit %in% common_units)
+
+su.anal.filt <- su.anal %>%
+  filter(SiteUnit %in% common_units)
+
+bec.dist.filt <- as.matrix(bec.dist)[common_units, common_units]
+
+# Run NMDS
 nmds <- plot_nmds_hierarchy(
-  bec.dist = bec.dist,
-  su.anal = su.anal,
-  su.env = su.env,
-  k=3,
-  classification = "working", 
+  bec.dist = bec.dist.filt,
+  su.anal = su.anal.filt,
+  su.env = su.env.filt,
+  k = 3,
+  classification = "working",
   output_file = paste0(anal.set, "_NMDS_Hierarchy.html"),
   save_html = TRUE
 )
@@ -498,34 +539,35 @@ nmds$plot
 #nmds$stress
 ```
 
-### 2. Permanova test of vegetation differences
+```{=typst}
+#pagebreak()
+```
 
-Permanova statistical test of composition differences using adonis2 package
+## PERMANOVA Test of Vegetation Differences
 
-Outputs: R² = how much variation is explained by hierarchical group. Betadispersion test within units to adjust the PERMANOVA assessment to assess whether differences are due to real compositional shifts or spread.
+Statistical assessment of vegetation composition differences using the **vegan::adonis2** PERMANOVA framework.
 
-Assigning a strength rating based on a sum of points from: r2 of permanova, p.adj from betadisp and permanova
+See Appendix 1 for details on methods and approach
 
-1.  permanova R2 = R2 \>= 0.20= 70, R2 \>= 0.15 = 60, R2 \>= 0.10 = 50, R2 \>= 0.05 = 25, R2 \< 0.05 = 0
+### Interpretation
 
-2.  permanovap.adj \< 0.05 = 10, p.adj \>= 0.05 = 0
+- High **R²** values indicate stronger separation among groups.
+- Significant **PERMANOVA** results indicate statistically detectable differences in composition.
+- Non-significant **betadispersion** results provide greater confidence that differences are due to shifts in composition rather than unequal dispersion among groups.
 
-3.  betadisper p.adj. \> 0.10 = 20, p.adj. \> 0.05 = 10, p.adj. \<= 0.05 =0
+```{=typst}
+#set text(size: 8pt)
+#show figure: set block(breakable: true)
+```
 
-**support_score** = score_R2 +score_disp + score_perm
-
-**support_class**: score \>= 80 is "Strong", score \>= 60 is "Moderate", score \>= 40 is "Weak", score \<40 is"Review"
-
-**recommendation** = R2 \< 0.05 is "Merge?" R2 \< 0.10 is "Review", betadisper p.adj. \< 0.05 is "Heterogenous", otherwise "Supported"
-
-```{r pairwise permanova}
+```{r }
 #| label: fig-permanova-alliances
-#| fig-cap: ("Permanova assessment of Alliances")
+#| fig-cap: "Permanova assessment of Alliances"
 #| fig-cap-location: bottom
 #| warning: false
 #| fig-align: "center"
-#| fig-width: 8
-#| fig-height: 12
+# fig-width: 8
+# fig-height: 12
 
 
   #veg.dat = veg.anal;  su.anal = su.anal1; group.field = "working_Alliance"; permutations = 199
@@ -543,11 +585,9 @@ alliance.support$gt_table
 #   res$gt_table,
 #   "alliance_support_table.html"
 # )
-
-
-
-
 ```
+
+
 
 ```{r}
 #| label: fig-permanova-associations
@@ -555,8 +595,8 @@ alliance.support$gt_table
 #| fig-cap-location: bottom
 #| warning: false
 #| fig-align: "center"
-#| fig-width: 8
-#| fig-height: 12
+# fig-width: 8
+# fig-height: 12
 
 assoc.support <- assess_group_support(
   veg.dat = veg.anal,
@@ -574,9 +614,18 @@ assoc.support$gt_table
 
 ```
 
+```{=typst}
+#pagebreak()
+```
 ## Indicator Species Analysis
 
 Indicator species analysis using plot data to assess what species statistically differentiate units from all other units. Analysis looks at individual hierarchical units but also grouped pairs of units to allow assessment of whether some existing pairs be should combined to maximize Flag hierarchy units with few indicator species and where merged units have a long list of indicator species
+
+```{=typst}
+#set text(size: 8pt)
+#show figure: set block(breakable: true)
+```
+
 
 ```{r}
 #| label: fig-alliance-indic
@@ -584,25 +633,34 @@ Indicator species analysis using plot data to assess what species statistically 
 #| fig-cap-location: bottom
 #| warning: false
 #| fig-align: "center"
-#| fig-width: 8
-#| fig-height: 12
+# fig-width: 8
+# fig-height: 12
 
-source("../BEC_R_working/_functions/_indicator_species_analysis.R")
+source("../BEC_R_working/_functions/_indicator_species_analysis2.R")
 
 ind.alliance <- indicator_species_analysis(
   veg.dat,
   su.anal,
   group_level = "working_alliance",
+  within_level = NULL,
   max.order = 2,
   min.constancy = 40,
-  min.fidelity = 15,
-  p.cutoff = 0.05,
+  min.fidelity = 10,
+  p.cutoff = 0.2,
   export.tables = TRUE,
   export.folder = "./review_materials",
-  show.tables = TRUE,
-  gt.top.n = NULL
+  show.tables = TRUE#,
+ #top.n = NULL
 )
 ind.alliance$gt_table
+```
+
+```{=typst}
+#pagebreak()
+```
+
+```{=typst}
+#show figure: set block(breakable: true)
 ```
 
 ```{r}
@@ -611,8 +669,8 @@ ind.alliance$gt_table
 #| fig-cap-location: bottom
 #| warning: false
 #| fig-align: "center"
-#| fig-width: 8
-#| fig-height: 12
+# fig-width: 8
+# fig-height: 12
 
 ind.assoc.alliance <- indicator_species_analysis(
   veg.dat,
@@ -620,34 +678,25 @@ ind.assoc.alliance <- indicator_species_analysis(
   group_level = "working_association",
   within_level = "working_alliance",
   max.order = 2,
-  min.constancy = 50,
+  min.constancy = 40,
   min.fidelity = 15,
-  p.cutoff = 0.05,
+  p.cutoff = 0.2,
   export.tables = TRUE,
   export.folder = "./review_materials",
-  show.tables = TRUE,
-  gt.top.n = NULL
-  
+  show.tables = TRUE#,
+  #top.n = NULL
+
 )
-
-#ind.assoc.alliance$gt_table
-
+ind.assoc.alliance$gt_table
 
 ```
+```{=typst}
+#pagebreak()
+```
+# Environmental differentiation between units
 
-11. Environmental differentiation between units
-
-Elevation Slope Aspect MAT MAP Soil moisture Nutrient regime
-
-Use:
-
-RDA rda.mod \<- rda( comm \~ elevation + moisture + nutrients, data = env )
-
-or
-
-## Environment of units
-
-### PCA of environment variables for analysis group
+## PCA of environment variables for analysis group
+PCA from a limited set of edaphic (aSMR, SNR) and climatic (DD5, DD18_sm, FFP, Tmin_wt, CMD.site, AHM, MSP, PAS, )
 
 ```{r}
 #| label: fig-env_pca
@@ -656,7 +705,7 @@ or
 #| warning: false
 #| fig-align: "center"
 #| fig-width: 8
-#| fig-height: 12
+#| fig-height: 10
 
 
 source("../BEC_R_working/_functions/_plot_pca_hierarchy.R")
@@ -671,203 +720,65 @@ pca.env <- plot_pca_hierarchy(su.env2,
     save_html = FALSE)
 
 pca.env$plot
+#pca.env$scores
 
 ```
+```{=typst}
+#pagebreak()
+```
+## Review environmental space of site units within alliances
 
+Boxplot of siteunits along PCA axes by Allaince. Look for environmental site units outliers for membership reassessment.
 ```{r}
 #| label: fig-PCA_boxplot
-#| fig-cap: ("Environment PCA scores for SiteUnits within working Alliances")
+#| fig-cap: Environment PCA scores for SiteUnits within working Alliances
 #| fig-cap-location: bottom
 #| warning: false
 #| fig-align: "center"
 #| fig-width: 8
-#| fig-height: 12
+#| fig-height: 10
 
-library(tibble)
-library(dplyr)
+source("../BEC_R_working/_functions/_plot_pca_boxplots.R")
 
-get_loading_subtitle <- function(loadings, pc, n = 3) {
 
-  x <- loadings |>
-    #tibble::rownames_to_column("Variable") |>
-    select(variable, all_of(pc))
-
-  top <- x |>
-    arrange(desc(abs(.data[[pc]]))) |>
-    slice_head(n = n)
-
-  paste(
-    paste0(
-      top$variable,
-      " (",
-      sprintf("%.2f", top[[pc]]),
-      ")"
-    ),
-    collapse = "; "
-  )
-}
-
-pca.var <- pca.env$variance
-
-sub.pc1 <- paste0(
-  "Env drivers: ",
-  get_loading_subtitle(pca.env$loadings, "PC1"),
-  " | Var explained = ",
-  round(pca.var["PC1"], 1),
-  "%"
-)
-sub.pc2 <- paste0(
-  "Env drivers: ",
-  get_loading_subtitle(pca.env$loadings, "PC2"),
-  " | Var explained = ",
-  round(pca.var["PC2"], 2),
-  "%"
-)
-sub.pc3 <- paste0(
-  "Env drivers: ",
-  get_loading_subtitle(pca.env$loadings, "PC3"),
-  " | Var explained = ",
-  round(pca.var["PC3"], 3),
-  "%"
+pca.boxplots <- plot_pca_boxplots(
+  pca = pca.env,
+  group_var = "alliance"
 )
 
+pca.boxplots
 
-scores <- pca.env$scores |>
-  mutate(
-    alliance =
-      forcats::fct_reorder(
-        alliance,
-        PC1,
-        median,
-        na.rm = TRUE
-      )
-  )
-
-scores <- scores |>
-  group_by(alliance) |>
-  mutate(
-    outlierPC1 =
-      PC1 < quantile(PC1, 0.15, na.rm = TRUE) |
-      PC1 > quantile(PC1, 0.85, na.rm = TRUE),
-    outlierPC2 =
-      PC2 < quantile(PC2, 0.15, na.rm = TRUE) |
-      PC2 > quantile(PC2, 0.85, na.rm = TRUE),
-    outlierPC3 =
-      PC3 < quantile(PC3, 0.15, na.rm = TRUE) |
-      PC3 > quantile(PC3, 0.85, na.rm = TRUE)
-  ) |>
-  ungroup()
-
-library(ggrepel)
-
-p1 <- ggplot(
-  scores,
-  aes(alliance, PC1, fill = alliance)
-) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_jitter(
-    width = 0.15,
-    alpha = 0.6,
-    size = 2
-  ) +
-  geom_text_repel(
-    data = filter(scores, outlierPC1),
-    aes(label = siteunit),
-    size = 2,
-    max.overlaps = 50,
-    box.padding = 0.3,
-    point.padding = 0.2,
-    segment.alpha = 0.5
-  ) +
-  coord_flip() +
-  theme_bw() +
-  theme(legend.position = "none") +
-  labs(
-    title = "PC1 by Alliance",
-    subtitle = sub.pc1,
-    x = NULL
-  )
-
-p2 <- ggplot(
-  scores,
-  aes(alliance, PC2, fill = alliance)
-) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_jitter(
-    width = 0.15,
-    alpha = 0.6,
-    size = 2
-  ) +
-  geom_text_repel(
-    data = filter(scores, outlierPC2),
-    aes(label = siteunit),
-    size = 2,
-    max.overlaps = 50,
-    box.padding = 0.3,
-    point.padding = 0.2,
-    segment.alpha = 0.5
-  ) +
-  coord_flip() +
-  theme_bw() +
-  theme(legend.position = "none") +
-  labs(
-    title = "PC2 by Alliance",
-    subtitle = sub.pc2,
-    x = NULL
-  )
-
-p3 <- ggplot(
-  scores,
-  aes(alliance, PC3, fill = alliance)
-) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_jitter(
-    width = 0.15,
-    alpha = 0.6,
-    size = 2
-  ) +
-  geom_text_repel(
-    data = filter(scores, outlierPC3),
-    aes(label = siteunit),
-    size = 2,
-    max.overlaps = 50,
-    box.padding = 0.3,
-    point.padding = 0.2,
-    segment.alpha = 0.5
-  ) +
-  coord_flip() +
-  theme_bw() +
-  theme(legend.position = "none") +
-  labs(
-    title = "PC3 by Alliance",
-    subtitle = sub.pc3,
-    x = NULL
-  )
-require(patchwork)
-pc.boxplots <- p1 / p2 / p3 #+
-  # plot_annotation(
-  #   title = "Climate PCA Scores by Alliance"
-  # )
-pc.boxplots
-ggsave(
-  "./review_materials/PCA_Axis_Boxplots.png",
-  pc.boxplots,
-  width = 12,
-  height = 16,
-  dpi = 300
-)
 
 ```
 
-## Vegetation Summarize by Alliance
+```{r}
+#| label: fig-PCA_Assoc_boxplot
+#| fig-cap: Environment PCA scores for SiteUnits within working Associations
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 10
 
-Generate vegetation summary output for all proposed alliances on a single sheet
 
-## Constancy and cover tables
+pca.boxplots <- plot_pca_boxplots(
+  pca = pca.env,
+  group_var = "assoc"
+)
 
-Generate vegetation summary for all site units by generated alliance colour-themed by generated association and subassociation for review.
+pca.boxplots
+
+
+```
+```{=typst}
+#pagebreak()
+```
+
+## Association Vegetation Summary table by Alliance
 
 Each sheet has all site units for a proposed alliance on a single sheet grouped, labelled, and colour-themed by generated Association to help review and editing of membership. This will be used to review the proposed alliances and make decisions about which site units should be merged into associations, which should be separated into new associations, and which should be left as singletons. The vegetation summary tables will also be used to identify potential diagnostic species for each alliance and to compare the vegetation composition of different alliances.
+
+*See exported xlsx table in review materials*
 
 ```{r summary table association within alliances}
 # compute anal.test
@@ -900,7 +811,7 @@ create_veg_summary_workbook(
   group_level = "SiteUnit",
   within_level = "working_alliance",
   classification = "working",
-  anal.set = "MH",
+  anal.set = anal.set,
   out.dir = "./review_materials"
 )
 
@@ -915,728 +826,6 @@ create_veg_summary_workbook(
 
 ```
 
-```{r compare alliances}
-reduced.exceptions <- c("SPHAGNUM","CLADONIA","CLADINA","RACOMITR","MNIUM")
-reduced.lifeforms  <- c(9, 10, 11)
-su.alliance <- su.anal %>% mutate(SiteUnit = working_alliance) %>% select(PlotNumber, SiteUnit)
-
-#------------------------------------------------------------
-# 3. Run pairwise vegetation similarity analysis
-#------------------------------------------------------------
-pairwise.params <- list(
-  su                = su.alliance,
-  su.field = "SiteUnit",
-  minconstancy          = 0,
-  noiseconstancy        = 10,
-  minplots              = 1,
-  minor                 = 5,
-  use.ksi               = FALSE,
-  ksi   = NULL,
-  ksi.value             = 1.5,
-  reduce.lifeform       = TRUE,
-  reduced.lifeforms     = reduced.lifeforms,
-  reduction             = 0.1,
-  reduced.exceptions    = reduced.exceptions,
-  add_vegsum_table      = NULL
-)
-
-vegsum.pairs <- do.call(
-  do_pairwise,
-  c(list(veg.dat2), pairwise.params)
-)
-
-# Start with everything except `su`
-print.params <- pairwise.params[setdiff(names(pairwise.params), "su")]
-
-# Remove ksi if use.ksi == FALSE
-if (!pairwise.params$use.ksi) {
-  print.params <- print.params[setdiff(names(print.params), c("ksi", "ksi.value"))]
-}
-
-# Remove reduction-related fields if reduce.lifeform == FALSE
-if (!pairwise.params$reduce.lifeform) {
-  print.params <- print.params[setdiff(names(print.params),
-                                       c("reduced.lifeforms", "reduction", "reduced.exceptions"))]
-}
-library(tibble)
-library(knitr)
-
-param.table <- tibble(
-  parameter = names(print.params),
-  value = sapply(print.params, function(x) paste(x, collapse = ", "))
-)
-
-param.table %>%
-  gt::gt() %>%
-  gt::tab_header(title = "Parameter Settings for do_pairwise()") %>%
-  gt::tab_options(
-    table.font.size = gt::px(8),
-    table.border.top.width = gt::px(1),
-    table.border.bottom.width = gt::px(1)
-  )
-
-
-#------------------------------------------------------------
-# 4. Extract comparison table
-#------------------------------------------------------------
-fwrite(vegsum.pairs, "./outputs/vegsum_pairs.csv")
-
-### return unit species information
-vegsum.pairs.spp <- vegsum.pairs |> dplyr::select(Unit1, Unit2, Species, ScientificName, MeanCov.unit1, Constancy.unit1, MeanCov.unit2, Constancy.unit2, diff.pts.unit1, diff.pts.unit2)
-
-### return distinct unit comparisons
-
-unit.compare1 <- vegsum.pairs %>%
-  dplyr::select(
-    Unit1, Unit2, diff.ratio.unit1, diff.ratio.unit2, nplots.unit1, nplots.unit2, unit.diag.sum.unit1, unit.diag.sum.unit2
-  ) %>%
-  distinct(Unit1, Unit1, .keep_all = TRUE)
-
-
-unit.compare <- unit.compare1 %>% 
-    dplyr::select(
-      Unit1 = Unit2,
-      Unit2 = Unit1,
-      diff.ratio.unit1 = diff.ratio.unit2,
-      diff.ratio.unit2 = diff.ratio.unit1,
-      nplots.unit1 = nplots.unit2,
-      nplots.unit2 = nplots.unit1,
-      unit.diag.sum.unit1 = unit.diag.sum.unit2,
-      unit.diag.sum.unit2 = unit.diag.sum.unit1
-      ) |>  rbind(unit.compare1) |> 
-  distinct() |> mutate(BEC.sim.min = pmin(diff.ratio.unit1, diff.ratio.unit2),
-                      BEC.sim.max = pmax(diff.ratio.unit1, diff.ratio.unit2))
-
-
-fwrite(unit.compare , "./outputs/alliance_compare.csv")
-#------------------------------------------------------------
-# 5. Build BEC distance matrix and export
-#------------------------------------------------------------
-
-source("../BEC_R_working/_functions/_bec_dist_matrix.R")
-
-bec_dist_matrix <- bec_dist_matrix(
-  vegsum.pairs,
-  distance = "BEC.sim.min"
-) %>% 
-  data.frame()
-
-openxlsx::write.xlsx(
-  x = bec_dist_matrix,
-  file = "./clean_tabs/Coast_Forest_Alliance_Distance_matrix.xlsx",
-  rowNames = TRUE
-)
-```
-
-```{r summary report by alliances}
-# author = "MH_Forest_Alliance"
-# 
-# vegsum.wbk <- createWorkbook()
-#   # Build vegetation summary for this group
-#   vegSum_sub <- create_veg_sum_all(
-#     vdat = veg.dat2,
-#     siteUnits = su.alliance,
-#     minconstancy = 50,
-#     noiseconstancy = 25,
-#     strata.by = "Lifeform"
-#   )
-# 
-#   # Format table
-#   veg.sum.table_sub <- format_veg_table_nostrata(
-#     vsum = vegSum_sub,
-#     spp = taxon.lifeform
-#   )
-# sheet_name <- author
-#   # Name the sheet
-# # sheet_name <- paste0("Group_", g)
-# 
-# # Trim to 25 chars, then add a 5‑char hash suffix
-# # if (nchar(sheet_name) > 31) {
-# #   suffix <- substr(digest::digest(sheet_name), 1, 5)
-# #   sheet_name <- paste0(substr(sheet_name, 1, 25), "_", suffix)
-# # }
-# 
-# addWorksheet(vegsum.wbk, sheetName = sheet_name)
-# 
-# 
-#   # Write data
-#   writeData(vegsum.wbk, sheet = sheet_name, veg.sum.table_sub)
-# #}
-# 
-# saveWorkbook(
-#   vegsum.wbk,
-#   paste0("./vegsum.tables/", author, ".xlsx"),
-#   overwrite = TRUE
-# )
-
-```
-
-## Review environmental space of site units within associations
-
-Now look for environmental outliers of site units that have been merged into each association.
-
-### ID Edaphic outliers from central concept of associations
-
-Compare the median aSMR and median SNR value for each site unit to the median value for the entire association and flag those that are more than 1 edatopic step difference from the group median. This is a simple way to identify site units that may be outliers in edaphic space and may need to be separated into a different association or matched to a different association. aSMR is generated using the modelled relationship between rSMR and aSMR for the coastal BGCs.
-
-```{r test for edaphic outliers1}
-# source("../BEC_R_working/_functions/_test_edaphic_outliers.R")
-# source("../BEC_R_working/_functions/_find_edaphic_similarity.R")
-# group = "Association"
-# 
-# SU_edatope <- plot.edatope %>%
-#   left_join(su.anal2, by = "PlotNumber") %>%
-#   #rename(SiteUnit_orig = SiteUnit) %>%   # keep original
-#   left_join(BEC.hier, by = c("SiteUnit" = "SiteUnit")) %>%
-#   mutate(SiteUnit = coalesce(Association, SiteUnit)) %>%  # fallback
-#   filter(Analysis_Group == anal.set) %>%
-#   dplyr::select(SiteUnit, aSMR, SNR) %>%
-#   filter(!is.na(SiteUnit)) %>%
-#   mutate(
-#     SNR = factor(SNR, levels = c("A", "B", "C", "D", "E"), ordered = TRUE),
-#     SNR_num = as.numeric(SNR)
-#   ) %>%
-#   dplyr::select(-SNR) %>%
-#   filter(!is.na(SNR_num))
-# 
-# 
-# 
-# median_by_site <- SU_edatope %>%
-#   group_by(SiteUnit) %>%
-#   summarise(across(where(is.numeric),
-#                    \(x) median(x, na.rm = TRUE),
-#                    .names = "median_{.col}"))
-# 
-# 
-# su_all_sim2 <- su_all_sim %>% left_join(median_by_site, by = c("Unit1" = "SiteUnit")) %>% left_join(median_by_site, by = c("Unit2" = "SiteUnit")) %>% distinct %>% 
-#   dplyr::select(Unit1, Unit2, BEC.sim.min, tempAssoc1, tempAssoc2, smr1 = median_aSMR.x, smr2 = median_aSMR.y, snr1 = median_SNR_num.x, snr2 = median_SNR_num.y, tempAssoc_match )
-# 
-# 
-# su_all_sim2_rev <- su_all_sim2 %>% 
-#   dplyr::select(Unit1 = Unit2, Unit2 = Unit1, BEC.sim.min, tempAssoc1 = tempAssoc2, tempAssoc2 = tempAssoc1, smr1 = smr2, smr2 = smr1, snr1 = snr2, snr2 = snr1, tempAssoc_match )
-# 
-# # bind and sort
-# su_all_sim2_full <- bind_rows(su_all_sim2, su_all_sim2_rev) %>%
-#   arrange(Unit1, Unit2)
-# 
-# write.xlsx(
-#   su_all_sim2_full,
-#   file = "./review_materials/other_similar_su_cluster_review_edatope.xlsx",
-#   overwrite = TRUE
-# )
-
-#fwrite(su_all_sim2_full, "./review_materials/other_similar_sus_cluster_review_edatope.")
-```
-
-```{r test for edaphic outliers2}
-# group = "generated_Alliance"
-# 
-# 
-# 
-# assoc_edatope <- plot.edatope %>%
-#   left_join(su2, by = "PlotNumber") %>%
-#   left_join(BEC.hier, by = c("SiteUnit" = "SiteUnit")) %>%
-#   filter(Analysis_Group == anal.set) %>%
-#   dplyr::select(SiteUnit, aSMR, SNR, groups = group) %>%
-#   filter(!is.na(SiteUnit)) %>%
-# #  filter(groups %in% select.groups) %>%
-#   mutate(
-#     SNR = factor(SNR, levels = c("A", "B", "C", "D", "E"), ordered = TRUE),
-#     SNR_num = as.numeric(SNR)
-#   ) %>% filter(!is.na(SNR))
-# 
-# all_results <- lapply(sort(unique(assoc_edatope$groups)), function(g) {
-#   
-#   res <- test_edaphic_outliers(
-#     df = assoc_edatope,
-#     group_name = g
-#   )
-#   
-#   list(
-#     group = g,
-#     range_overlap = res$range_overlap %>% mutate(group = g),
-#     median_flags  = res$median_flags  %>% mutate(group = g)
-#   )
-# })
-# 
-# names(all_results) <- sort(unique(assoc_edatope$groups))
-# 
-# 
-# range_all <- bind_rows(
-#   lapply(all_results, function(x) x$range_overlap)
-# )
-# range_all  <- bind_rows(lapply(all_results, function(x) x$range_overlap))
-# edatopic_flag_all  <- bind_rows(lapply(all_results, function(x) x$median_flags)) %>% dplyr::select(group, SiteUnit, flag_aSMR, aSMR_median, group_aSMR_median, flag_SNR,SNR_median, group_SNR_median, flag_any, everything())
-# edatopic_outlier <- edatopic_flag_all %>% filter(flag_any == TRUE)
-# 
-# edatopic_outlier_gt <- edatopic_outlier %>%
-#   dplyr::select(
-#     Group = group,
-#     SiteUnit,
-#     aSMR_Median = aSMR_median,
-#     Group_aSMR_Median = group_aSMR_median,
-#     aSMR_Flag = flag_aSMR,
-#     SNR_Median = SNR_median,
-#     Group_SNR_Median = group_SNR_median,
-#     SNR_Flag = flag_SNR
-#   ) 
-# 
-# gt(edatopic_outlier_gt) %>%
-#   gt::tab_header(
-#     title = "Edatopic Outlier Summary",
-#     subtitle = "SiteUnits flagged as edaphic outliers based on median and range diagnostics"
-#   ) %>%
-#   gt::cols_label(
-#     Group = "Association Group",
-#     SiteUnit = "Site Unit",
-#     aSMR_Median = "Plot aSMR Median",
-#     Group_aSMR_Median = "Group aSMR Median",
-#     aSMR_Flag = "aSMR Outlier",
-#     SNR_Median = "Plot SNR Median",
-#     Group_SNR_Median = "Group SNR Median",
-#     SNR_Flag = "SNR Outlier"
-#   ) %>%
-#   gt::tab_style(
-#     style = cell_fill(color = "#FFF3CD"),
-#     locations = cells_body(
-#       columns = c(aSMR_Flag, SNR_Flag),
-#       rows = aSMR_Flag == TRUE | SNR_Flag == TRUE
-#     )
-#   ) %>%
-#   cols_width(everything() ~ px(1)) %>%   # <— auto-fit trick
-#   tab_options(
-#     table.font.size = px(7),
-#     data_row.padding = px(0),
-#     table.layout = "auto"
-#   )
-```
-
-### ID Climatic outliers from central concept of associations
-
-Several approaches are applied. This first looks at univariate range of 4 climate variables (MCMT, DD5, MSP, PAS) for each site unit compared to the range of the rest of the association. This is a simple way to identify site units that may be outliers in climate space and may need to be separated into a different association or matched to a different association. However, this approach does not take into account the covariance between variables and may miss outliers that are extreme in combination but not in any one variable. The second approach is to use mahalanobis distance in multivariate climate space to identify site units that are outliers in climate space compared to the rest of the association. These units may be candidates for merging into a different association with more similar climate or for being separated into their own association if they are sufficiently different from all other associations.
-
-```{r test for climatic outliers}
-# climate_vars <- c("MCMT", "DD5_an",  "PAS_an","MSP" ,"CMD_an")
-# source("../BEC_R_working/_functions/_climate_outliers.R")
-# source("../BEC_R_working/_functions/_climate_comparison.R")
-# climate_compared <- climate_outliers(
-#   plot_climate = plot.climate,
-#   su_anal = su.anal.new,
-#   climate_vars = climate_vars,
-#   group_col = "generated_Assoc",
-#   unit_col = "SiteUnit",
-#   low_overlap_threshold = 0.10,
-#     alpha_global = .90,
-#     alpha_local = .90)
-# 
-# mahal_outliers <- climate_compared$within_group_outliers %>% dplyr::select(SiteUnit, groups, distance_global, cutoff_global, is_outlier_global) %>% filter(is_outlier_global == TRUE) %>% arrange(groups, desc(distance_global)) %>% drop_na(groups)%>%
-#   dplyr::select(
-#     Group = groups,
-#     SiteUnit,
-#     Distance = distance_global,
-#     Cutoff = cutoff_global
-#   )
-# 
-#   gt(mahal_outliers) %>%
-#   tab_header(
-#     title = "Climate Outliers: Global Mahalanobis Distance",
-#     subtitle = "SiteUnits exceeding the global multivariate cutoff"
-#   ) %>%
-#   fmt_number(
-#     columns = c(Distance, Cutoff),
-#     decimals = 2
-#   ) %>%
-#   tab_options(
-#     table.font.size = px(8),
-#     data_row.padding = px(1)
-#   )
-# 
-#   
-# univariate_outliers <- climate_compared$climate_outliers %>% dplyr::select(SiteUnit, groups, variable, mean_su, mean_grp) %>% arrange(groups, SiteUnit) %>% drop_na(groups) %>%
-#   dplyr::select(
-#     Group = groups,
-#     SiteUnit,
-#     Variable = variable,
-#     SU_Mean = mean_su,
-#     Group_Mean = mean_grp
-#   )
-# gt(univariate_outliers) %>%
-#   tab_header(
-#     title = "Climate Outliers: Univariate Deviations",
-#     subtitle = "SiteUnits with mean climate values outside group envelopes"
-#   ) %>%
-#   fmt_number(
-#     columns = c(SU_Mean, Group_Mean),
-#     decimals = 2
-#   ) %>%
-#   cols_width(
-#     everything() ~ px(1)   # auto-fit trick
-#   ) %>%
-#   tab_options(
-#     table.font.size = px(7),
-#     data_row.padding = px(0),
-#     table.layout = "auto"
-#   )
-
-#mahalabobis_outliers <- climate_compared$mahal_all  %>% arrange(group, SiteUnit) %>% drop_na(group)
-#mahal_dist<- mahal_results$within_group_mahal %>% drop_na(groups)
-```
-
-## Look for possible placements for single site units
-
-Find nearest neighbours for single units (singletons) and compare vegetation, edaphic, and climatic similarity to identify potential matches for merging into existing groups. First find the nearest vegetation neighbours for site units and return the min and max BEC similarity Then for each pair which are \> 70% similar compare edatopic medians and climate similarity If high bec.sim.max and close environmental then consider merging the singleton into the neighbour unit Expect that site units in geographically peripheral BGCs may have no BC matches but may match to extrajurisdictional types (for Coast region Alaska or Washington State are most likely sources.)
-
-```{r}
-# source("../BEC_R_working/_functions/_find_nearest_neighbours.R")
-# group_edaphic_medians <- edatopic_flag_all %>%
-#   group_by(group) %>%
-#   summarise(
-#     group_SNR_median  = median(SNR_median, na.rm = TRUE),
-#     group_aSMR_median = median(aSMR_median, na.rm = TRUE),
-#     .groups = "drop"
-#   )
-# ungrouped_SUs <- assoc_edatope %>%
-#   filter(is.na(groups)) %>%
-#   distinct(SiteUnit)
-# 
-# edaphic_similarity <- find_edaphic_similarity (
-#   edatopic_table = edatopic_flag_all,
-#   df_raw = assoc_edatope
-# ) %>% 
-# arrange(SiteUnit )
-# climate_similarity <-  climate_compared$mahal_all %>% arrange(SiteUnit)
-# 
-# #unit.compare = unit.compare; single.units = single.units
-# nearest_units <- find_nearest_neighbours(unit.compare.new, single.units) %>% rename(SiteUnit = Singleton, group = Neighbor) 
-# 
-# nearest <- nearest_units  %>%
-#   left_join(climate_similarity, by = c("SiteUnit", "group")) %>% 
-#   left_join(edaphic_similarity, by = c("SiteUnit", "group")) %>%
-#   arrange(SiteUnit, distance) %>% drop_na
-# 
-# fwrite(nearest, "./outputs/veg_climate_edaphic_similarity.csv", row.names = FALSE)
-# check.match <- nearest %>% filter(distance < 7.78, BEC.sim.max >.65) %>%
-#   dplyr::select(
-#     SiteUnit,
-#     Group = group,
-#     Distance = distance,
-#     BEC_Similarity = BEC.sim.max
-#   ) %>%
-#   arrange(SiteUnit, Distance)
-# 
-#   gt(check.match) %>%
-#   tab_header(
-#     title = "Nearest Neighbour Matches",
-#     subtitle = "Filtered by climate distance < 7.78 and BEC similarity > 0.65"
-#   ) %>%
-#   fmt_number(
-#     columns = c(Distance, BEC_Similarity),
-#     decimals = 2
-#   ) %>%
-#   tab_style(
-#     style = cell_fill(color = "#E8F5E9"),
-#     locations = cells_body(
-#       rows = Distance < 7.78 & BEC_Similarity > 0.65
-#     )
-#   ) %>%
-#   tab_options(
-#     table.font.size = px(8),
-#     data_row.padding = px(1)
-#   )
-
-
-```
-
-### Environment summaries
-
-Horizonatal box plots of site unit medians by association and alliance
-
-This links community differences to environmental gradients. function to pull climate data and other environment data
-
-```{r}
-# su.anal <- su.anal.new
-# ## read in plot data and extract lat/long and environment info
-# becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;")
-# plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env") %>% mutate(lon = ifelse(Longitude<0, Longitude, 0-Longitude)) %>% mutate(Date = as_date(Date)) |> 
-#   filter(PlotNumber %in% su.anal$PlotNumber) |>
-#   dplyr::select(PlotNumber, lon, lat = Latitude, elev = Elevation, special = Exposure1, rSMR = MoistureRegime, rSNR = NutrientRegime, slope = SlopeGradient, aspect = Aspect ) 
-# plot.info <- dbReadTable(becmaster, "BECMaster_fixing_Admin") |> dplyr::select(Plot, BECSiteUnit, UserSiteUnit, HumusThickness, BGC=GIS_BGC)  |> filter(Plot %in% su.anal$PlotNumber)
-# plot.env <- left_join(plot.env, plot.info, by = c("PlotNumber" = "Plot")) |> filter(!is.na (rSMR))
-# #odbc::odbcListColumns(becmaster, table = "BECMaster_fixing_plot.env")
-# dbDisconnect(becmaster)
-# 
-# ## extract climate data for plots from climr
-# require(climr)
-# plot.locs <- plot.env %>% dplyr::select(id=PlotNumber, BGC, lon,lat,elev) |> drop_na(lat)
-# plot.climate <- climr::downscale(setDT(plot.locs),
-#                               vars = list_vars(set = c("Annual", "Seasonal", "Monthly")),
-#                               return_refperiod = TRUE,
-#                              # obs_periods = c("2001_2020"),
-#                               #obs_years = 2001:2024,
-#                               # gcms = c("ACCESS-ESM1-5","CNRM-ESM2-1", "EC-Earth3", "GFDL-ESM4", "GISS-E2-1-G", "MIROC6",  "MPI-ESM1-2-HR", "MRI-ESM2-0",  "UKESM1-0-LL" ),
-#                               # ssps = c("ssp126", "ssp245", "ssp370"),
-#                               # gcm_ssp_years = c(2025:2045),
-#                               #ensemble_mean = TRUE,
-#                               #obs_ts_dataset = "cru.gpcc",
-#                               #obs_ts_dataset = "mswx.blend",
-#                               db_option = "local",
-#                               cache = TRUE)
-# ## calculate aSMR
-# plot.env2 <- plot.climate |> select(PlotNumber = id, everything()) |> left_join(plot.env) |> 
-#   mutate(
-#     rSMR.clean = sub("^.*?(\\d+).*$", "\\1", rSMR)) |> 
-#   mutate(rSMR = as.numeric(rSMR.clean),
-#   SNR.clean = recode(
-#     substr(trimws(rSNR), 1, 1),
-#     "A" = 1L,
-#     "B" = 2L,
-#     "C" = 3L,
-#     "D" = 4L,
-#     "E" = 5L,
-#     "F" = 6L,
-#     .default = NA_integer_
-#   )) |> 
-#   mutate(
-#     moist = rowSums(
-#       across(c(PPT_05, PPT_06, PPT_07, PPT_08, PPT_09), ~ .x >= 90),
-#       na.rm = TRUE
-#     ),
-#     moist = ifelse(moist > 4, 1, 0),
-#     ratio = moist / 5,
-#     multiplier = 1 + ratio,
-#     CMD = CMD_an / multiplier
-#   ) |> mutate(PPT.dorm = PPT_at + PPT_wt) |> 
-#   mutate(CMD.total = ifelse(CMD >=350, 350 - PPT.dorm, CMD)) |> 
-#     mutate(CMD.site = ifelse(rSMR == 0, CMD.total+500, 
-#                            ifelse(rSMR == 1, CMD.total+375, 
-#                                   ifelse(rSMR == 2, CMD.total +250,
-#                                          ifelse(rSMR == 3, CMD.total +125,
-#                                                 ifelse(rSMR == 5, CMD.total/2,
-#                                                        ifelse(rSMR == 6, CMD.total/4,
-#                                                               ifelse(rSMR == 7, CMD.total/8,
-#                                                                      ifelse(rSMR == 8, CMD.total/16, CMD.total))))))))) |> 
-#   mutate(CMD.site = ifelse(slope > 35 & (aspect >180 & aspect <270), CMD.site *1.25,
-#                            ifelse(slope> 35 & (aspect>315 | aspect <45), CMD.site *0.85, CMD.site))) |> arrange(PlotNumber)
-#   
-#   ####To adjust in zones with prolonged snowpack remove CMD from early growing season months
-# ## BGCs with or below heavy snow packs
-# # BGC_Special <- fread("./inputs/BGC_Special.csv", data.table = FALSE)
-# # allDat2 <- left_join(allDat2,BGC_Special, by = c("BGC" = "BGC"))
-# # allDat2 <- allDat2 %>% mutate(CMD = ifelse(is.na(Special), CMD, CMD_08)) %>% select(-Special, -CMD_08) %>% drop_na()
-# #rules <- read.csv("./inputs/aSMR_growingseason_Rules_HalfStep_v13_13Sept2025.csv")
-# rules <- read.csv("./inputs/aSMR_Rules_HalfStep_v13_23June2025.csv") |>
-#   mutate(rSMR.rule = as.numeric(sub("^rSMR", "", rSMR)), CMD = as.numeric(CMD)) |> dplyr::select(-rSMR)
-# 
-# plot_asmr <- plot.env2 %>%
-#   select(PlotNumber, rSMR, CMD.site) %>%
-#   left_join(rules, by = c("rSMR" = "rSMR.rule")) %>%
-#   filter(CMD.site <= CMD) %>%
-#   group_by(PlotNumber) %>%
-#   slice_min(CMD, n = 1) %>%
-#   ungroup() %>% select(PlotNumber, aSMR)
-# 
-# plot.env2 <- left_join(plot.env2, plot_asmr)
-# 
-# env.alliance <- plot.env2 |>
-#   left_join(
-#     su.anal, 
-#     by = "PlotNumber") |> rename(alliance = generated_Alliance, assoc = generated_Assoc)
-# 
-# xx <- env.alliance |> filter(SiteUnit == "CWHms5_112")
-
-```
-
-## Environment of units
-
-```{r}
-#| label: fig-Assoc-env
-#| fig-cap: ("Plot environment by Association")
-#| fig-cap-location: bottom
-#| warning: false
-#| fig-align: "center"
-#| fig-width: 8
-#| fig-height: 12
-# env.long <- env.alliance |>
-#   select(siteunit = SiteUnit, assoc,  aSMR, SNR.clean, MSP, MAT) |>
-#   mutate(
-#     #alliance = str_remove(alliance, "^.*generated_"),
-#     assoc    = str_remove(assoc, "^.*generated_")
-#   ) |>
-#   pivot_longer(
-#     cols = c(aSMR, SNR.clean, MSP, MAT),
-#     names_to = "variable",
-#     values_to = "value",
-#     values_drop_na = TRUE
-#   ) |>
-#   mutate(
-#     assoc = reorder_within(assoc, value, variable, median)
-#   )
-# 
-# library(Polychrome)
-# 
-# unit_levels <- sort(unique(env.long$siteunit))
-# 
-# cols <- createPalette(
-#   length(unit_levels),
-#   seedcolors = c(
-#     "#E41A1C",
-#     "#377EB8",
-#     "#4DAF4A",
-#     "#984EA3",
-#     "#FF7F00"
-#   )
-# )
-# 
-# names(cols) <- unit_levels
-# 
-# ggplot(env.long, aes(assoc, value)) +
-#   geom_boxplot(fill = "grey90", outlier.shape = NA) +
-#   geom_jitter(
-#     aes(colour = siteunit),
-#     width = 0.1,
-#     alpha = 0.6,
-#     size = 2
-#   ) +
-#   facet_wrap(~variable, scales = "free") +
-#   scale_x_reordered() +
-#   coord_flip() +
-#   scale_colour_manual(values = cols) +
-#   theme(legend.position = "none")
-
-  
-```
-
-```{r}
-#| label: fig-Alliance-plotenv
-#| fig-cap: ("Plot environment by Alliance")
-#| fig-cap-location: bottom
-#| warning: false
-#| fig-align: "center"
-#| fig-width: 8
-#| fig-height: 12
-# env.long <- env.alliance |>
-#   select(siteunit = SiteUnit, assoc, alliance, aSMR, SNR.clean, MSP, MAT) |>
-#   mutate(
-#     alliance = str_remove(alliance, "^.*generated_"),
-#     assoc    = str_remove(assoc, "^.*generated_")
-#   ) |>
-#   pivot_longer(
-#     cols = c(aSMR, SNR.clean, MSP, MAT),
-#     names_to = "variable",
-#     values_to = "value",
-#     values_drop_na = TRUE
-#   ) |>
-#   mutate(
-#     alliance = reorder_within(alliance, value, variable, median)
-#   )
-# 
-# library(Polychrome)
-# 
-# unit_levels <- sort(unique(env.long$siteunit))
-# 
-# cols <- createPalette(
-#   length(unit_levels),
-#   seedcolors = c(
-#     "#E41A1C",
-#     "#377EB8",
-#     "#4DAF4A",
-#     "#984EA3",
-#     "#FF7F00"
-#   )
-# )
-# 
-# names(cols) <- unit_levels
-# 
-# ggplot(env.long, aes(alliance, value)) +
-#   geom_boxplot(fill = "grey90", outlier.shape = NA) +
-#   geom_jitter(
-#     aes(colour = siteunit),
-#     width = 0.2,
-#     alpha = 0.6,
-#     size = 2
-#   ) +
-#   facet_wrap(~variable, scales = "free") +
-#   scale_x_reordered() +
-#   coord_flip() +
-#   scale_colour_manual(values = cols) +
-#   theme(legend.position = "none")
-# 
-#   
-```
-
-```{r}
-#| label: fig-medianSU-env
-#| fig-cap: ("Median SiteUnit environment by alliance")
-#| fig-cap-location: bottom
-#| warning: false
-#| fig-align: "center"
-#| fig-width: 8
-#| fig-height: 12
-# env.sum <- env.alliance |>
-#   select(siteunit = SiteUnit, assoc, alliance,aSMR, SNR.clean, MSP, MAT) |>#
-#   mutate(
-#     alliance = str_remove(alliance, "^.*generated_"),
-#     assoc    = str_remove(assoc, "^.*generated_")
-#   ) |>
-#   pivot_longer(
-#     cols = c(aSMR, SNR.clean, MSP, MAT),#
-#     names_to = "variable",
-#     values_to = "value",
-#     values_drop_na = TRUE
-#   ) |>
-#   group_by(variable, siteunit, alliance) |>
-#   summarise(
-#     median = median(value, na.rm = TRUE),
-#     #mean   = mean(value, na.rm = TRUE),
-#     #sd     = sd(value, na.rm = TRUE),
-#     .groups = "drop"
-#   )
-# alliance.order <- env.sum |>
-#   group_by(variable, alliance) |>
-#   summarise(ord = median(median), .groups = "drop")
-# 
-# library(tidytext)
-# 
-# env.sum <- env.sum |>
-#   left_join(alliance.order, by = c("variable", "alliance")) |>
-#   mutate(
-#     alliance_plot = reorder_within(alliance, ord, variable)
-#   )
-# 
-# library(ggrepel)
-# 
-# ggplot(
-#   env.sum,
-#   aes(
-#     x = alliance_plot,
-#     y = median,
-#     colour = siteunit
-#   )
-# ) +
-#   geom_errorbar(
-#     aes(ymin = median,# - sd,
-#         ymax = median),# + sd),
-#     width = 0,
-#     position = position_dodge(width = 0.4)
-#   ) +
-#   geom_point(
-#     size = 2,
-#     position = position_dodge(width = 0.4)
-#   ) +
-#   geom_text_repel(
-#     aes(label = siteunit),
-#     direction = "y",
-#     size = 2,
-#     show.legend = FALSE
-#   ) +
-#   facet_wrap(~variable, scales = "free") +
-#   scale_x_reordered() +
-#   coord_flip() +
-#   scale_colour_manual(values = cols) +
-#   theme_bw() +
-#   theme(legend.position = "none")
-
-```
 
 ## Additional possible work
 
@@ -1651,3 +840,54 @@ Can hierarchical unit be predicted for new plots or hierarchical units?
 ### Klinka's Indicator plant analysis
 
 rich-poor, dry-moist, climatic groups (see Klinka 1989)
+
+# Appendix 1
+
+- **PERMANOVA R²**: Proportion of variation explained by the hierarchical grouping.
+- **PERMANOVA adjusted p-value**: Statistical significance of compositional differences.
+- **Betadispersion adjusted p-value**: Evaluates whether observed differences are driven by true compositional shifts or by differences in within-group dispersion.
+
+## Support Score Calculation
+
+The overall support score is calculated as:
+
+```{=html}
+support_score = score_R2 + score_disp + score_perm
+```
+
+## 1. PERMANOVA R² Score
+
+- R² ≥ 0.20 → **70 points**
+- R² ≥ 0.15 → **60 points**
+- R² ≥ 0.10 → **50 points**
+- R² ≥ 0.05 → **25 points**
+- R² < 0.05 → **0 points**
+
+## 2. PERMANOVA Significance Score
+
+- Adjusted p-value < 0.05 → **10 points**
+- Adjusted p-value ≥ 0.05 → **0 points**
+
+## 3. Betadispersion Score
+
+- Adjusted p-value > 0.10 → **20 points**
+- Adjusted p-value > 0.05 and ≤ 0.10 → **10 points**
+- Adjusted p-value ≤ 0.05 → **0 points**
+
+## Support Classification
+
+| Support Score | Classification |
+|---------------|---------------|
+| ≥ 80 | Strong |
+| ≥ 60 | Moderate |
+| ≥ 40 | Weak |
+| < 40 | Review |
+
+## Recommendation Rules
+
+Recommendations are assigned in the following order:
+
+1. If **R² < 0.05** → **Merge?**
+2. Else if **R² < 0.10** → **Review**
+3. Else if **Betadispersion adjusted p-value < 0.05** → **Heterogeneous**
+4. Otherwise → **Supported**
