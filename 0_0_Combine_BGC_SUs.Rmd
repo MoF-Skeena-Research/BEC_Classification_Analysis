@@ -19,7 +19,7 @@ source("../BEC_R_working/_functions/_buildSU.R")
 #### Import becdb site series
 ```{r set folders, include=FALSE}
 require(DBI) #loads odbc as well
- becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;")
+ becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v1.accdb;")
 
 BGCs <- dbReadTable(becdb, "tblBGC_UnitsWorkingandArchive") %>% filter(Status == "Current") %>% select(BGC_Label, BGC_NoSpace, ZONE) 
 siteseries_all<- dbReadTable(becdb, "tblBEC_SiteSeriesWorkingandArchive") %>% filter(!Status == "Retired") %>% select(BGC_NoSpace, SS_NoSpace, SU_Label, Forest_NonForest) 
@@ -85,7 +85,7 @@ dbWriteTable(master_su, "nplots_per_siteunit",  plots_per_SU, overwrite = TRUE, 
 dbDisconnect(master_su)
 fwrite(SU_all, "./clean_tabs/All_BECv14_working_SU.csv")
 ## for updating the plot count in the tbl_BEC_Hierarchy_Class
- becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;")
+ becdb <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v1.accdb;")
 dbWriteTable(becdb, "nplots_per_siteunit",  plots_per_SU, overwrite = TRUE, batch_rows = 1, row.names = FALSE)
 dbDisconnect(becdb)
 # update the BEC
