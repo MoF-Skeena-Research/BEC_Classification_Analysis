@@ -12,3 +12,6 @@
 /vegsum.tables/
 *.gpkg
 .positai
+
+/.quarto/
+**/*.quarto_ipynb
