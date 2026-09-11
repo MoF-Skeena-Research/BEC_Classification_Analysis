@@ -195,7 +195,7 @@ source("../BEC_R_working/_functions/_diagram_diagnostic_points.R")
 ```
 
 ```{r}
-p <- diagram_diagnostic_points(outfile = "Diagnostic_Potential_Scoring_System.png")
+p <- diagram_diagnostic_points(outfile = "./figures/Diagnostic_Potential_Scoring_System.png")
 
 
 p

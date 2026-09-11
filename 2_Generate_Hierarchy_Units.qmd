@@ -1,5 +1,5 @@
 ---
-title: "Build Associations for LMH77"
+title: "Generate Preliminary Hierarchy Units"
 author: "William H MacKenzie"
 date: today
 format:
@@ -9,7 +9,7 @@ format:
     toc-title: Contents
     section-numbering: 1.1.1
     columns: 1
-output-file: "MH_Generated_Hierarchy.pdf"
+output-file: "Generated_Hierarchy_Units.pdf"
 editor: source
 execute:
   echo: false
@@ -58,6 +58,7 @@ require(gt)
 require(vegan)
 library(tidytext)
 library(stringr)
+require(climr)
 
 set.seed(1279)
 source("../BEC_R_working/_functions/_bec_dist.R")
@@ -105,55 +106,24 @@ source("../BEC_R_working/_functions/_calc_diagnostic_potential.R")
 ```
 
 
-```{r}
-# anal_set <- c("MH")
-# compare_set <- c("CWH-HwBa", "CWH-HwBa-rich")
-# compare_set = anal_set
-# #,  "CWH-HwFd", "CWH-HwFd-rich", "coast-wetfor", "MH")"CWH-102",
-# BEC <- generate_bec_hierarchy(
-#     anal_set,
-#     compare_set,
-#     group_to_test = "Association",
-#     veg_file = "./clean_data/Analysis_BECMaster_Veg.rds",
-#     veg_combine_db = "D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_Lump.accdb",
-#     veg_combine_tbl = "CorrelationII_Lump",
-#     becmaster_db = "D:/BECMaster/BECMaster_fixing.accdb",
-#     correlation_db = "D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb",
-#     becdb_db = "D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v1.accdb",
-#         include_usa = FALSE,
-#     similarity_params = list(
-#       minconstancy = 50,
-#       noiseconstancy = 10,
-#       minplots = 1,
-#       minor = 1,
-#       use.ksi = FALSE,
-#       mindiff = 0.2,
-#       mindd = 0.35,
-#       dominant = 7
-#     ),
-#     same_threshold = 0.7,
-#     create_review_materials = TRUE,
-#     create_env_analysis = FALSE,
-#     create_BECdb = TRUE,
-#     out_dir = "./review_materials/"
-# )
-
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+## units to report on
+anal_set <- c(
+  "CWH-HwBa-rich", "CWH-HwBa"
+)
 
 ## units to find potential similar units
 compare_set <- c(
-  "ICH-rich"
-  # "CWH-HwBa",
-  # "CWH-HwBa-rich",
-  #  "MH",
-  # "coast-wetfor",
-  # "CWH-102",
-  # "CWH-HwFd",
-  # "CWH-HwFd-rich"
+ # "ICH-rich" 
+  #"Act",
+  "CWH-HwBa",
+  "CWH-HwBa-rich",
+  "MH",
+  "coast-wetfor",
+  "CWH-102",
+  "CWH-HwFd",
+  "CWH-HwFd-rich"
 )
-## units to report on
-# anal_set <- c(
-#   "CWH-HwBa-rich", "CWH-HwBa"
-# )
 anal_set = compare_set
 
 
@@ -169,7 +139,10 @@ for(i in seq_along(anal_set)) {
   results[[i]] <- generate_bec_hierarchy(
     anal_set,
     compare_set,
-    group_to_test = "Association",
+    base_level = "association",
+    classification = "generated",
+    preclass_level = "Association",
+    use_preclass = TRUE,
     veg_file = "./clean_data/Analysis_BECMaster_Veg.rds",
     veg_combine_db = "D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_Lump.accdb",
     veg_combine_tbl = "CorrelationII_Lump",
@@ -189,19 +162,12 @@ for(i in seq_along(anal_set)) {
     ),
     same_threshold = 0.7,
     create_review_materials = TRUE,
-    create_env_analysis = FALSE,
+    run_env_analysis = FALSE,
     create_BECdb = TRUE,
     out_dir = "./review_materials/"
   )
 }
-#xx <- results$`CWH-HwBa-rich`$hierarchy$cluster_table
-```
+#xx <- results$`ICH-rich`$hierarchy$generated_hier
 
-
-
-```{r}
 
 ```
-
-
-
