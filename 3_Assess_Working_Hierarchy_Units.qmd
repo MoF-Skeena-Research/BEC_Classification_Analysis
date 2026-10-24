@@ -145,10 +145,11 @@ Are alliances and associations compositionally distinct from one another? How in
 #------------------------------------------------------------
 
 veg_obj <- load_veg_data(
-    veg_file = "./clean_data/Analysis_BECMaster_Veg.rds",
-    veg_combine_db = "D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_Lump.accdb",
+    veg_file = "D:/OneDrive - Government of BC/GitHub_data/BEC_veg_data/Analysis_BECMaster_Veg.rds",
+    veg_combine_db = "D:/OneDrive - Government of BC/BC_Correlation2_Vpro_2023/Correlation2_Spp_Lump.accdb",
     veg_combine_tbl = "CorrelationII_Lump",
     use_subtaxa = FALSE)
+
 veg_dat = veg_obj$veg_dat_lumped
 taxon_lifeform = veg_obj$taxon_lifeform
 
@@ -156,7 +157,7 @@ taxon_lifeform = veg_obj$taxon_lifeform
 # 3. Load SiteUnit data from two LMH databases
 #------------------------------------------------------------
 su <- load_siteunits(
-    correlation_db = "D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb",
+    correlation_db = "D:/OneDrive - Government of BC/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb",
     becdb_db = "D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v1.accdb")
 
 su_class <- su$su_class |> filter(SiteUnit %in% reviewed_anal_set$SiteUnit)
@@ -184,7 +185,7 @@ su_anal<- su_class |>
 # 5. Load BECMaster environmental + edatopic tables
 #------------------------------------------------------------
 plot_env <- load_becmaster_env(
-    becmaster_db = "D:/BECMaster/BECMaster_fixing.accdb",
+    becmaster_db = "D:/OneDrive - Government of BC/BECMaster_updates/BECMaster_fixing.accdb",
     proj_name = "BECMaster_fixing"
 ) |> filter(PlotNumber %in% su_anal$PlotNumber)
 
