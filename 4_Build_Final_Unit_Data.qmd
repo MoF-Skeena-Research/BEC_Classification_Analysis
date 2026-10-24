@@ -1,0 +1,765 @@
+---
+title: "Build constancy tables for final units"
+author: "William H MacKenzie"
+date: today
+format:
+  typst:
+    toc: false
+    toc-depth: 1
+    toc-title: Contents
+    section-numbering: 1.1.1
+    columns: 1
+    mainfont: "Calibri"
+    fontsize: 10pt
+editor: source
+execute:
+  echo: false
+  error: false
+  warning: false
+  message: false
+  fig.width: 6
+  fig.height: 4
+  fig.align: 'center'
+  fig.cap: true
+  fig.pos: H
+  out.width: '100%'
+  dev: pdf
+  fig.ext: pdf
+  cache: false
+  fig.retina: 2
+  dpi: 600
+  fig.asp: 1.5
+  fig.path: "./figures/"
+output-file: "Constancy_Tables_Hierarchy_Units.pdf"
+---
+
+## From final or penultimate hierarchy units create a constancy table
+Constancy table will be limited to high constancy species and then plots can be compared to species list pres/abs and cover^(1/3) and high fit plots assigned as unit.add
+Could also find the centroid plot of units and designate it as the 'type' site. And then compare type plots to other plots in a conventional way.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+require(tidyverse)
+require(DBI)
+require(data.table)
+require(cluster)
+require(dendextend)
+require(dynamicTreeCut)
+require(gtable)
+require(colorspace)
+require(gtsummary)
+require(openxlsx)
+require(tictoc)
+require(labdsv)
+require(indicspecies)
+require(Polychrome)
+require(ggdendro)
+require(purrr)
+require(ggplotify)
+require(grid)
+library(stringr)
+require(vegan)
+require(betapart)
+library(plotly)
+require(gt)
+gt <- gt::gt
+library(writexl)
+set.seed(1279)
+options(error = rlang::entrace)
+source("../BEC_R_working/_functions/_bec_dist_matrix.R")
+source("../BEC_R_working/_functions/_combine_taxa.R")
+
+ source("../BEC_R_working/_functions/_do_pairwise.R")
+source("../BEC_R_working/_functions/_combined_su.R")
+
+source("../BEC_R_working/_functions/_build_bec_distance_matrix.R")
+source("../BEC_R_working/_functions/_calc_diagnostic_potential.R")
+source("../BEC_R_working/_functions/_load_veg_data.R")
+source("../BEC_R_working/_functions/_load_siteunits.R")
+source("../BEC_R_working/_functions/_load_becmaster_env.R")
+source("../BEC_R_working/_functions/_get_plot_climr_data.R")
+source("../BEC_R_working/_functions/_calculate_aSMR.R")
+
+source("../BEC_R_working/_functions/_summarize_siteunit_env.R")
+source("../BEC_R_working/_functions/_prepare_pca_data.R")
+source("../BEC_R_working/_functions/_run_siteunit_pca.R")
+source("../BEC_R_working/_functions/_plot_nmds_hierarchy.R")
+
+source("../BEC_R_working/_functions/_plot_pca_hierarchy.R")
+source("../BEC_R_working/_functions/_plot_pca_boxplots.R")
+source("../BEC_R_working/_functions/_indicator_species_analysis.R")
+source("../BEC_R_working/_functions/_assess_group_support.R")
+source("../BEC_R_working/_functions/_pairwise_adonis_dist.R")
+source("../BEC_R_working/_functions/_create_dendro_all.R")
+
+source("../BEC_R_working/_functions/_create_veg_summary_workbook.R")
+source("../BEC_R_working/_functions/_create_veg_sum_all.R")
+source("../BEC_R_working/_functions/_format_veg_table_nostrata.R")
+source("../BEC_R_working/_functions/_encode_veg_sum.R")
+
+source("../BEC_R_working/_functions/_create_veg_sum.R")
+
+data.path = "D:/OneDrive - Government of BC/GitHub_data"
+```
+
+```{r}
+
+library(readxl)
+anal_set <- c("CWH-HwBa")# "CWH-102" "CWH-HwBa" "CWH-HwBa-rich"  "CWH-HwFd" "CWH-HwFd-rich" "CWH-wetfor"  "MH" "CWH-Act"
+## read in working db worksheet from one drive.
+review_dir <- paste0("D:/OneDrive - Government of BC/Coastal BEC Guide/Associations_Alliances_Review/" , anal_set, "/")
+workbook <- paste0("0_", anal_set, "_BECdb_table_for_edit_dvm.xlsx")
+
+file_path <- paste0(review_dir, workbook)
+# sheet_names <- excel_sheets()
+# print(sheet_names)
+reviewed_anal_set <- read_excel(file_path)
+#df <- read_excel("D:/OneDrive - Government of BC/Coastal BEC Guide/Associations_Alliances_Review/CWH-HwFd-rich/0_CWH-HwFd_BECdb_table_for_edit.xlsx")
+
+
+```
+
+
+# Build constancy tables
+
+```{r , echo=FALSE}
+#------------------------------------------------------------
+# 1. Load vegetation data + taxon lifeform classifications
+#------------------------------------------------------------
+veg_obj <- load_veg_data(
+    veg_file = "./clean_data/Analysis_BECMaster_Veg.rds",
+    veg_combine_db = "D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_Lump.accdb",
+    veg_combine_tbl = "CorrelationII_Lump",
+    use_subtaxa = FALSE)
+veg_dat = veg_obj$veg_dat
+taxon_lifeform = veg_obj$taxon_lifeform
+
+#------------------------------------------------------------
+# 3. Load SiteUnit data from two LMH databases
+#------------------------------------------------------------
+su <- load_siteunits(
+    correlation_db = "D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb",
+    becdb_db = "D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v1.accdb")
+
+su_class <- su$su_class |> filter(Analysis_Group %in% anal_set)
+
+#reviewed_anal_set <- read_excel(file_path)
+
+su_anal<- su_class |>
+  left_join(
+    reviewed_anal_set |>
+      select(
+        SiteUnit,
+        working_association,
+        working_alliance,
+        working_order
+      ),
+    by = "SiteUnit",
+    suffix = c(".old", "")
+  ) |>
+  select(
+    -working_association.old,
+    -working_alliance.old,
+    -working_order.old
+  ) |> mutate(siteunit = SiteUnit)
+
+```
+
+Create constancy table by working_ unit
+```{r}
+
+veg_sum <- create_veg_sum(
+    veg_dat,
+    siteunit_tbl = su_anal,
+    siteunit_var = "working_association",
+    minconstancy = 20,
+    noiseconstancy = 10,
+    strata_by = c("Lifeform"),
+    minimportance = 0,
+    lumpfile = NULL)
+```
+
+### To DO:
+add in classification for any matching
+reduce lifeforms
+emphasize indicators
+
+```{r}
+library(data.table)
+#unit.choose = "CWH_HwBa_mesic"
+unit.choose = "HwBa – Blueberry – Queen's cup"
+unique(veg_sum$working_association)
+
+test_unit <- veg_sum |>
+  filter(.data[[siteunit_var]] == unit.choose) |>
+  filter(Constancy >= 50, MeanCov >= 2)
+
+su_choose <- su_anal |> filter(.data[[siteunit_var]] == unit.choose)
+n_test_unit <- uniqueN(su_choose$PlotNumber)
+
+test_species <- unique(test_unit$Species)
+n_species <- length(test_species)
+
+setDT(veg_dat)
+setDT(su_anal)
+
+matching_plots <- unique(
+  veg_dat[, .(PlotNumber, Species)]
+)[
+  Species %in% test_species,
+  .(n_match = .N),
+  by = PlotNumber
+][
+  , prop_match := n_match / n_species
+][
+  prop_match >= 0.5
+]
+
+matches <- su_anal[
+  matching_plots,
+  on = "PlotNumber"
+]
+matches
+test_ref <- test_unit |>
+  select(Species, MeanCov) |>
+  distinct()
+
+library(data.table)
+library(vegan)
+
+# Species in either the reference or matched plots
+plot_cov <- veg_dat[
+  PlotNumber %in% matches$PlotNumber,
+  .(Cover = sum(Cover, na.rm = TRUE)),
+  by = .(PlotNumber, Species)
+]
+plot_cov <- plot_cov[
+  Species %in% test_species
+]
+
+# Wide plot matrix
+plot_mat <- dcast(
+  plot_cov,
+  PlotNumber ~ Species,
+  value.var = "Cover",
+  fill = 0
+)
+
+plot_ids <- plot_mat$PlotNumber
+plot_mat <- as.matrix(plot_mat[, -1])
+
+# Create reference vector with same species ordering
+ref <- setNames(test_ref$MeanCov, test_ref$Species)
+
+all_spp <- union(colnames(plot_mat), names(ref))
+
+plot_mat <- plot_mat[, match(all_spp, colnames(plot_mat)), drop = FALSE]
+colnames(plot_mat) <- all_spp
+plot_mat[, is.na(colnames(plot_mat))] <- 0
+
+plot_mat <- plot_mat^(1/3)
+
+ref_vec <- ref[all_spp]
+ref_vec[is.na(ref_vec)] <- 0
+
+ref_vec <- ref_vec^(1/3)
+
+bc_dist <- vegdist(
+  rbind(ref_vec, plot_mat),
+  method = "bray"
+)
+
+bc_sim <- 1 - as.numeric(bc_dist[1, -1])
+
+similarity <- data.table(
+  PlotNumber = plot_ids,
+  BrayCurtisSimilarity = bc_sim
+)
+matches <- merge(
+  matches,
+  similarity,
+  by = "PlotNumber",
+  all.x = TRUE
+)
+
+matches[, InTestUnit := PlotNumber %in% su_choose$PlotNumber]
+
+
+
+n_found <- matches[
+  InTestUnit == TRUE,
+  uniqueN(PlotNumber)
+]
+
+data.table(
+  TestUnitPlots = n_test_unit,
+  FoundInMatches = n_found,
+  Recall = n_found / n_test_unit
+)
+
+
+matches <- matches |> filter(BrayCurtisSimilarity >=.8)
+matches <- matches[order(-BrayCurtisSimilarity)]
+test_ingroup <- matches |> filter(InTestUnit == TRUE)
+plot_SU <- matches |> dplyr::select(PlotNumber, SiteUnit) |> arrange(desc(SiteUnit))
+fwrite(plot_SU, "./outputs/test_SU.csv")
+
+```
+
+
+
+# Vegetation difference between units
+## Association Vegetation Summary table by Alliance
+
+Each sheet has all site units for a proposed alliance on a single sheet grouped, labelled, and colour-themed by generated Association to help review and editing of membership. This will be used to review the proposed alliances and make decisions about which site units should be merged into associations, which should be separated into new associations, and which should be left as singletons. The vegetation summary tables will also be used to identify potential diagnostic species for each alliance and to compare the vegetation composition of different alliances.
+
+*See exported xlsx table in review materials*
+
+
+```{=typst}
+#pagebreak()
+```
+## Cluster Dendrograms
+
+### Raw site unit clustering
+
+```{r }
+#| label: fig-su-cluster
+#| fig-cap: Cluster of Site Units in Analysis Group
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 10
+source("../BEC_R_working/_functions/_bec_dist_matrix.R")
+dendro_hc <- create_dendro_all(unit_compare, threshold.low = .4)
+```
+
+```{=typst}
+#pagebreak()
+```
+
+### Working association clustering
+
+```{r , message=FALSE, echo=FALSE}
+#| label: fig-assoc-cluster
+#| fig-cap: Cluster of working Associations in Analysis Group
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 10
+source("../BEC_R_working/_functions/_bec_dist_matrix.R")
+
+vegsum_assocs <- do_pairwise(
+    veg_dat, 
+    su_anal,
+    base_level = "association",
+    classification = "working",
+    minconstancy = 50,
+    noiseconstancy = 10,
+    minplots = 0, 
+    mindiff = .1, 
+    mindd = 0.35,
+    use.ksi = FALSE, ksi = NULL, ksi.value = 1.5,
+    reduce_lifeform = FALSE, reduced_lifeforms = NULL,
+    reduction = 1, reduced_exceptions = NULL,
+    minor = 1,
+    dominant = 7,
+    add_vegsum_table = NULL
+)
+
+bec_distance_assocs <- build_bec_distance_matrix(vegsum_assocs,
+    su_anal,
+    preclass_level,
+    use_preclass = FALSE,
+    similarity_field = "BEC.sim.min")
+dendro_hc <- create_dendro_all(bec_distance_assocs$unit_compare, threshold.low = .4)
+```
+## 3D NMDS ordination plot
+
+NMDS based on BEC dissimilarity using siteunits., working alliances and associations
+
+Visual review: do alliances form distinct clusters? Which alliances overlap? Are some alliances highly variable internally? Includes an envfit joint plot on NMDS from a select set of climate and edaphic variables
+
+[**See interactive 3D NMDS html file in review materials**]{.underline}
+
+```{r, echo=FALSE, message=FALSE}
+#| label: fig-nmds
+#| fig-cap: "3D NMDS for SiteUnits within working Alliances"
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 8
+
+
+# Units present in each object
+env_units  <- unique(su_env$siteunit)
+anal_units <- unique(su_anal$siteunit)
+dist_units <- rownames(as.matrix(bec_dist))
+
+# Units present in all three
+common_units <- Reduce(intersect, list(env_units, anal_units, dist_units))
+missing_from_env  <- setdiff(union(anal_units, dist_units), env_units)
+missing_from_anal <- setdiff(union(env_units, dist_units), anal_units)
+missing_from_dist <- setdiff(union(env_units, anal_units), dist_units)
+# Report missing units
+for (x in list(
+  env = missing_from_env,
+  anal = missing_from_anal,
+  dist = missing_from_dist
+)) {
+  if (length(x) > 0) {
+    warning(
+      sprintf(
+        "Missing from %s_units: %s",
+        names(x),
+        paste(x[[1]], collapse = ", ")
+      )
+    )
+  }
+}
+
+# Filter datasets
+su_env_filt <- su_env %>%
+  filter(siteunit %in% common_units)
+
+su_anal_filt <- su_anal %>%
+  filter(SiteUnit %in% common_units)
+
+bec_dist_filt <- as.matrix(bec_dist)[common_units, common_units]
+
+# Run NMDS
+nmds <- plot_nmds_hierarchy(
+  bec_dist = bec_dist_filt,
+  su_anal = su_anal_filt,
+  su_env = su_env_filt,
+  k = 3,
+  classification = "working",
+  output_file = paste0("/", anal_set, "/", anal_set, "_NMDS_Hierarchy.html"),
+  save_html = TRUE
+)
+
+nmds$plot
+#nmds$scores
+#nmds$stress
+```
+
+```{=typst}
+#pagebreak()
+```
+
+## Indicator Species Analysis
+
+Indicator species analysis using plot data to assess what species statistically differentiate units from all other units. Analysis looks at individual hierarchical units but also grouped pairs of units to allow assessment of whether some existing pairs be should combined to maximize Flag hierarchy units with few indicator species and where merged units have a long list of indicator species
+
+### Alliances
+
+```{=typst}
+#set text(size: 8pt)
+#show figure: set block(breakable: true)
+```
+
+
+```{r}
+#| label: tbl-alliance-indic
+#| tbl-cap: Indicator species for  Alliances
+#| tbl-cap-location: bottom
+#| warning: false
+#| tbl-align: "center"
+# fig-width: 8
+# fig-height: 12
+
+ind.alliance <- indicator_species_analysis(
+  veg_dat,
+  su_anal,
+  group_level = "working_alliance",
+  within_level = NULL,
+  max.order = 2,
+  min.constancy = 40,
+  min.fidelity = 10,
+  p.cutoff = 0.2,
+  export.tables = TRUE,
+  export.folder = paste0("./review_materials/", anal_set),
+  show.tables = TRUE#,
+ #top.n = NULL
+)
+ind.alliance$gt_table
+```
+
+```{=typst}
+#pagebreak()
+```
+
+### Associations within Alliances
+
+```{=typst}
+#show figure: set block(breakable: true)
+```
+
+```{r}
+#| label: tbl-assoc-indic
+#| tbl-cap: Indicator species for Associations within working Alliances
+#| tbl-cap-location: bottom
+#| warning: false
+#| tbl-align: "center"
+# fig-width: 8
+# fig-height: 12
+
+ind_assoc_alliance <- indicator_species_analysis(
+  veg_dat,
+  su_anal,
+  group_level = "working_association",
+  within_level = "working_alliance",
+  max.order = 2,
+  min.plots = 1,
+  min.constancy = 40,
+  min.fidelity = 10,
+  nperm = 999,
+  p.cutoff = 0.2,
+  export.tables = TRUE,
+  export.folder = paste0("./review_materials/", anal_set),
+  show.tables = TRUE#,
+ #top.n = NULL
+)
+
+ind_assoc_alliance$gt_table
+xx <- veg_dat |> filter(PlotNumber %in% "08-5410")
+```
+```{=typst}
+#pagebreak()
+```
+
+## PERMANOVA Test of Vegetation Differences
+
+Statistical assessment of vegetation composition differences using the **vegan::adonis2** PERMANOVA framework.
+
+See Appendix 1 for details on methods and approach
+
+### Interpretation
+
+- High **R²** values indicate stronger separation among groups.
+- Significant **PERMANOVA** results indicate statistically detectable differences in composition.
+- Non-significant **betadispersion** results provide greater confidence that differences are due to shifts in composition rather than unequal dispersion among groups.
+
+```{=typst}
+#set text(size: 8pt)
+#show figure: set block(breakable: true)
+```
+
+```{r }
+#| label: tbl-permanova-alliances
+#| tbl-cap: Permanova assessment of Alliances
+#| tbl-cap-location: bottom
+#| warning: false
+#| tbl-align: "center"
+# fig-width: 8
+# fig-height: 12
+
+
+  #veg.dat = veg.anal;  su.anal = su.anal1; group.field = "working_Alliance"; permutations = 199
+
+
+alliance_support <- assess_group_support(
+  veg.dat = veg_dat,
+  su.anal = su_anal,
+  group.field = "working_alliance",
+    permutations = 999
+)
+alliance_support$gt_table
+# gtsave(
+#   res$gt_table,
+#   "alliance_support_table.html"
+# )
+```
+```{=typst}
+#pagebreak()
+```
+
+```{=typst}
+#set text(size: 8pt)
+#show figure: set block(breakable: true)
+```
+
+```{r}
+#| label: tbl-permanova-associations
+#| tbl-cap: Permanova assessment of Associations within Alliances
+#| tbl-cap-location: bottom
+#| warning: false
+#| tbl-align: "center"
+# fig-width: 8
+# fig-height: 12
+
+assoc_support <- assess_group_support(
+  veg.dat = veg_dat,
+  su.anal = su_anal,
+  group.field = "working_association",
+  within_level = "working_alliance",
+  permutations = 999
+)
+assoc_support$gt_table
+# gtsave(
+#   res$gt_table,
+#   "alliance_support_table.html"
+# )
+
+
+```
+
+
+```{=typst}
+#pagebreak()
+```
+# Environmental differentiation between units
+
+PCA from a limited set of edaphic (aSMR, SNR) and climatic (DD5, DD18_sm, FFP, Tmin_wt, CMD.site, AHM, MSP, PAS, )
+
+## Review environmental space of site units within alliances
+
+Boxplot of siteunits along PCA axes by Allaince. Look for environmental site units outliers for membership reassessment.
+
+```{r , echo=FALSE}
+#| label: fig-PCA_boxplot
+#| fig-cap: ("Environment PCA scores for SiteUnits within working Alliances")
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 10
+env_reports$boxplots
+
+```
+
+
+```{=typst}
+#pagebreak()
+```
+## 3D PCA of environment variables for analysis group
+```{r, echo=FALSE}
+#| label: fig-env_pca
+#| fig-cap: ("3D environment PCA graphic for SiteUnits within working Alliances")
+#| fig-cap-location: bottom
+#| warning: false
+#| fig-align: "center"
+#| fig-width: 8
+#| fig-height: 8
+
+
+env_reports$pca$plot
+
+```
+
+```{=typst}
+#pagebreak()
+```
+
+```{r summary table association within alliances}
+
+
+create_veg_summary_workbook(
+  su_anal = su_anal,
+  veg_dat = veg_dat,
+  hier_tbl = NULL,
+  taxon_lifeform = taxon_lifeform,
+  base_level = "SiteUnit",
+  within_level = "alliance",
+  classification = "working",
+  anal_set = anal_set,
+  out_dir = "./review_materials"
+)
+
+create_veg_summary_workbook(
+  su_anal = su_anal,
+  veg_dat = veg_dat,
+  hier_tbl = NULL,
+  taxon_lifeform = taxon_lifeform,
+  base_level = "working_association",
+  within_level = "order",
+  classification = "working",
+  anal_set = anal_set,
+  out_dir = "./review_materials"
+)
+
+create_veg_summary_workbook(
+  su_anal = su_anal,
+  veg_dat = veg_dat,
+  hier_tbl = NULL,
+  taxon_lifeform = taxon_lifeform,
+  base_level = "working_alliance",
+  within_level = "order",
+  classification = "working",
+  anal_set = anal_set,
+  out_dir = "./review_materials"
+)
+
+```
+
+# Additional possible work
+
+## Random Forests
+
+If alliances are real compositional groups, you should be able to predict them.
+
+Random Forest rf \<- randomForest( x = comm, y = alliance )
+
+Can hierarchical unit be predicted for new plots or hierarchical units?
+
+## Klinka's Indicator plant analysis
+
+rich-poor, dry-moist, climatic groups (see Klinka 1989)
+
+```{=typst}
+#pagebreak()
+```
+# Appendix 1
+
+- **PERMANOVA R²**: Proportion of variation explained by the hierarchical grouping.
+- **PERMANOVA adjusted p-value**: Statistical significance of compositional differences.
+- **Betadispersion adjusted p-value**: Evaluates whether observed differences are driven by true compositional shifts or by differences in within-group dispersion.
+
+## Support Score Calculation
+
+The overall support score is calculated as:
+
+```{=html}
+support_score = score_R2 + score_disp + score_perm
+```
+
+## 1. PERMANOVA R² Score
+
+- R² ≥ 0.20 → **70 points**
+- R² ≥ 0.15 → **60 points**
+- R² ≥ 0.10 → **50 points**
+- R² ≥ 0.05 → **25 points**
+- R² < 0.05 → **0 points**
+
+## 2. PERMANOVA Significance Score
+
+- Adjusted p-value < 0.05 → **10 points**
+- Adjusted p-value ≥ 0.05 → **0 points**
+
+## 3. Betadispersion Score
+
+- Adjusted p-value > 0.10 → **20 points**
+- Adjusted p-value > 0.05 and ≤ 0.10 → **10 points**
+- Adjusted p-value ≤ 0.05 → **0 points**
+
+## Support Classification
+
+| Support Score | Classification |
+|---------------|---------------|
+| ≥ 80 | Strong |
+| ≥ 60 | Moderate |
+| ≥ 40 | Weak |
+| < 40 | Review |
+
+## Recommendation Rules
+
+Recommendations are assigned in the following order:
+
+1. If **R² < 0.05** → **Merge?**
+2. Else if **R² < 0.10** → **Review**
+3. Else if **Betadispersion adjusted p-value < 0.05** → **Heterogeneous**
+4. Otherwise → **Supported**

@@ -57,7 +57,43 @@ library(stringr)
 ## Combine _SU tables from all databases under folder_path
 folder_path <- "D:/BC_Correlation2_Vpro_2023/Sorts_Regional_BGC/"  # Path to folder containing .accdb files
 SU_all <- combine_SU_databases(folder_path)
-SU_all <- SU_all %>% distinct(PlotNumber, SiteUnit) #%>% arrange(desc(PlotNumber))
+SU_all <- SU_all %>% distinct(PlotNumber, SiteUnit)
+
+# folder_path <- "D:/BC_Correlation2_Vpro_2023/LMH52_2026/"  # Path to folder containing .accdb files
+# SU_wetfor <- combine_SU_databases(folder_path)
+
+### align 
+# SU_wetfor <- SU_wetfor %>%
+#   distinct(PlotNumber, SiteUnit) %>%
+#   filter(
+#     str_detect(
+#       SiteUnit,
+#       "Wb0[1-9]|Wb1[0-1]|Ws0[7-9]|Ws1[0-1]"
+#     )
+#   )
+# same <- left_join(SU_wetfor, SU_all, by = "PlotNumber") |> filter(!is.na(SiteUnit.y))
+# #fwrite(same, "./outputs/wetfor_alignment.csv")
+# update <- fread("./outputs/wetfor_alignment.csv")
+# 
+# 
+# setDT(SU_wetfor)
+# update <- fread("./outputs/wetfor_alignment.csv")## update classification to match FG published units.
+# 
+# 
+# Update SiteUnit in-place
+# setDT(SU_all)
+# SU_wetfor[
+#   SU_all,
+#   SiteUnit := i.SiteUnit,
+#   on = "PlotNumber"
+# ]
+
+# SU_wetfor <- fread("./outputs/updating_LMH52_final.csv")
+# 
+# SU_wetfor[, SiteUnit := gsub("/", "_", gsub("\\s+", "", SiteUnit))]
+
+# fwrite(SU_wetfor, "./outputs/wetfor_SU.csv")
+
 duplicates <- SU_all %>%
   group_by(PlotNumber) %>%
   filter(n() > 1) %>%  # Keep only duplicate PlotNumbers

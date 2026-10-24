@@ -30,15 +30,15 @@ execute:
   dpi: 600
   fig.asp: 1.5
   fig.path: "./figures/"
-output-file: "CWH-HwFd_Working_Hierarchy.pdf"
+output-file: "MH_Working_Hierarchy.pdf"
 ---
 
 ```{r}
 library(readxl)
-anal_set <- c("CWH-HwFd")# "CWH-102" "CWH-HwBa" "CWH-HwBa-rich"  "CWH-HwFd" "CWH-HwFd-rich" "coast-wetfor"  "MH" "Act"
+anal_set <- c("MH")# "CWH-102" "CWH-HwBa" "CWH-HwBa-rich"  "CWH-HwFd" "CWH-HwFd-rich" "CWH-wetfor"  "MH" "CWH-Act"
 ## read in working db worksheet from one drive.
 review_dir <- paste0("D:/OneDrive - Government of BC/Coastal BEC Guide/Associations_Alliances_Review/" , anal_set, "/")
-workbook <- paste0("0_", anal_set, "_BECdb_table_for_edit.xlsx")
+workbook <- paste0("0_", anal_set, "_BECdb_table_for_edit_dvm.xlsx")
 
 file_path <- paste0(review_dir, workbook)
 # sheet_names <- excel_sheets()
@@ -159,7 +159,7 @@ su <- load_siteunits(
     correlation_db = "D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb",
     becdb_db = "D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v1.accdb")
 
-su_class <- su$su_class |> filter(Analysis_Group %in% anal_set)
+su_class <- su$su_class |> filter(SiteUnit %in% reviewed_anal_set$SiteUnit)
 
 #reviewed_anal_set <- read_excel(file_path)
 
@@ -211,7 +211,7 @@ vegsum_pairs <- do_pairwise(
     classification = "working",
     minconstancy = 50,
     noiseconstancy = 10,
-    minplots = 1, mindiff = .1, mindd = 0.35,
+    minplots = 0, mindiff = .1, mindd = 0.35,
     use.ksi = FALSE, ksi = NULL, ksi.value = 1.5,
     reduce_lifeform = FALSE, reduced_lifeforms = NULL,
     reduction = 1, reduced_exceptions = NULL,
@@ -222,8 +222,8 @@ vegsum_pairs <- do_pairwise(
 
 bec_distance <- build_bec_distance_matrix(vegsum_pairs,
     su_anal,
-    preclass_level,
-    use_preclass = FALSE,
+    preclass_level = "Association",
+    use_preclass = TRUE,
     similarity_field = "BEC.sim.min")
 bec_dist <- bec_distance$bec_dist
 unit_compare <- bec_distance$unit_compare
@@ -251,7 +251,7 @@ Each sheet has all site units for a proposed alliance on a single sheet grouped,
 #| warning: false
 #| fig-align: "center"
 #| fig-width: 8
-#| fig-height: 12
+#| fig-height: 10
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
 dendro_hc <- create_dendro_all(unit_compare, threshold.low = .4)
 ```
@@ -262,14 +262,14 @@ dendro_hc <- create_dendro_all(unit_compare, threshold.low = .4)
 
 ### Working association clustering
 
-```{r }
+```{r , message=FALSE, echo=FALSE}
 #| label: fig-assoc-cluster
 #| fig-cap: Cluster of working Associations in Analysis Group
 #| fig-cap-location: bottom
 #| warning: false
 #| fig-align: "center"
 #| fig-width: 8
-#| fig-height: 12
+#| fig-height: 10
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
 
 vegsum_assocs <- do_pairwise(
@@ -279,7 +279,9 @@ vegsum_assocs <- do_pairwise(
     classification = "working",
     minconstancy = 50,
     noiseconstancy = 10,
-    minplots = 1, mindiff = .1, mindd = 0.35,
+    minplots = 0, 
+    mindiff = .1, 
+    mindd = 0.35,
     use.ksi = FALSE, ksi = NULL, ksi.value = 1.5,
     reduce_lifeform = FALSE, reduced_lifeforms = NULL,
     reduction = 1, reduced_exceptions = NULL,
@@ -382,22 +384,20 @@ Indicator species analysis using plot data to assess what species statistically 
 
 
 ```{r}
-#| label: fig-alliance-indic
-#| fig-cap: ("Indicator species for  Alliances")
-#| fig-cap-location: bottom
+#| label: tbl-alliance-indic
+#| tbl-cap: Indicator species for  Alliances
+#| tbl-cap-location: bottom
 #| warning: false
-#| fig-align: "center"
+#| tbl-align: "center"
 # fig-width: 8
 # fig-height: 12
-
-
 
 ind.alliance <- indicator_species_analysis(
   veg_dat,
   su_anal,
   group_level = "working_alliance",
   within_level = NULL,
-  max.order = 2,
+  max.order = 1,
   min.constancy = 40,
   min.fidelity = 10,
   p.cutoff = 0.2,
@@ -408,6 +408,43 @@ ind.alliance <- indicator_species_analysis(
 )
 ind.alliance$gt_table
 ```
+
+```{r}
+opt <- optimize_indicators(
+    veg_dat = veg_dat,
+    su_anal = su_anal,
+    group_level = "working_association",
+    nearest.neighbours = 5,
+    min.indicators.per.group = 5,
+    min.freq = 0.10,
+    min.plots = 5,
+    max.order = 1,
+    min.constancy = 40,
+    min.fidelity = 15,
+    nperm = 199,
+    p.cutoff = 0.20
+)
+opt$history
+library(ggplot2)
+
+ggplot(
+    opt$history,
+    aes(Groups, Score)
+) +
+geom_line() +
+geom_point(size = 3) +
+scale_x_reverse() +
+theme_bw()
+ggplot(
+    opt$history,
+    aes(Groups, Total_IndVal)
+) +
+geom_line() +
+geom_point(size = 3) +
+scale_x_reverse() +
+theme_bw()
+```
+
 
 ```{=typst}
 #pagebreak()
@@ -420,11 +457,11 @@ ind.alliance$gt_table
 ```
 
 ```{r}
-#| label: fig-assoc-indic
-#| fig-cap: ("Indicator species for Associations within working Alliances")
-#| fig-cap-location: bottom
+#| label: tbl-assoc-indic
+#| tbl-cap: Indicator species for Associations within working Alliances
+#| tbl-cap-location: bottom
 #| warning: false
-#| fig-align: "center"
+#| tbl-align: "center"
 # fig-width: 8
 # fig-height: 12
 
@@ -434,8 +471,10 @@ ind_assoc_alliance <- indicator_species_analysis(
   group_level = "working_association",
   within_level = "working_alliance",
   max.order = 2,
+  min.plots = 1,
   min.constancy = 40,
   min.fidelity = 10,
+  nperm = 999,
   p.cutoff = 0.2,
   export.tables = TRUE,
   export.folder = paste0("./review_materials/", anal_set),
@@ -444,7 +483,7 @@ ind_assoc_alliance <- indicator_species_analysis(
 )
 
 ind_assoc_alliance$gt_table
-
+xx <- veg_dat |> filter(PlotNumber %in% "08-5410")
 ```
 ```{=typst}
 #pagebreak()
@@ -468,11 +507,11 @@ See Appendix 1 for details on methods and approach
 ```
 
 ```{r }
-#| label: fig-permanova-alliances
-#| fig-cap: "Permanova assessment of Alliances"
-#| fig-cap-location: bottom
+#| label: tbl-permanova-alliances
+#| tbl-cap: Permanova assessment of Alliances
+#| tbl-cap-location: bottom
 #| warning: false
-#| fig-align: "center"
+#| tbl-align: "center"
 # fig-width: 8
 # fig-height: 12
 
@@ -492,15 +531,21 @@ alliance_support$gt_table
 #   "alliance_support_table.html"
 # )
 ```
+```{=typst}
+#pagebreak()
+```
 
-
+```{=typst}
+#set text(size: 8pt)
+#show figure: set block(breakable: true)
+```
 
 ```{r}
-#| label: fig-permanova-associations
-#| fig-cap: ("Permanova assessment of Associations within Alliances")
-#| fig-cap-location: bottom
+#| label: tbl-permanova-associations
+#| tbl-cap: Permanova assessment of Associations within Alliances
+#| tbl-cap-location: bottom
 #| warning: false
-#| fig-align: "center"
+#| tbl-align: "center"
 # fig-width: 8
 # fig-height: 12
 
@@ -588,6 +633,18 @@ create_veg_summary_workbook(
   hier_tbl = NULL,
   taxon_lifeform = taxon_lifeform,
   base_level = "working_association",
+  within_level = "order",
+  classification = "working",
+  anal_set = anal_set,
+  out_dir = "./review_materials"
+)
+
+create_veg_summary_workbook(
+  su_anal = su_anal,
+  veg_dat = veg_dat,
+  hier_tbl = NULL,
+  taxon_lifeform = taxon_lifeform,
+  base_level = "working_alliance",
   within_level = "order",
   classification = "working",
   anal_set = anal_set,

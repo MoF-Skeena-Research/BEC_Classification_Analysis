@@ -9,6 +9,7 @@ format:
     toc-title: Contents
     section-numbering: 1.1.1
     columns: 1
+
 editor: source
 execute:
   echo: false
@@ -28,6 +29,8 @@ execute:
   dpi: 600
   fig.asp: 1.5
   fig.path: "./figures/"
+
+output-file: "N_Thompson_Site_series_review.pdf"
 ---
 
 This script is designed to review the site series within each BGC, primarily to identify where site series do not sufficiently differentiate and need to be reviewed. The script also identifies site series with too few plots or with low diagnostic potential for review and interpretation of the quantitative analysis. The script generates a table list of site unit pairs that exceed a threshold similarity and a dendrogram of the cluster analysis of site units for each BGC.
@@ -83,6 +86,18 @@ source('../BEC_R_working/_functions/_TabletoTree.R')
 source('../BEC_R_working/_functions/_build_species_ordering_hier.R')
 source("../BEC_R_working/_functions/_cluster_by_spp_group.R")
 source("../BEC_R_working/_functions/_draw_ss_edatope.R")
+source("../BEC_R_working/_functions/_link_su_to_hierarchy.R")
+source("../BEC_R_working/_functions/_load_veg_data.R")
+source("../BEC_R_working/_functions/_load_siteunits.R")
+source("../BEC_R_working/_functions/_run_pairwise_similarity.R")
+source("../BEC_R_working/_functions/_generate_hierarchy_units.R")
+source("../BEC_R_working/_functions/_generate_review_workbooks.R")
+source("../BEC_R_working/_functions/_build_bec_distance_matrix.R")
+source("../BEC_R_working/_functions/_export_similar_units.R")
+source("../BEC_R_working/_functions/_create_focalunit_summary_workbook.R")
+source("../BEC_R_working/_functions/_create_veg_summary_workbook.R")
+source("../BEC_R_working/_functions/_create_becdb_outputs.R")
+source("../BEC_R_working/_functions/_calc_diagnostic_potential.R")
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
 
 ```
@@ -110,7 +125,9 @@ veglump <- dbConnect(
 lump <- dbReadTable(veglump, "CorrelationII_Lump")
 dbDisconnect(veglump)
 veg.dat2 <- combine_taxa(vegdata = veg.dat, lump, use.subtaxa = FALSE)
-db <- "C:/Users/whmacken/Dropbox/NorthThompson_LMH/NorthThompson_FG_Sorts.accdb"
+#db <- "C:/Users/whmacken/Dropbox/NorthThompson_LMH/NorthThompson_FG_Sorts.accdb"
+db <- "D:/BC_Correlation2_Vpro_2023/Sorts_Regional_BGC/NorthThompson_FG_Sorts.accdb"
+
 su <- combined_su(db)
 su.nf <- su %>%
   filter(grepl('_[[:alpha:]]', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
@@ -156,27 +173,28 @@ dbDisconnect(becmaster)
 ```{r build pair.wise similarity matrix, echo=FALSE, messages = FALSE}
 
 key.site.indicators <- c("PICESIT", "POPUTRI", "LYSIAME", "GAULSHA", "OPLOHOR", "ELLIPYR","ATHYFIL", "RUBUSPE", "EQUIARV", "GYMNDRY", "VALESIT", "CASSMER", "LUETPEC", "POLYMUN", "STRUSPI", "RHODGRO", "EMPENIG", "NEPHCRI", "CALTLEP", "CALTBIF", "SENETRI")#,  "TIARELLA", "DRYOEXP" )
+
 reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM")
 # reduced.lifeforms = c(1,2)
 reduced.lifeforms <- c(9, 10, 11)
 ### select units to run
 
 vegsum.pairs <- do_pairwise(veg.dat2,
-  su = su2, minimportance = 0, minconstancy = 50,  ### change this to 50 reduce up to 60
+  su = su2,  minconstancy = 50,  ### change this to 50 reduce up to 60minimportance = 0,
   noiseconstancy = 10,
   minplots = 1,
   minor = 1,
   use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 1.5,
-  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .2,
-  reduced.exceptions = reduced.exceptions
+  reduce_lifeform = TRUE, reduced_lifeforms = reduced.lifeforms, reduction = .2,
+  reduced_exceptions = reduced.exceptions
 )
 
 xx <- vegsum.pairs %>%
   filter(Unit1 == "CWHds1_101a", Unit2 == "CWHds1_101b")
 
 unit.compare <- vegsum.pairs %>%
-  select(Unit1, Unit2, BEC.sim.min, diff.ratio.x, diff.ratio.y, nplots.x, nplots.y,
-         unit.diag.sum.x, unit.diag.sum.y) %>% filter(nplots.x>0) %>%
+  select(Unit1, Unit2, BEC.sim.min, diff.ratio.unit1, diff.ratio.unit2, nplots.unit1, nplots.unit2,
+         unit.diag.sum.unit1, unit.diag.sum.unit2) %>% filter(nplots.unit1 >0) %>%
   mutate(BEC.sim = round(BEC.sim.min, 2)) %>% 
  distinct()
 unit.compare$bgc1 <- stringr::word(unit.compare$Unit1, 1, sep = "\\_")
@@ -184,7 +202,7 @@ unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
 
 yy <- vegsum.pairs %>% 
 
-  select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, shared.diag, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, diff.ratio,BEC.sim.mean, BEC.sim.min, BEC.sim.max) %>% 
+  select(Unit1, Unit2, Species, diagnostic.potential.unit1, diagnostic.potential.unit2, shared.diag, diff.pts.unit1, diff.pts.unit2, sum.shared.diag,diff.tot.unit1, diff.tot.unit2,  diff.ratio.unit1, diff.ratio.unit2, diff.ratio, BEC.sim.mean, BEC.sim.min, BEC.sim.max) %>% 
   filter(Unit1 == "CWHws1_110", Unit2 == "CWHws1_111")
 fwrite(yy, "example_pairwise.csv")
 
@@ -203,14 +221,14 @@ Units with fewer than 6 plots are often problematic for quantitative analysis
 
 compared <- unit.compare %>% filter(bgc1 == bgc2)
 ss_too.few1 <- compared %>%
-  select(Unit1, nplots.x) %>% 
-  filter(nplots.x <= 5, nplots.x>0) %>% 
-  rename("Number of Plots" = nplots.x, "Site Unit" = Unit1) %>% 
+  select(Unit1, nplots.unit1) %>% 
+  filter(nplots.unit1 <= 5, nplots.unit1>0) %>% 
+  rename("Number of Plots" = nplots.unit1, "Site Unit" = Unit1) %>% 
   distinct()
 ss_too.few2 <- compared %>%
-  select(Unit2, nplots.y) %>% 
-  filter(nplots.y < 5, nplots.y>0) %>% 
-  rename("Number of Plots" = nplots.y, "Site Unit" = Unit2) %>% 
+  select(Unit2, nplots.unit2) %>% 
+  filter(nplots.unit2 < 5, nplots.unit2>0) %>% 
+  rename("Number of Plots" = nplots.unit2, "Site Unit" = Unit2) %>% 
   distinct()
 ss_too.few <- rbind(ss_too.few1, ss_too.few2) %>% distinct() %>% arrange(`Site Unit`)
 # low.num <- gt::as_gtable(gt::gt(ss_too.few) %>% gt::fmt_number(decimals = 0)|> gt::tab_options(table.font.size = 10), plot = TRUE)
@@ -229,14 +247,14 @@ Often a sign of poor cohesion of plots and plot set should be reviewed
 #| warning: false
 #| tbl-align: "left"
 ss_low.diag1 <- compared %>%
-  select(Unit1, unit.diag.sum.x)  %>%  distinct() %>%
-  filter(unit.diag.sum.x < 30, unit.diag.sum.x >0) %>% 
-  rename("Diagnostic Potential" = unit.diag.sum.x, "Site Unit" = Unit1) %>%
+  select(Unit1, unit.diag.sum.unit1)  %>%  distinct() %>%
+  filter(unit.diag.sum.unit1 < 30, unit.diag.sum.unit1 >0) %>% 
+  rename("Diagnostic Potential" = unit.diag.sum.unit1, "Site Unit" = Unit1) %>%
   distinct()
 ss_low.diag2 <- compared %>%
-  select(Unit2, unit.diag.sum.y)  %>% 
-  filter(unit.diag.sum.y <30, unit.diag.sum.y >0) %>% 
-  rename("Diagnostic Potential" = unit.diag.sum.y, "Site Unit" = Unit2) %>%
+  select(Unit2, unit.diag.sum.unit2)  %>% 
+  filter(unit.diag.sum.unit2 <30, unit.diag.sum.unit2 >0) %>% 
+  rename("Diagnostic Potential" = unit.diag.sum.unit2, "Site Unit" = Unit2) %>%
   distinct()
 ss_low.diag <- rbind(ss_low.diag1, ss_low.diag2) %>% distinct()
 # low.diag.pot <- gt::as_gtable(gt::gt(ss_low.diag) %>% gt::fmt_number(decimals = 2)|> gt::tab_options(table.font.size = 10), plot = TRUE)
@@ -381,7 +399,7 @@ openxlsx::writeData(vegsum.wbk, sheet = bgc.choose, veg.sum.table)
 }
 toc()
 #saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_veg_tables_", author, ".xlsx"), overwrite = TRUE)
-saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_", author, ".xlsx"), overwrite = TRUE)
+saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH_NThompson_", author, ".xlsx"), overwrite = TRUE)
 
 
 ```

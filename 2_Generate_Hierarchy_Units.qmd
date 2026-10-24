@@ -103,63 +103,154 @@ source("../BEC_R_working/_functions/_create_focalunit_summary_workbook.R")
 source("../BEC_R_working/_functions/_create_veg_summary_workbook.R")
 source("../BEC_R_working/_functions/_create_becdb_outputs.R")
 source("../BEC_R_working/_functions/_calc_diagnostic_potential.R")
+source("../BEC_R_working/_functions/_prepare_compare_set.R")
 ```
 
 
-```{r echo=FALSE, warning=FALSE, message=FALSE}
+```{r ,echo=FALSE, warning=FALSE, message=FALSE}
+reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM", "NEOORTHO")
+# reduced.lifeforms = c(1,2)
+reduced.lifeforms <- c(9, 10, 11)
+
+
 ## units to report on
 anal_set <- c(
-  "CWH-HwBa-rich", "CWH-HwBa"
+ "MH"
 )
 
 ## units to find potential similar units
 compare_set <- c(
- # "ICH-rich" 
-  #"Act",
+ ##-----ESSF (Bl)
+ "Bl-horsetail",
+ "Bl-rich",
+ "Bl-woodland",
+ "BlPl",
+ "Bl-102" ,
+
+ #
+ ##-----CWH, MH, CDF
+  #"CWH-Act",
   "CWH-HwBa",
   "CWH-HwBa-rich",
-  "MH",
-  "coast-wetfor",
+  "CWH-wetfor",
   "CWH-102",
-  "CWH-HwFd",
-  "CWH-HwFd-rich"
+  #"CWH-HwFd",
+ #  "CWH-HwFd-rich",
+  "MH"#,
+
+##------IDF  (Fd)
+ #  "FdPl",
+ # "FdPy",
+ # "Fd",
+ # "FdLw",
+  
+##-----ICH (CWHw)
+ # "ICH-102", 
+ # "ICH-CwFd", 
+ #  "ICH-CwHw",
+ # "ICH-rich",
+ #  "ICH-Sx",
+ # "ICH-wet",
+
+##-------Boreal  (SBS,MS,BWBS)
+  # "Sb-bogs",
+  # "Sb-upland", 
+  # "Sw",
+  # "Sx",
+  # "SxFd",
+  # "Sx-horsetail",
+  # "SxPl",
+  # "Sx-rich"
+)  
+
+
+
+#------ if want the same set of units use this line.
+
+        anal_set = compare_set
+
+#---------- Ensure all analysis units are included in comparison pool
+compare_set <- unique(
+  c(compare_set, anal_set)
 )
-anal_set = compare_set
 
+missing_units <- setdiff(anal_set, compare_set)
 
-results <- vector("list", length(anal_set))
-names(results) <- anal_set
+if (length(missing_units) > 0) {
+  message(
+    "Adding analysis units to compare_set: ",
+    paste(missing_units, collapse = ", ")
+  )
 
-for(i in seq_along(anal_set)) {
-
-  anal_set <- compare_set[i]
-
-  message("Running analysis for ", anal_set, "...")
-
-  results[[i]] <- generate_bec_hierarchy(
-    anal_set,
-    compare_set,
-    base_level = "association",
-    classification = "generated",
-    preclass_level = "Association",
-    use_preclass = TRUE,
+  compare_set <- unique(
+    c(compare_set, missing_units)
+  )
+}
+#---------------------------------------------------
+#-----Prep compare data set once        
+        
+source("../BEC_R_working/_functions/_prepare_compare_set.R")
+##Prepare data and comparison data set
+compare_obj <- prepare_compare_set(
     veg_file = "./clean_data/Analysis_BECMaster_Veg.rds",
     veg_combine_db = "D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_Lump.accdb",
     veg_combine_tbl = "CorrelationII_Lump",
-    becmaster_db = "D:/BECMaster/BECMaster_fixing.accdb",
+    #becmaster_db = "D:/BECMaster/BECMaster_fixing.accdb",
     correlation_db = "D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb",
     becdb_db = "D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v1.accdb",
+    use_subtaxa = FALSE, 
+    compare_set = compare_set,
     include_usa = FALSE,
     similarity_params = list(
       minconstancy = 50,
       noiseconstancy = 10,
-      minplots = 1,
+      minplots = 0,
       minor = 1,
       use.ksi = FALSE,
       mindiff = 0.2,
       mindd = 0.35,
-      dominant = 7
+      dominant = 7,
+      reduce_lifeform = FALSE,
+      reduced_lifeforms = reduced.lifeforms,
+      reduced_exceptions = reduced.exceptions,
+      reduction = .2,
+      add_vegsum_table = NULL
     ),
+    preclass_level = NULL,
+    use_preclass = FALSE)
+
+compare_set <- compare_obj$params$compare_set
+preclass_level <- compare_obj$params$preclass_level
+#use_preclass <- compare_obj$params$use_preclass
+similarity_params <- compare_obj$params$similarity_params
+becdb_db <- compare_obj$params$becdb_db
+
+results <- vector("list", length(anal_set))
+names(results) <- anal_set
+
+#----------Run report for each analysis group
+
+for(i in seq_along(anal_set)) {
+
+
+
+  message("Running analysis for ", anal_set[i], "...")
+
+  results[[i]] <- generate_bec_hierarchy(
+    anal_set = anal_set[i],
+    compare_obj = compare_obj,
+    base_level = "association",
+    classification = "generated",
+    preclass_level = preclass_level,
+    use_preclass = FALSE,
+    #veg_file = "./clean_data/Analysis_BECMaster_Veg.rds",
+    #veg_combine_db = "D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_Lump.accdb",
+    #veg_combine_tbl = "CorrelationII_Lump",
+    #becmaster_db = "D:/BECMaster/BECMaster_fixing.accdb",
+   # correlation_db = "D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb",
+    becdb_db = becdb_db,
+    #include_usa = FALSE,
+    similarity_params = similarity_params,
     same_threshold = 0.7,
     create_review_materials = TRUE,
     run_env_analysis = FALSE,
@@ -167,7 +258,8 @@ for(i in seq_along(anal_set)) {
     out_dir = "./review_materials/"
   )
 }
-#xx <- results$`ICH-rich`$hierarchy$generated_hier
+
+#xx <- results$`CWH-wetfor`$hierarchy$generated_hier
 
 
 ```
