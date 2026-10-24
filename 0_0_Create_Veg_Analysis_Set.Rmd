@@ -19,7 +19,7 @@ data.path = "D:/OneDrive - Government of BC/GitHub_data"
 Reads in a Vpro database and converts it to a 4-column long table PlotNumber,Species, Cover, LifeForm
 
 ```{r set folders, include=FALSE}
-becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;")
+becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ= D:/OneDrive - Government of BC/BECMaster_updates/BECMaster_fixing.accdb;")
 plot.veg <- dbReadTable(becmaster, "BECMaster_fixing_Veg")
 dbDisconnect(becmaster)
 

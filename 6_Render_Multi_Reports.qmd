@@ -1,0 +1,60 @@
+---
+title: "Draft for how to render multiple quarto PDFs"
+format: pdf
+params:
+  unit: NULL
+---
+
+
+```{r}
+#| echo: false
+
+unit_data <- all_data |>
+  filter(unit == params$unit)
+```
+
+```{r}
+library(quarto)
+
+units <- unique(all_data$unit)
+
+for (u in units) {
+
+  quarto_render(
+    input = "unit_report.qmd",
+    execute_params = list(unit = u),
+    output_file = paste0("Report_", u, ".pdf")
+  )
+
+}
+```
+
+```{r}
+library(future.apply)
+
+plan(multisession)
+
+future_lapply(units, function(u) {
+
+  quarto::quarto_render(
+    "unit_report.qmd",
+    execute_params = list(unit = u),
+    output_file = paste0("Report_", u, ".pdf")
+  )
+
+})
+
+##for example
+fgcodes <- unique(region$fgcode)
+
+for (fg in fgcodes) {
+
+  quarto::quarto_render(
+    "BEC_Unit_Report.qmd",
+    execute_params = list(fgcode = fg),
+    output_file = paste0(fg, "_report.pdf")
+  )
+
+}
+```
+

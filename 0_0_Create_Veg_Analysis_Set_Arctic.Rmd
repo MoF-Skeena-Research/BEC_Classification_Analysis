@@ -14,6 +14,12 @@ require(dplyr)
 require(DBI) #loads odbc as well
 source("./_functions/_convert_vpro_veg.R")
 data.path = "E:/Arctic_Projects/VPro64_Data_Arctic/_R"
+
+update_taxa <- function(vegdata, sppmaster){
+  lookup <- sppmaster[sppmaster$OldCode != sppmaster$Code,c("Code", "OldCode")] #%>% dplyr::rename("Species" = OldCode) ##creates code update crosswalk
+  setDT(vegdata)[setDT(lookup), "Species" := Code, on = c("Species" = "OldCode")]
+  return(vegdata)
+}
 ```
 
 Reads in a Vpro database and converts it to a 4-column long table PlotNumber,Species, Cover, LifeForm
@@ -21,19 +27,29 @@ Reads in a Vpro database and converts it to a 4-column long table PlotNumber,Spe
 ```{r set folders, include=FALSE}
 
 becmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=E:/Arctic_Projects/VPro64_Data_Arctic/AVACanada2025.accdb;")
-plot.veg <- dbReadTable(becmaster, "AVA_Canada_2025_Veg")
+plot.veg <- dbReadTable(becmaster, "AVA_Canada_2025_Veg") |> mutate(Species = toupper(Species))
 dbDisconnect(becmaster)
-
 
 sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=E:/Arctic_Projects/Arctic_Species/NationalSpeciesLibrary.accdb;")
 # sppmaster <- dbConnect(odbc::odbc(), .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=C:/Users/whmacken/OneDrive/BCSpeciesList/SpeciesTaxonomyMaster.accdb;")
 taxon.all  <- dbReadTable(sppmaster, "USysAllSpecs")
 dbDisconnect(sppmaster)
 taxon.lifeform <- taxon.all %>% filter(Codetype == "U" |Codetype == "X"|Codetype == "D") %>% dplyr::select(Code, Lifeform) %>% distinct
-
 veg.dat <- create_veg_analysis_dataset (plot.veg, taxon.lifeform)
+veg.dat <- update_taxa(veg.dat, taxon.all)
 saveRDS(veg.dat, "./clean_data/Analysis_CAVA_Veg.rds")
 saveRDS(veg.dat, file.path(data.path, "Analysis_CAVA_Veg.rds"))
+
+vasc.only <- plot.veg |>
+  filter(
+    rowSums(across(c(Cover7, Cover8, Cover9, Cover10),
+                   ~ coalesce(.x, 0))) == 0
+  )
+veg.dat <- create_veg_analysis_dataset (vasc.only, taxon.lifeform)
+veg.dat <- update_taxa(veg.dat, taxon.all)
+taxon.extended <- taxon.all %>% filter(Codetype == "U" |Codetype == "X"|Codetype == "D") %>% dplyr::select(Code, ScientificName) %>% distinct
+veg.dat3 <- left_join(veg.dat, taxon.extended, by = c(Species = "Code")) |> filter(is.na(ScientificName)) |> select(Species) |> group_by (Species) |> summarise(n = n())
+saveRDS(veg.dat, file.path("D:/GitHub/RCBM_AlpineFlora/Analysis_CAVA_Veg.rds"))
 
 # veg.dat <- create_veg_reports_dataset (plot.veg, taxon.lifeform)
 # saveRDS(veg.dat, "./clean_data/Reports_CAVA_Veg.rds")

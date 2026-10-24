@@ -78,6 +78,15 @@ source('../BEC_R_working/_functions/_create_dendro_all.R')
 source('../BEC_R_working/_functions/_create_dendro_bybgc.R')
 source('../BEC_R_working/_functions/_draw_ss_edatope.R')
 source('../BEC_R_working/_functions/_draw_dendro_split.R')
+source("../BEC_R_working/_functions/_run_pairwise_similarity.R")
+source("../BEC_R_working/_functions/_generate_hierarchy_units.R")
+source("../BEC_R_working/_functions/_generate_review_workbooks.R")
+source("../BEC_R_working/_functions/_build_bec_distance_matrix.R")
+source("../BEC_R_working/_functions/_export_similar_units.R")
+source("../BEC_R_working/_functions/_create_focalunit_summary_workbook.R")
+source("../BEC_R_working/_functions/_create_veg_summary_workbook.R")
+source("../BEC_R_working/_functions/_create_becdb_outputs.R")
+source("../BEC_R_working/_functions/_calc_diagnostic_potential.R")
 data.path = "D:/OneDrive - Government of BC/GitHub_data"
 ```
 
@@ -124,7 +133,7 @@ veg.dat2 <- combine_taxa(vegdata = veg.dat2, lump, use.subtaxa = TRUE) %>% filte
 
 bgc.units<- dbConnect(
   odbc::odbc(),
-  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v0.accdb;")
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v1.accdb;")
 bgcv12 <- dbReadTable(bgc.units, "tblBGC_UnitsWorkingandArchive")
 dbDisconnect(bgc.units)
 bgcv13 <- bgcv12 %>% filter(is.na(BGCVersionRetired)) %>% select(BGC_NoSpace, SiteClassificationStatus)
@@ -134,42 +143,10 @@ Project SU tables (e.g. BGC_SU for a LMH) are read-in from regional databases an
 
 ```{r read in SU data}
 ## choose zone to compare
-zone.choose = "ICH"
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/CoastArea_Sorts.accdb"
-# su1 <- combined_su(db)
-db <- "D:/OneDrive - Government of BC/Cariboo BEC Correlation/Cariboo_SU_2.accdb"
-# su2 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Cariboo_LMH39_Sorts.accdb"
-# su3 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/KootenayBoundary_Sorts.accdb"
-# su4 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/OminecaPeace_SU_Tables.accdb"
-# su5 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/Skeena_LMH26_Sorts.accdb"
-# su6 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/ThompsonOK_Sorts.accdb"
-# su7 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/published_sorts/LMH65_Boreal_Sorts.accdb"
-# su8 <- combined_su(db)
-# #db <- "D:/BC_Correlation2_Vpro_2023/Cassiar_SUs.accdb"
-# #su9 <- combined_su(db)
-#db <- "D:/OneDrive - Government of BC/LMH81_NorthColumbia_Review_Nov2025/NorthThompson_FG_draft.accdb"
-db <- "C:/Users/whmacken/Dropbox/NorthThompson_LMH/NorthThompson_FG_Sorts.accdb"
-#db <- "D:/BC_Correlation2_Vpro_2023/working/Lillooet_FG_draft.accdb"
-su10 <- combined_su(db)
-db <- "D:/OneDrive - Government of BC/LMH81_NorthColumbia_Review_Nov2025/Columbia_FG_draft.accdb"
-# #db <- "D:/BC_Correlation2_Vpro_2023/working/NorthThompson_FG_draft.accdb"
-su11 <- combined_su(db)
-# db <- "D:/BC_Correlation2_Vpro_2023/working/Lillooet_FG_draft.accdb"
-db <- "D:/OneDrive - Government of BC/Omineca BEC/Robson Valley/RobsonValley_SU_working.accdb"
-su12 <- combined_su(db)
-# su <- rbind(su1, su2, su3, su4, su5, su6, su7, su8,  su10, su11, su12) %>% 
-#   filter(!grepl('moved', SiteUnit))
- #su <- rbind(su2,su10, su11) %>%
-#   filter(!grepl('moved', SiteUnit))
+zone.choose = "ESSF"
 db <- "D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb"
 su <- combined_su(db)
-su <- rbind(su, su10, su11, su12)
+#su <- rbind(su, su10, su11, su12)
 # Identify duplicated PlotNumbers (both first and subsequent occurrences)
 dups <- su[duplicated(su$PlotNumber) | duplicated(su$PlotNumber, fromLast = TRUE), ]
 
@@ -235,7 +212,7 @@ key.site.indicators <- c("CALLNOO","PICESIT","PSEUMEN",
                          # "CALARUB", "PSEUSPI",    "GYMNDRY"
                          #  ) 
 #key.site.indicators <- taxon.all %>% filter(Lifeform %in% c(1,2)) %>% pull(Code)
-reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR")#, "NEOORTHO", "FEATHERM")
+reduced.exceptions <- c("SPHAGNUM", "CLADONIA", "CLADINA", "RACOMITR", "MNIUM", "NEOORTHO", "FEATHERM")
 #reduced.lifeforms <- c(3, 4, 5, 6, 7, 8, 9,10, 11, 12)
 reduced.lifeforms <- c(9, 10, 11)
 # reduced.lifeforms <- c(9,10)
@@ -245,27 +222,35 @@ bgc.list <- su %>% distinct(bgc) %>% pull(bgc)
 su.reduced <- su %>% filter(bgc %in% bgc.list) 
 #fwrite(su.reduced, "./outputs/combined_SU_zonal_ICH.csv")
 vegsum.pairs <- do_pairwise(veg.dat2,
-  su = su.reduced, minimportance = 0.1, minconstancy = 60,
+  su = su.reduced,  minconstancy = 50,  ### change this to 50 reduce up to 60minimportance = 0,
   noiseconstancy = 10,
-  minplots = 3,
+  minplots = 1,
   minor = 1,
-  use.ksi = TRUE, ksi = key.site.indicators, ksi.value = 1.5,
-  reduce.lifeform = TRUE, reduced.lifeforms = reduced.lifeforms, reduction = .2,
-  reduced.exceptions = NULL
+  use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 1.5,
+  reduce_lifeform = FALSE, reduced_lifeforms = reduced.lifeforms, reduction = .2,
+  reduced_exceptions = reduced.exceptions
 )
 
-unit.sim <- vegsum.pairs %>%
-  select(Unit1, Unit2, BEC.sim.min) %>% filter(BEC.sim.min >.80) %>% distinct#
-  #filter(Unit1 == "ESSFmw1_01", Unit2 == "ESSFmw2_01")
-yy <- vegsum.pairs %>% 
-  select(Unit1, Unit2, Species, diagnostic.potential.x, diagnostic.potential.y, shared.diag, diff.pts.x, diff.pts.y, sum.shared.diag,diff.tot.x, diff.tot.y,  diff.ratio.x, diff.ratio.y, diff.ratio,BEC.sim.min, BEC.sim.mean) %>% 
-  filter(Unit1== "SBSmz_101", Unit2 == "MSdc2_01")
+xx <- vegsum.pairs %>%
+  filter(Unit1 == "CWHds1_101a", Unit2 == "CWHds1_101b")
 
-vegsum.pairs <- vegsum.pairs %>% filter(!is.na(Unit1), !is.na(Unit2))
-xx <- vegsum.pairs %>% filter(Unit1 == "ESSFwh4" | Unit2 == "ESSFwh4") %>% select(Unit1, Unit2, BEC.sim.min, BEC.sim.mean, BEC.sim.max) %>% distinct
+unit.compare <- vegsum.pairs %>%
+  select(Unit1, Unit2, BEC.sim.min, diff.ratio.unit1, diff.ratio.unit2, nplots.unit1, nplots.unit2,
+         unit.diag.sum.unit1, unit.diag.sum.unit2) %>% filter(nplots.unit1 >0) %>%
+  mutate(BEC.sim = round(BEC.sim.min, 2)) %>% 
+ distinct()
+unit.compare$bgc1 <- stringr::word(unit.compare$Unit1, 1, sep = "\\_")
+unit.compare$bgc2 <- stringr::word(unit.compare$Unit2, 1, sep = "\\_")
+
+yy <- vegsum.pairs %>% 
+
+  select(Unit1, Unit2, Species, diagnostic.potential.unit1, diagnostic.potential.unit2, shared.diag, diff.pts.unit1, diff.pts.unit2, sum.shared.diag,diff.tot.unit1, diff.tot.unit2,  diff.ratio.unit1, diff.ratio.unit2, diff.ratio, BEC.sim.mean, BEC.sim.min, BEC.sim.max) %>% 
+  filter(Unit1 == "CWHws1_110", Unit2 == "CWHws1_111")
+fwrite(yy, "example_pairwise.csv")
+
 units.low.diagnostics <- vegsum.pairs %>% 
-  select(Unit1, unit.diag.sum.x) %>% 
-  group_by(Unit1) %>%  mutate(diagnostic.sum = max(unit.diag.sum.x)) %>% select(-unit.diag.sum.x) %>% distinct %>%  filter(diagnostic.sum < 25) %>% ungroup()
+  select(Unit1, unit.diag.sum.unit1) %>% 
+  group_by(Unit1) %>%  mutate(diagnostic.sum = max(unit.diag.sum.unit1)) %>% select(-unit.diag.sum.unit1) %>% distinct %>%  filter(diagnostic.sum < 25) %>% ungroup()
 gt::gt(units.low.diagnostics) %>% gt::fmt_number(decimals = 2)
 ```
 
@@ -294,7 +279,7 @@ gt::gt(cophonentic) %>% gt::fmt_number(decimals = 2)
 #| warning: false
 #| fig-align: "center"
 #| fig-width: 7
-#| fig-height: 11
+#| fig-height: 10
 #| fig-dpi: 600
 create_dendro_all(unit.compare = vegsum.pairs, cut.level = 0.2, method = "average", parameter = 1)
 
@@ -308,7 +293,7 @@ create_dendro_all(unit.compare = vegsum.pairs, cut.level = 0.2, method = "averag
 
 ```{r split dendrogram, echo=FALSE}
 
-xx <- draw_dendro_split(unit.compare = vegsum.pairs, cut.level=.3)
+xx <- draw_dendro_split(unit_compare_tbl = vegsum.pairs, cut.level=.4)
 xx
 ```
 
