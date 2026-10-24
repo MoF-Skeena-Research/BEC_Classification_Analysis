@@ -38,7 +38,7 @@ library(readxl)
 anal_set <- c("CWH-HwFd")# "CWH-102" "CWH-HwBa" "CWH-HwBa-rich"  "CWH-HwFd" "CWH-HwFd-rich" "coast-wetfor"  "MH" "Act"
 ## read in working db worksheet from one drive.
 review_dir <- paste0("D:/OneDrive - Government of BC/Coastal BEC Guide/Associations_Alliances_Review/" , anal_set, "/")
-workbook <- paste0("0_", anal_set, "_BECdb_table_for_edit.xlsx")
+workbook <- paste0("0_", anal_set, "_BECdb_table_for_edit_dvm.xlsx")
 
 file_path <- paste0(review_dir, workbook)
 # sheet_names <- excel_sheets()
