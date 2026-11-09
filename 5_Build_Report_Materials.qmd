@@ -145,13 +145,13 @@ dbDisconnect(becdb)
 
 becmaster <- dbConnect(
   odbc::odbc(),
-  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/BECMaster/BECMaster_fixing.accdb;"
+  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECMaster_Cleanup/BECMaster_fixing.accdb;"
 )
 plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
 plot.info <- dbReadTable(becmaster, "BECMaster_fixing_Admin") |> rename( BGC = GIS_BGC) |> mutate(BGC = gsub("\\s+", "", BGC))
 dbDisconnect(becmaster)
 
-db <- "D:/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb"
+db <- "D:/OneDrive - Government of BC/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb"
 su <- rbind(combined_su(db))#, combined_su(db2))
 
 su <- su %>%
@@ -172,42 +172,23 @@ su.class <- su2 %>%
 ```
 
 ```{r prep env data}
-plot.env2 <- plot.env %>% mutate(lon = ifelse(Longitude<0, Longitude, 0-Longitude)) %>% mutate(Date = as_date(Date)) |> 
+ rules <- read.csv("./inputs/aSMR_Rules_HalfStep_v11_09Dec2019.csv")
+ source("./_functions/add_predictors.R")
+source("./_functions/assign_aSMR.R")
+source("./_functions/add_climate_data.R")
+source("./_functions/calc_solar.R")
+source("./_functions/add_sibec_attributes.R")
+
+plot.env2 <- plot.env %>% mutate(Longitude = ifelse(Longitude<0, Longitude, 0-Longitude)) %>% mutate(Date = as_date(Date)) |> 
   filter(PlotNumber %in% su.class$PlotNumber) |>
-  dplyr::select(PlotNumber, lon, lat = Latitude, elev = Elevation, special = Exposure1, rSMR = MoistureRegime, rSNR = NutrientRegime, slope = SlopeGradient, aspect = Aspect ) 
+  dplyr::select(PlotNumber, Longitude, Latitude, Elevation, special = Exposure1, rSMR = MoistureRegime, SNR = NutrientRegime, SlopeGradient, Aspect ) 
  plot.info <- plot.info |> dplyr::select(Plot, BECSiteUnit, UserSiteUnit, HumusThickness, BGC)  |> filter(Plot %in% su.class$PlotNumber)
-plot.env2 <- left_join(plot.env2, plot.info, by = c("PlotNumber" = "Plot")) |> filter(!is.na (rSMR))
-
-
-## extract climate data for plots from climr
-require(climr)
-plot.locs <- plot.env2 %>% dplyr::select(id=PlotNumber, BGC, lon,lat,elev) |> drop_na(lat)
-plot.climate <- climr::downscale(setDT(plot.locs),
-                              vars = list_vars(set = c("Annual", "Seasonal", "Monthly")),
-                              return_refperiod = TRUE,
-                              db_option = "local",
-                              cache = TRUE)
-## calculate aSMR
-plot.env3 <- plot.climate |> select(PlotNumber = id, everything()) |> left_join(plot.env2) |> 
+plot.env2 <- left_join(plot.env2, plot.info, by = c("PlotNumber" = "Plot")) |> filter(!is.na (rSMR))|> 
   mutate(
-    moist = rowSums(
-      across(c(PPT_05, PPT_06, PPT_07, PPT_08, PPT_09), ~ .x >= 90),
-      na.rm = TRUE
-    ),
-    moist = ifelse(moist > 4, 1, 0),
-    ratio = moist / 5,
-    multiplier = 1 + ratio,
-    CMD = CMD_an / multiplier
-  ) |> mutate(PPT.dorm = PPT_at + PPT_wt) |> 
-  mutate(Def = ifelse(CMD >=350, 350 - PPT.dorm, CMD)) |> 
-  mutate(CMD.total = CMD + Def) |> 
-  mutate(CMD.site = ifelse(slope > 35 & (aspect >180 & aspect <270), CMD.total *1.25,
-                           ifelse(slope> 35 & (aspect>315 | aspect <45), CMD.total *0.85, CMD.total))) |> arrange(PlotNumber) |> 
-  mutate(
-    rSMR.clean = sub("^.*?(\\d+).*$", "\\1", rSMR)) |> 
-  mutate(rSMR.clean = as.numeric(rSMR.clean),
-  SNR.clean = recode(
-    substr(trimws(rSNR), 1, 1),
+    rSMR = sub("^.*?(\\d+).*$", "\\1", rSMR)) |> 
+  mutate(rSMR = as.numeric(rSMR),
+  SNR = recode(
+    substr(trimws(SNR), 1, 1),
     "A" = 1L,
     "B" = 2L,
     "C" = 3L,
@@ -216,24 +197,18 @@ plot.env3 <- plot.climate |> select(PlotNumber = id, everything()) |> left_join(
     "F" = 6L,
     .default = NA_integer_
   ))
-  ####To adjust in zones with prolonged snowpack remove CMD from early growing season months
-## BGCs with or below heavy snow packs
-# BGC_Special <- fread("./inputs/BGC_Special.csv", data.table = FALSE)
-# allDat2 <- left_join(allDat2,BGC_Special, by = c("BGC" = "BGC"))
-# allDat2 <- allDat2 %>% mutate(CMD = ifelse(is.na(Special), CMD, CMD_08)) %>% select(-Special, -CMD_08) %>% drop_na()
-#rules <- read.csv("./inputs/aSMR_growingseason_Rules_HalfStep_v13_13Sept2025.csv")
-rules <- read.csv("./inputs/aSMR_Rules_HalfStep_v13_23June2025.csv") |>
-  mutate(
-    rSMR.rule = sub("^rSMR", "", rSMR)) |> dplyr::select(-rSMR)
+vars <- grep(
+  "^(CMD_an|CMI_an|AHM_an|FFP|Eref_an|PAS_an|DD5_an|DD18_an|PPT|Tmin|MSP|AHM)",
+  list_vars(),
+  value = TRUE
+)
+plot.env3 <- add_predictors_sibec(
+  data = plot.env2,
+  rules_table = rules,
+  add_asmr = TRUE,
+  vars.choose = vars
+  )
 
-plot_asmr <- plot.env3 %>% select(PlotNumber, rSMR, CMD.site) |> 
-  left_join(rules, by = c("rSMR" = "rSMR.rule")) %>%
-  filter(CMD.site <= CMD) %>%
-  group_by(PlotNumber) %>%  # ensure row-wise logic if needed
-  slice_max(aSMR, with_ties = FALSE) %>%
-  ungroup() %>% select(PlotNumber, aSMR)
-
-plot.env3 <- left_join(plot.env3, plot_asmr)
 
 plot.env3 <- plot.env3 |>
   left_join(
@@ -241,7 +216,7 @@ plot.env3 <- plot.env3 |>
     by = "PlotNumber")
  
 plot.env.vars <- plot.env3 |>   select(-SiteUnit, -working_association, -working_alliance) |> 
-   select(PlotNumber, PAS_an,CMD.site, MSP, aSMR , SNR = SNR.clean, Tmin = Tmin_an, AHM,FFP, DD5 = DD5_an, DD18_sm ) |> arrange(PlotNumber)
+   select(PlotNumber, PAS_an,CMD.site = CMD.adj, MSP, aSMR , SNR, Tmin = Tmin_an, AHM,FFP, DD5 = DD5_an, DD18_an ) |> arrange(PlotNumber)
  keep.rows <- complete.cases(plot.env.vars)
 
   su.env <- plot.env3 |> rename(assoc = working_association, alliance = working_alliance) |> 
@@ -252,12 +227,12 @@ plot.env.vars <- plot.env3 |>   select(-SiteUnit, -working_association, -working
   CMD.site = mean(CMD.site, na.rm = TRUE),
   MSP   = mean(MSP, na.rm = TRUE),
   aSMR = mean(aSMR, na.rm = TRUE),
-  SNR = mean(SNR.clean, na.rm = TRUE),
+  SNR = mean(SNR, na.rm = TRUE),
   AHM = mean(AHM, na.rm = TRUE),
   #lat = mean(lat, na.rm = TRUE),
   FFP   = mean(FFP, na.rm = TRUE),
   DD5 = mean(DD5_an, na.rm = TRUE),
-  DD18_sm = mean(DD18_sm, na.rm = TRUE),
+  DD18_an = mean(DD18_an, na.rm = TRUE),
   Tmin = mean(Tmin_an, na.rm = TRUE),
   .groups = "drop"
 )
@@ -303,8 +278,7 @@ su.env <- su.env |>
 ## choose alliance
 ```{r}
 alls <- unique(su.class$working_alliance)
-alls
-anal.set = "CWH_HwBa"
+anal.set = "CWH_HwBa_mesic"
 su.anal <- su.class |> filter(working_alliance %in% anal.set)
 ```
 
@@ -323,14 +297,14 @@ library(rnaturalearth)
 library(rnaturalearthdata)
 library(grid)
 
-plots <- plot.env3 |> select(alliance = working_alliance, assoc = working_association, lon, lat, bgc, PlotNumber)%>%
+plots.map <- plot.env3 |> filter(PlotNumber %in% su.anal$PlotNumber)|> select(alliance = working_alliance, assoc = working_association, lon = Longitude, lat = Latitude, bgc, PlotNumber)%>%
 filter(!is.na(lon),!is.na(lat),!is.na(assoc))
 # plots.bgc.good <- plots |> add_count(alliance, BGC) |> filter (n>3)
 # plots.bgc.bad <- plots |> group_by(alliance) |> add_count(BGC) |> filter (n<=3)
 
-plots_sf <- st_as_sf(plots, coords=c("lon", "lat"), crs = 4326)
+plots_sf <- st_as_sf(plots.map, coords=c("lon", "lat"), crs = 4326)
 
-bgc.anal <- st_read("D:/OneDrive - Government of BC/CommonTables/BGC_maps/BGCv13_simplified.gpkg") |> filter(BGC %in% plots$bgc)
+bgc.anal <- st_read("D:/OneDrive - Government of BC/CommonTables/BGC_maps/BGCv13_simplified.gpkg") |> filter(BGC %in% plots.map$bgc)
 
 #----------------------------------------
 # Site locations
@@ -402,12 +376,12 @@ ggplot() +
   scale_colour_viridis_d(option = "turbo") +
   theme_bw() +
   theme(
-    legend.position = "right"
+    legend.position = "none"
   ) +
   labs(
     colour = "Association",
     title = paste0("Plot Locations ", anal.set, " Alliance")
-  )+
+  ) +
 
   coord_sf(
     xlim = c(
