@@ -107,7 +107,7 @@ For each hierarchical level chosen:
   - table and figure of related concepts (high similarity)
   - Photo
   - ID type plot
-  - Tichy profile
+  - Tichy profile(cool but optional)
 
 ```{r load data}
 veg.dat <- load_veg_data(veg_file = "./clean_data/Analysis_BECMaster_Veg.rds",
@@ -202,7 +202,7 @@ vars <- grep(
   list_vars(),
   value = TRUE
 )
-plot.env3 <- add_predictors_sibec(
+plot.env3 <- add_predictors(
   data = plot.env2,
   rules_table = rules,
   add_asmr = TRUE,
