@@ -111,7 +111,7 @@ For each hierarchical level chosen:
 
 ```{r load data}
 veg.dat <- load_veg_data(veg_file = "./clean_data/Analysis_BECMaster_Veg.rds",
-                   veg_combine_db = "D:/BC_Correlation2_Vpro_2023/Correlation2_Spp_lump.accdb",
+                   veg_combine_db = "D:/OneDrive - Government of BC/BC_Correlation2_Vpro_2023/Correlation2_Spp_Lump.accdb",
                    veg_combine_tbl = "CorrelationII_Lump")
 veg.dat2 <- veg.dat$veg_dat_lumped
 

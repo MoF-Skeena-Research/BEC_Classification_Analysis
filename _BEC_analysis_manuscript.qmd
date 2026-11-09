@@ -47,6 +47,11 @@ This report primarily focused on the development of the quantitative BEC analysi
 
 The principles of BEC analysis is outlined in Pojar et al. (1987). The method is based on Braun-Blanquet table analysis but modified to equally value significant differences in species mean cover and species constancy of plant communities for differentiating classification units. In this method, constancy (percent of site unit plots that a species is present) is converted into five equal *presence classes* each of 20% width (0.1 - 20% = I, 02,1-40% = II, ...). Mean cover is divided into 10 *significance classes* following the Domin-Krajina cover scale. \[\[insert table\]\]. A species is considered *differential* if it has presence class III (40-60%) or greater and is two or more presence classes greater than in the compared site unit(s). A species is considered a *dominant differential* if it has a significance class greater or equal to 5 (10.1% mean cover) and is two or more significance classes greater than the in a site unit and not present in the other site unit(s) within the *same circumscribing (higher) unit*.
 
+```{r}
+
+```
+
+
 There are several challenges with this method:
 
 1.  The use of discrete classes to represent continuous data creates 'steps' that creates intuitively non-equivalent comparative differences. For example, the 21% presence difference between 61%(presence class IV) vs 40% (presence II) constancy is the equivalent to the 59% difference between 80% (presence IV) and 21% (presence II) constancy. Similarly, the comparison of 20.1% mean cover (significance class VI) versus 10.0% mean cover (significance class IV) is equivalent to 33% (significance class VI) versus 5.1% (significance class IV) mean cover.
@@ -200,6 +205,11 @@ p <- diagram_diagnostic_points(outfile = "./figures/Diagnostic_Potential_Scoring
 
 p
 ```
+```{r}
+##original value of cover
+
+```
+
 
 ```{r constancy differntial points, echo=FALSE}
 #| label: fig-constancy-diff
