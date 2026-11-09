@@ -110,9 +110,17 @@ For each hierarchical level chosen:
   - Tichy profile(cool but optional)
 
 ```{r load data}
+# For WHM: 
+# veg.dat <- load_veg_data(veg_file = "./clean_data/Analysis_BECMaster_Veg.rds",
+#                    veg_combine_db = "D:/OneDrive - Government of BC/BC_Correlation2_Vpro_2023/Correlation2_Spp_Lump.accdb",
+#                    veg_combine_tbl = "CorrelationII_Lump")
+
+# For DSO: 
 veg.dat <- load_veg_data(veg_file = "./clean_data/Analysis_BECMaster_Veg.rds",
-                   veg_combine_db = "D:/OneDrive - Government of BC/BC_Correlation2_Vpro_2023/Correlation2_Spp_Lump.accdb",
+                   veg_combine_db = "C:/Users/debor/OneDrive - Government of BC/MacKenzie, Will H FOR_EX's files - BC_Correlation2_Vpro_2023/Correlation2_Spp_Lump.accdb",
                    veg_combine_tbl = "CorrelationII_Lump")
+
+
 veg.dat2 <- veg.dat$veg_dat_lumped
 
 becdb <- dbConnect(
