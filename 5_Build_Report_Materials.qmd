@@ -58,6 +58,9 @@ require(vegan)
 library(tidytext)
 library(stringr)
 
+# DSO local paths: 
+source("local_paths_DSO.R")
+
 set.seed(1279)
 source("../BEC_R_working/_functions/_bec_dist.R")
 source("../BEC_R_working/_functions/_bec_dist_matrix.R")
@@ -95,6 +98,10 @@ source("../BEC_R_working/_functions/_load_siteunits.R")
 source("../BEC_R_working/_functions/_run_pairwise_similarity.R")
 source("../BEC_R_working/_functions/_generate_hierarchy_units.R")
 source("../BEC_R_working/_functions/_generate_review_workbooks.R")
+
+# DSO functions: 
+source("_functions/_load_veg_data_DSO.R")
+source("_functions/_read_sppmaster_DSO.R")
 ```
 
 # This script will generate the material for and a formatted report of units from a hierarchical analysis.
@@ -116,17 +123,30 @@ For each hierarchical level chosen:
 #                    veg_combine_tbl = "CorrelationII_Lump")
 
 # For DSO: 
-veg.dat <- load_veg_data(veg_file = "./clean_data/Analysis_BECMaster_Veg.rds",
-                   veg_combine_db = "C:/Users/debor/OneDrive - Government of BC/MacKenzie, Will H FOR_EX's files - BC_Correlation2_Vpro_2023/Correlation2_Spp_Lump.accdb",
+
+veg.dat <- load_veg_data_DSO(veg_file = "./clean_data/Analysis_BECMaster_Veg.rds",
+                   veg_combine_db = getOption("bec.lump_db"),
                    veg_combine_tbl = "CorrelationII_Lump")
+
 
 
 veg.dat2 <- veg.dat$veg_dat_lumped
 
+# For WHM: 
+# becdb <- dbConnect(
+#   odbc::odbc(),
+#   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v1.accdb;"
+# )
+
+# DSO: 
 becdb <- dbConnect(
   odbc::odbc(),
-  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECdb_Working/BECdb_ver14_2026_v1.accdb;"
+  .connection_string = paste0(
+    "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=",
+    getOption("bec.becdb"), ";"
+  )
 )
+
 BGC_all <- dbReadTable(becdb, "tblBGC_UnitsWorkingandArchive") %>%
   filter(is.na(BGCVersionRetired)) %>%
   dplyr::select(FSRegion, BGC_NoSpace)
@@ -151,15 +171,35 @@ edatopic <- dbReadTable(becdb, "Edatopic_v13_3") %>%
 
 dbDisconnect(becdb)
 
+# WHM: 
+# becmaster <- dbConnect(
+#   odbc::odbc(),
+#   .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECMaster_Cleanup/BECMaster_fixing.accdb;"
+# )
+
+# DSO: 
 becmaster <- dbConnect(
   odbc::odbc(),
-  .connection_string = "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=D:/OneDrive - Government of BC/BECMaster_Cleanup/BECMaster_fixing.accdb;"
+  .connection_string = paste0(
+    "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=",
+    getOption("bec.becmaster"), ";"
+  )
 )
+
 plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
 plot.info <- dbReadTable(becmaster, "BECMaster_fixing_Admin") |> rename( BGC = GIS_BGC) |> mutate(BGC = gsub("\\s+", "", BGC))
+
+plot.env <- dbReadTable(becmaster, "BECMaster_fixing_Env")
+plot.info <- dbReadTable(becmaster, "BECMaster_fixing_Admin") |> rename( BGC = GIS_BGC) |> mutate(BGC = gsub("\\s+", "", BGC))
+
 dbDisconnect(becmaster)
 
-db <- "D:/OneDrive - Government of BC/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb"
+# WMH: 
+# db <- "D:/OneDrive - Government of BC/BC_Correlation2_Vpro_2023/All_BC_Correlation.accdb"
+
+# DSO: 
+db <- getOption("db")
+
 su <- rbind(combined_su(db))#, combined_su(db2))
 
 su <- su %>%
@@ -180,8 +220,8 @@ su.class <- su2 %>%
 ```
 
 ```{r prep env data}
- rules <- read.csv("./inputs/aSMR_Rules_HalfStep_v11_09Dec2019.csv")
- source("./_functions/add_predictors.R")
+rules <- read.csv("./inputs/aSMR_Rules_HalfStep_v11_09Dec2019.csv")
+source("./_functions/add_predictors.R")
 source("./_functions/assign_aSMR.R")
 source("./_functions/add_climate_data.R")
 source("./_functions/calc_solar.R")
