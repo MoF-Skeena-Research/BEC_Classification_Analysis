@@ -1,0 +1,43 @@
+---
+title: "Updating tblBEC_Hierarchy_Class"
+author: "Debora S. Obrist"
+date: "2026-11-13"
+output: html_document
+---
+
+The task: Move the info from the coastal correlation meetings in Nanaimo to tblBEC_Hierarchy_Class. 
+	1.) Pull the latest version of tblBEC_Hierarchy_Class into R.
+	2.) Update it using the spreadsheets updated during the Nanaimo meeting (in the External_ Coastal BEC Guide - Associations_Alliances_Review folder).
+	3.) Export it back into Access as an update table. 
+	4.) Make a copy of tblBEC_Hierarchy_Class  to avoid overwriting it, name it something e.g., Archived_
+	5.) Make another copy but copy over the structure only. 
+	6.) Append imported data from R into this blank version. 
+
+Source files, load packages: 
+```{r setup, include=FALSE}
+library(DBI)
+
+# Source files: 
+source("local_paths_DSO.R")
+
+# Pull in Nanaimo meeting spreadsheets:
+
+
+
+```
+
+Connect to BECdb, pull out tblBEC_Hierarchy_Class. 
+```{r, include = FALSE}
+# Connect to latest version of BECdb ("C:\Users\debor\OneDrive - Government of BC\MacKenzie, Will H FOR_EX's files - BECdb_Working\BECdb_ver14_2026_v1.accdb"). This is known as bec.becdb in local_paths_DSO.R
+
+becdb <- dbConnect(
+  odbc::odbc(),
+  .connection_string = paste0(
+    "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=",
+    getOption("bec.becdb"), ";"
+  )
+)
+
+BEC.hier <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") %>%
+  mutate(SiteUnit = str_replace_all(SU_Label, c("/" = "_", " " = ""))) # Check if this line is necessary or wanted **
+```
