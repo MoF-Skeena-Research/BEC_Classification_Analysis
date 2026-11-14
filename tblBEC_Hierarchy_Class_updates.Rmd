@@ -6,30 +6,44 @@ output: html_document
 ---
 
 The task: Move the info from the coastal correlation meetings in Nanaimo to tblBEC_Hierarchy_Class. 
-	1.) Pull the latest version of tblBEC_Hierarchy_Class into R.
-	2.) Update it using the spreadsheets updated during the Nanaimo meeting (in the External_ Coastal BEC Guide - Associations_Alliances_Review folder).
-	3.) Export it back into Access as an update table. 
-	4.) Make a copy of tblBEC_Hierarchy_Class  to avoid overwriting it, name it something e.g., Archived_
-	5.) Make another copy but copy over the structure only. 
-	6.) Append imported data from R into this blank version. 
+1.) Pull the latest version of tblBEC_Hierarchy_Class into R.
+2.) Update it using the spreadsheets updated during the Nanaimo meeting (in the External_ Coastal BEC Guide - Associations_Alliances_Review folder).
+3.) Export it back into Access as an update table. 
+4.) Make a copy of tblBEC_Hierarchy_Class  to avoid overwriting it, name it something e.g., Archived_
+5.) Make another copy but copy over the structure only. 
+6.) Append imported data from R into this blank version. 
 
 Source files, load packages: 
 ```{r setup, include=FALSE}
 library(DBI)
+library(readxl)
+library(tidyverse)
 
 # Source files: 
 source("local_paths_DSO.R")
 
 # Pull in Nanaimo meeting spreadsheets:
+CWH_102 <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-102/0_CWH-102_BECdb_table_for_edit_meeting_dvm.xlsx")
+CWH_Act <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-Act/0_CWH-Act_BECdb_table_for_edit_meeting.xlsx")
+CWH_HwBa <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-HwBa/0_CWH-HwBa_BECdb_table_for_edit_meeting_dvm.xlsx")
+CWH_HwBa_rich <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-HwBa-rich/0_CWH-HwBa-rich_BECdb_table_for_edit_meeting_dvm.xlsx")
+CWH_HwFd <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-HwFd/Copy of 0_CWH-HwFd_BECdb_table_for_edit_meeting_dvm.xlsx")
+CWH_HwFd_rich <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-HwFd-rich/0_CWH-HwFd-rich_BECdb_table_for_edit_meetings_dvm.xlsx")
+CWH_wetfor <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-wetfor/0_CWH-wetfor_BECdb_table_for_edit_dvm_meeting.xlsx")
+MH <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/MH/0_MH_BECdb_table_for_edit_meeting_dvm.xlsx")
 
+bec.tables <- list(
+  CWH_102 = CWH_102,
+  CWH_Act = CWH_Act,
+  CWH_HwBa = CWH_HwBa,
+  CWH_HwBa_rich = CWH_HwBa_rich,
+  CWH_HwFd = CWH_HwFd,
+  CWH_HwFd_rich = CWH_HwFd_rich,
+  CWH_wetfor = CWH_wetfor,
+  MH = MH
+)
 
-
-```
-
-Connect to BECdb, pull out tblBEC_Hierarchy_Class. 
-```{r, include = FALSE}
 # Connect to latest version of BECdb ("C:\Users\debor\OneDrive - Government of BC\MacKenzie, Will H FOR_EX's files - BECdb_Working\BECdb_ver14_2026_v1.accdb"). This is known as bec.becdb in local_paths_DSO.R
-
 becdb <- dbConnect(
   odbc::odbc(),
   .connection_string = paste0(
@@ -38,6 +52,243 @@ becdb <- dbConnect(
   )
 )
 
+# Pull out tblBEC_Hierarchy_Class table: 
 BEC.hier <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") %>%
   mutate(SiteUnit = str_replace_all(SU_Label, c("/" = "_", " " = ""))) # Check if this line is necessary or wanted **
+```
+
+
+Do some data checks before merging:  
+```{r}
+# Check for duplicates in SiteUnit in BEC.hier: 
+BEC_hier_duplicates <- BEC.hier %>%
+  add_count(SiteUnit, name = "Occurrences") %>%
+  filter(Occurrences > 1) %>%
+  arrange(SiteUnit)
+
+# View results
+BEC_hier_duplicates
+
+# Make function that checks for duplicates and makes sure that all SiteUnits in each of the bec.tables are in the tblBEC_Hierarchy_Class table. 
+check_site_units <- function(df, table_name) {
+  
+  tibble(
+    Table = table_name,
+    Rows = nrow(df),
+    Unique_site_units = n_distinct(df$SiteUnit, na.rm = TRUE),
+    Missing_site_units = sum(is.na(df$SiteUnit) | trimws(df$SiteUnit) == ""),
+    Duplicate_site_units = sum(duplicated(df$SiteUnit[!is.na(df$SiteUnit)])),
+    Not_in_bec_hier = nrow(
+      df %>%
+        filter(!is.na(SiteUnit)) %>%
+        distinct(SiteUnit) %>%
+        anti_join(
+          BEC.hier %>% distinct(SiteUnit),
+          by = "SiteUnit"
+        )
+    )
+  )
+}
+
+# Run the function: 
+site_unit_check <- imap_dfr(
+  bec.tables,
+  check_site_units
+)
+
+# Check results: 
+site_unit_check
+
+# Function to find missing or duplicated site units (if there are any): 
+check_site_unit_issues <- function(df) {
+  
+  # Find site units missing from BEC.hier
+  missing <- df %>%
+    filter(!is.na(SiteUnit)) %>%
+    distinct(SiteUnit) %>%
+    anti_join(
+      BEC.hier %>% distinct(SiteUnit),
+      by = "SiteUnit"
+    ) %>%
+    transmute(
+      Issue = "Missing from BEC.hier",
+      SiteUnit,
+      Occurrences = NA_integer_
+    )
+  
+  # Find duplicated site units within the BEC tables (spreadsheets from meeting)
+  duplicates <- df %>%
+    filter(!is.na(SiteUnit)) %>%
+    add_count(SiteUnit, name = "Occurrences") %>%
+    filter(Occurrences > 1) %>%
+    transmute(
+      Issue = "Duplicated",
+      SiteUnit,
+      Occurrences
+    )
+  
+  # Combine results
+  bind_rows(missing, duplicates)
+}
+
+# Run it: 
+site_unit_issues <- imap(
+  bec.tables,
+  ~ check_site_unit_issues(.x)
+)
+
+# Combine: 
+site_unit_issues_all <- imap_dfr(
+  site_unit_issues,
+  ~ mutate(.x, Table = .y)
+) %>%
+  select(Table, Issue, SiteUnit, Occurrences)
+
+# Look at results: 
+site_unit_issues_all
+
+# Check the column names: 
+column_check <- imap_dfr(
+  bec.tables,
+  ~ tibble(
+    Table = .y,
+    Column = names(.x),
+    In_BEC_hier = names(.x) %in% names(BEC.hier)
+  )
+)
+
+# Show only columns that don't match
+column_differences <- column_check %>%
+  filter(!In_BEC_hier)
+
+View(column_differences)
+
+# Check which columns are consistant: 
+bec_columns <- names(BEC.hier)
+
+# Columns in every meeting spreadsheet
+bec.table_columns <- Reduce(
+  intersect,
+  lapply(bec.tables, names)
+)
+
+# Columns shared by everything
+common_columns <- intersect(bec_columns, bec.table_columns)
+
+# These are all the columns that will transfer without problems: 
+common_columns
+
+```
+
+
+Look at any specific problems found in the last code chunk: 
+```{r}
+# Looks like CWHvh2_110 is duplicated in the CWH_HwBa_rich table: 
+CWH_HwBa_rich |> 
+  dplyr::filter(SiteUnit == "CWHvh2_110")
+
+# CWHxs_Ro60.2 is duplicated in BEC.hier. 
+BEC.hier |> 
+  dplyr::filter(SiteUnit == "CWHxs_Ro60.2")
+
+# Check to see if CWHxs_Ro60.2 is in any of the new tables? 
+map_dfr(
+  names(bec.tables),
+  ~ tibble(
+    Table = .x,
+    Found = any(bec.tables[[.x]]$SiteUnit == "CWHxs_Ro60.2", na.rm = TRUE)
+  )
+)
+
+# It's not, but will come back to that one. 
+```
+
+Update tblBEC_Hierarchy_Class with the Nanaimo meeting data: 
+```{r}
+BEC.hier_test <- BEC.hier
+
+update_BEC.hier <- function(master, update_data, table_name,
+                            na_action = "keep") {
+  
+  # Check SiteUnit values
+  if (any(is.na(update_data$SiteUnit) |
+          trimws(update_data$SiteUnit) == "")) {
+    stop(table_name, ": missing or blank SiteUnit values.")
+  }
+  
+  # Check duplicates in the meeting spreadsheet
+  if (anyDuplicated(update_data$SiteUnit)) {
+    stop(table_name, ": duplicated SiteUnits in meeting spreadsheet.")
+  }
+  
+  # Check that all meeting SiteUnits exist in the master
+  missing <- setdiff(update_data$SiteUnit, master$SiteUnit)
+  
+  if (length(missing) > 0) {
+    stop(table_name, ": SiteUnits not found in BEC.hier: ",
+         paste(missing, collapse = ", "))
+  }
+  
+  # Check that each SiteUnit identifies exactly one master row
+  master_counts <- master %>%
+    filter(SiteUnit %in% update_data$SiteUnit) %>%
+    count(SiteUnit)
+  
+  duplicated_master <- master_counts %>%
+    filter(n > 1)
+  
+  if (nrow(duplicated_master) > 0) {
+    stop(table_name, ": SiteUnits match multiple rows in BEC.hier: ",
+         paste(duplicated_master$SiteUnit, collapse = ", "))
+  }
+  
+  # Add any new columns to the master
+  new_columns <- setdiff(names(update_data), names(master))
+  
+  for (col in new_columns) {
+    master[[col]] <- NA
+  }
+  
+  # Identify columns to update (everything except SiteUnit)
+  update_cols <- setdiff(names(update_data), "SiteUnit")
+  
+  # Match meeting records to master rows
+  idx <- match(update_data$SiteUnit, master$SiteUnit)
+
+  # Update the relevant columns
+  for (col in update_cols) {
+  
+    new_values <- vctrs::vec_cast(
+      update_data[[col]],
+      master[[col]]
+    )
+    
+    if (na_action == "keep") {
+      # Only update cells with a non-NA value
+      has_value <- !is.na(new_values)
+      master[[col]][idx[has_value]] <- new_values[has_value]
+    
+    } else if (na_action == "overwrite") {
+      # Update even when the meeting spreadsheet contains NA
+      master[[col]][idx] <- new_values
+    
+    } else {
+      stop("na_action must be 'keep' or 'overwrite'.")
+      }
+  }
+  
+  message(table_name, ": updated ", length(idx),
+          " records across ", length(update_cols), " columns.")
+
+  master
+}
+
+# Test: 
+BEC.hier_test <- update_BEC.hier(
+  master = BEC.hier_test,
+  update_data = CWH_102,
+  table_name = "CWH_102",
+  na_action = "keep"
+  )
+
 ```
