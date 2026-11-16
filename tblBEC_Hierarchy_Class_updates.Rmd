@@ -59,7 +59,7 @@ BEC.hier <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") %>%
 
 
 Do some data checks before merging:  
-```{r}
+```{r data checks}
 # Check for duplicates in SiteUnit in BEC.hier: 
 BEC_hier_duplicates <- BEC.hier %>%
   add_count(SiteUnit, name = "Occurrences") %>%
@@ -182,7 +182,7 @@ common_columns
 
 
 Look at any specific problems found in the last code chunk: 
-```{r}
+```{r looking at issues}
 # Looks like CWHvh2_110 is duplicated in the CWH_HwBa_rich table: 
 CWH_HwBa_rich |> 
   dplyr::filter(SiteUnit == "CWHvh2_110")
@@ -204,79 +204,87 @@ map_dfr(
 ```
 
 Update tblBEC_Hierarchy_Class with the Nanaimo meeting data: 
-```{r}
+In the function update_BEC.hier(), 
+master = the table from VPro called tblBEC_Hierarchy_Class
+update_data = the df containing the new or revised info we want to add to the master copy
+table_name = a text label to identify the source df - helpful for error messages
+```{r update BEC.hier}
+# Work with a test version
 BEC.hier_test <- BEC.hier
 
+# Update function: 
 update_BEC.hier <- function(master, update_data, table_name,
                             na_action = "keep") {
-  
+  # ---- Data checks ----
+
   # Check SiteUnit values
   if (any(is.na(update_data$SiteUnit) |
           trimws(update_data$SiteUnit) == "")) {
     stop(table_name, ": missing or blank SiteUnit values.")
   }
-  
-  # Check duplicates in the meeting spreadsheet
+
+  # Check for duplicates in the update df
   if (anyDuplicated(update_data$SiteUnit)) {
-    stop(table_name, ": duplicated SiteUnits in meeting spreadsheet.")
+    stop(table_name, ": duplicated SiteUnits in update_data.")
   }
-  
-  # Check that all meeting SiteUnits exist in the master
+
+  # Check that all SiteUnits exist in the master
   missing <- setdiff(update_data$SiteUnit, master$SiteUnit)
-  
+
   if (length(missing) > 0) {
     stop(table_name, ": SiteUnits not found in BEC.hier: ",
          paste(missing, collapse = ", "))
   }
-  
+
   # Check that each SiteUnit identifies exactly one master row
   master_counts <- master %>%
     filter(SiteUnit %in% update_data$SiteUnit) %>%
     count(SiteUnit)
-  
+
   duplicated_master <- master_counts %>%
     filter(n > 1)
-  
+
   if (nrow(duplicated_master) > 0) {
     stop(table_name, ": SiteUnits match multiple rows in BEC.hier: ",
          paste(duplicated_master$SiteUnit, collapse = ", "))
   }
-  
-  # Add any new columns to the master
+
+  # ---- Replacement ----
+
+  # Add any new columns to the master, using the incoming column's type
   new_columns <- setdiff(names(update_data), names(master))
-  
+
   for (col in new_columns) {
-    master[[col]] <- NA
+    master[[col]] <- vctrs::vec_init(update_data[[col]], nrow(master))
   }
-  
-  # Identify columns to update (everything except SiteUnit)
+
   update_cols <- setdiff(names(update_data), "SiteUnit")
-  
-  # Match meeting records to master rows
   idx <- match(update_data$SiteUnit, master$SiteUnit)
 
-  # Update the relevant columns
   for (col in update_cols) {
+
+    incoming <- update_data[[col]]
+
+    # Empty df columns are read as logical. Give them the master's type instead
+    if (is.logical(incoming) && all(is.na(incoming)) && !is.logical(master[[col]])) {
+      incoming <- vctrs::vec_init(master[[col]], length(incoming))
+    }
   
-    new_values <- vctrs::vec_cast(
-      update_data[[col]],
-      master[[col]]
-    )
-    
+    # Strict - ensures incoming is converted to same type as master, errors if conversion loses information (e.g., text to logical or numeric to integer)
+    new_values <- vctrs::vec_cast(incoming, master[[col]])
+
     if (na_action == "keep") {
-      # Only update cells with a non-NA value
       has_value <- !is.na(new_values)
       master[[col]][idx[has_value]] <- new_values[has_value]
-    
     } else if (na_action == "overwrite") {
-      # Update even when the meeting spreadsheet contains NA
       master[[col]][idx] <- new_values
-    
     } else {
       stop("na_action must be 'keep' or 'overwrite'.")
-      }
+    }
   }
-  
+
+  # ---- Replacement ends here ----
+
   message(table_name, ": updated ", length(idx),
           " records across ", length(update_cols), " columns.")
 
