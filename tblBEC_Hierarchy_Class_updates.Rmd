@@ -5,23 +5,36 @@ date: "2026-11-13"
 output: html_document
 ---
 
-The task: Move the info from the coastal correlation meetings in Nanaimo to tblBEC_Hierarchy_Class. 
-1.) Pull the latest version of tblBEC_Hierarchy_Class into R.
-2.) Update it using the spreadsheets updated during the Nanaimo meeting (in the External_ Coastal BEC Guide - Associations_Alliances_Review folder).
-3.) Export it back into Access as an update table. 
-4.) Make a copy of tblBEC_Hierarchy_Class  to avoid overwriting it, name it something e.g., Archived_
-5.) Make another copy but copy over the structure only. 
-6.) Append imported data from R into this blank version. 
+## Purpose
 
-Source files, load packages: 
+Move the info from the Nanaimo coastal correlation meetings into tblBEC_Hierarchy_Class (and write script so that this can easily be done with future updates too)
+
+** Workflow **
+
+1.) Load meeting spreadsheets and current tblBEC_Hierarchy_Class from BECdb.
+2.) Run checks on the spreadsheets.
+3.) Update the table in R, with spreadsheets from the External_ Coastal BEC Guide - Associations_Alliances_Review folder (BEC.hier_updated), save it.
+4.) In Access: 
+   - Archive a copy of tblBEC_Hierarchy_Class (e.g., Archived_...).
+   - Make a structure-only copy of the table.
+   - Append the saved data from R into the empty copy.
+
+## 1. Setup
+
 ```{r setup, include=FALSE}
 library(DBI)
 library(readxl)
+library(writexl)
 library(tidyverse)
 
 # Source files: 
 source("local_paths_DSO.R")
 
+```
+
+## 2. Load data
+
+```{r load data}
 # Pull in Nanaimo meeting spreadsheets:
 CWH_102 <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-102/0_CWH-102_BECdb_table_for_edit_meeting_dvm.xlsx")
 CWH_Act <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-Act/0_CWH-Act_BECdb_table_for_edit_meeting.xlsx")
@@ -55,248 +68,231 @@ becdb <- dbConnect(
 # Pull out tblBEC_Hierarchy_Class table: 
 BEC.hier <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") %>%
   mutate(SiteUnit = str_replace_all(SU_Label, c("/" = "_", " " = ""))) # Check if this line is necessary or wanted **
+
+dbDisconnect(becdb)
+```
+
+## Functions: 
+
+All functions are defined here and used in sections below:
+
+```{r functions}
+# --- Find problems with the SiteUnit column of an update table ---------------
+# Returns one row per problem (zero rows = no problems).
+find_site_unit_issues <- function(update_data, master) {
+
+  su    <- update_data$SiteUnit
+  blank <- is.na(su) | trimws(su) == ""
+  su    <- su[!blank]
+
+  make <- function(label, units) {
+    tibble(Issue = rep(label, length(units)), SiteUnit = as.character(units))
+  }
+
+  bind_rows(
+    make("Blank SiteUnit",                    rep(NA, sum(blank))),
+    make("Duplicated in update table",        unique(su[duplicated(su)])),
+    make("Not found in BEC.hier",             setdiff(su, master$SiteUnit)),
+    make("Matches multiple rows in BEC.hier", intersect(su, master$SiteUnit[duplicated(master$SiteUnit)]))
+  )
+}
+
+# --- List cells that are blank in the update but filled in the master ---------
+find_blanked_cells <- function(master, update_data, table_name) {
+
+  # Only columns in both (new columns have no "old value")
+  update_cols <- intersect(setdiff(names(update_data), "SiteUnit"), names(master))
+  idx <- match(update_data$SiteUnit, master$SiteUnit)
+
+  map_dfr(update_cols, function(col) {
+    incoming <- as.character(update_data[[col]])
+    existing <- as.character(master[[col]][idx])
+
+    blank_in     <- is.na(incoming) | trimws(incoming) == ""
+    has_existing <- !is.na(existing) & trimws(existing) != ""
+    hit          <- blank_in & has_existing
+
+    tibble(
+      Table            = table_name,
+      SiteUnit         = update_data$SiteUnit[hit],
+      Column           = col,
+      Master_value     = existing[hit],
+      Update_value     = incoming[hit],
+      Column_all_blank = all(blank_in)   # TRUE = whole column empty in the spreadsheet
+    )
+  })
+}
+
+# --- Apply one update table to the master --------------------------------------
+# master      = BEC.hier (aka tblBEC_Hierarchy_Chart from VPro)
+# update_data = a df with updates to apply to BEC.hier
+# table_name  = label of the updated data to be used in error messages
+# na_action   = "keep"      blank cells in update_data leave the master value alone
+#               "overwrite" blank cells in update_data erase the master value
+update_BEC.hier <- function(master, update_data, table_name, na_action = "keep") {
+
+  if (!na_action %in% c("keep", "overwrite")) {
+    stop("na_action must be 'keep' or 'overwrite'.")
+  }
+
+  # Stop on any SiteUnit problem (the same check used in the checks section)
+  issues <- find_site_unit_issues(update_data, master)
+  if (nrow(issues) > 0) {
+    stop(table_name, ": ", paste(issues$Issue, issues$SiteUnit, sep = " - ", collapse = "; "),
+         call. = FALSE)
+  }
+
+  # Every column must already exist in the master (new ones are added in section 6)
+  update_cols  <- setdiff(names(update_data), "SiteUnit")
+  missing_cols <- setdiff(update_cols, names(master))
+  if (length(missing_cols) > 0) {
+    stop(table_name, ": columns not in master: ", paste(missing_cols, collapse = ", "),
+         call. = FALSE)
+  }
+
+  idx <- match(update_data$SiteUnit, master$SiteUnit)   # master row for each update row
+
+  for (col in update_cols) {
+    incoming <- update_data[[col]]
+
+    # Empty Excel columns are read as logical; text columns may hold numbers
+    if (is.character(master[[col]])) incoming <- as.character(incoming)
+
+    # Strict conversion: vec_cast produces errors rather than silently losing information
+    new_values <- vctrs::vec_cast(incoming, master[[col]])
+
+    rows <- if (na_action == "keep") !is.na(new_values) else rep(TRUE, length(new_values))
+    master[[col]][idx[rows]] <- new_values[rows]
+  }
+
+  message(table_name, ": ", length(idx), " rows, ", length(update_cols), " columns processed.")
+  master
+}
 ```
 
 
-Do some data checks before merging:  
-```{r data checks}
-# Check for duplicates in SiteUnit in BEC.hier: 
-BEC_hier_duplicates <- BEC.hier %>%
+## 4. Checks: 
+
+**Check 1. Duplicated SiteUnits in the master table**
+
+```{r check-master-duplicates}
+BEC.hier %>%
   add_count(SiteUnit, name = "Occurrences") %>%
   filter(Occurrences > 1) %>%
   arrange(SiteUnit)
-
-# View results
-BEC_hier_duplicates
-
-# Make function that checks for duplicates and makes sure that all SiteUnits in each of the bec.tables are in the tblBEC_Hierarchy_Class table. 
-check_site_units <- function(df, table_name) {
-  
-  tibble(
-    Table = table_name,
-    Rows = nrow(df),
-    Unique_site_units = n_distinct(df$SiteUnit, na.rm = TRUE),
-    Missing_site_units = sum(is.na(df$SiteUnit) | trimws(df$SiteUnit) == ""),
-    Duplicate_site_units = sum(duplicated(df$SiteUnit[!is.na(df$SiteUnit)])),
-    Not_in_bec_hier = nrow(
-      df %>%
-        filter(!is.na(SiteUnit)) %>%
-        distinct(SiteUnit) %>%
-        anti_join(
-          BEC.hier %>% distinct(SiteUnit),
-          by = "SiteUnit"
-        )
-    )
-  )
-}
-
-# Run the function: 
-site_unit_check <- imap_dfr(
-  bec.tables,
-  check_site_units
-)
-
-# Check results: 
-site_unit_check
-
-# Function to find missing or duplicated site units (if there are any): 
-check_site_unit_issues <- function(df) {
-  
-  # Find site units missing from BEC.hier
-  missing <- df %>%
-    filter(!is.na(SiteUnit)) %>%
-    distinct(SiteUnit) %>%
-    anti_join(
-      BEC.hier %>% distinct(SiteUnit),
-      by = "SiteUnit"
-    ) %>%
-    transmute(
-      Issue = "Missing from BEC.hier",
-      SiteUnit,
-      Occurrences = NA_integer_
-    )
-  
-  # Find duplicated site units within the BEC tables (spreadsheets from meeting)
-  duplicates <- df %>%
-    filter(!is.na(SiteUnit)) %>%
-    add_count(SiteUnit, name = "Occurrences") %>%
-    filter(Occurrences > 1) %>%
-    transmute(
-      Issue = "Duplicated",
-      SiteUnit,
-      Occurrences
-    )
-  
-  # Combine results
-  bind_rows(missing, duplicates)
-}
-
-# Run it: 
-site_unit_issues <- imap(
-  bec.tables,
-  ~ check_site_unit_issues(.x)
-)
-
-# Combine: 
-site_unit_issues_all <- imap_dfr(
-  site_unit_issues,
-  ~ mutate(.x, Table = .y)
-) %>%
-  select(Table, Issue, SiteUnit, Occurrences)
-
-# Look at results: 
-site_unit_issues_all
-
-# Check the column names: 
-column_check <- imap_dfr(
-  bec.tables,
-  ~ tibble(
-    Table = .y,
-    Column = names(.x),
-    In_BEC_hier = names(.x) %in% names(BEC.hier)
-  )
-)
-
-# Show only columns that don't match
-column_differences <- column_check %>%
-  filter(!In_BEC_hier)
-
-View(column_differences)
-
-# Check which columns are consistant: 
-bec_columns <- names(BEC.hier)
-
-# Columns in every meeting spreadsheet
-bec.table_columns <- Reduce(
-  intersect,
-  lapply(bec.tables, names)
-)
-
-# Columns shared by everything
-common_columns <- intersect(bec_columns, bec.table_columns)
-
-# These are all the columns that will transfer without problems: 
-common_columns
-
 ```
 
+**Check 2. SiteUnit problems in each meeting spreadsheet** (blank, duplicated, missing from the master, or matching more than one master row). The update stops on any of these.
 
-Look at any specific problems found in the last code chunk: 
-```{r looking at issues}
-# Looks like CWHvh2_110 is duplicated in the CWH_HwBa_rich table: 
-CWH_HwBa_rich |> 
-  dplyr::filter(SiteUnit == "CWHvh2_110")
+```{r check-site-units}
+site_unit_issues <- bec.tables %>%
+  imap_dfr(~ mutate(find_site_unit_issues(.x, BEC.hier), Table = .y, .before = 1))
 
-# CWHxs_Ro60.2 is duplicated in BEC.hier. 
-BEC.hier |> 
-  dplyr::filter(SiteUnit == "CWHxs_Ro60.2")
-
-# Check to see if CWHxs_Ro60.2 is in any of the new tables? 
-map_dfr(
-  names(bec.tables),
-  ~ tibble(
-    Table = .x,
-    Found = any(bec.tables[[.x]]$SiteUnit == "CWHxs_Ro60.2", na.rm = TRUE)
-  )
-)
-
-# It's not, but will come back to that one. 
+site_unit_issues                              
 ```
 
-Update tblBEC_Hierarchy_Class with the Nanaimo meeting data: 
-In the function update_BEC.hier(), 
-master = the table from VPro called tblBEC_Hierarchy_Class
-update_data = the df containing the new or revised info we want to add to the master copy
-table_name = a text label to identify the source df - helpful for error messages
-```{r update BEC.hier}
-# Work with a test version
-BEC.hier_test <- BEC.hier
+**Check 3. SiteUnits that appear in more than one spreadsheet.** If any do, the table that comes later in `meeting_files` wins wherever its cell is not blank.
 
-# Update function: 
-update_BEC.hier <- function(master, update_data, table_name,
-                            na_action = "keep") {
-  # ---- Data checks ----
+```{r check-overlaps}
+multi_table <- bec.tables %>%
+  imap_dfr(~ tibble(Table = .y, SiteUnit = .x$SiteUnit)) %>%
+  filter(!is.na(SiteUnit)) %>%
+  group_by(SiteUnit) %>%
+  summarise(n_tables = n_distinct(Table),
+            Tables   = paste(sort(unique(Table)), collapse = ", "),
+            .groups  = "drop") %>%
+  filter(n_tables > 1) %>%
+  arrange(desc(n_tables), SiteUnit)
 
-  # Check SiteUnit values
-  if (any(is.na(update_data$SiteUnit) |
-          trimws(update_data$SiteUnit) == "")) {
-    stop(table_name, ": missing or blank SiteUnit values.")
+multi_table
+```
+
+**Check 4. New columns** (in a spreadsheet but not in tblBEC_Hierarchy_Class). These will be added to the table.
+
+```{r check-new-columns}
+new_columns <- bec.tables %>%
+  imap_dfr(~ tibble(Table = .y, Column = setdiff(names(.x), names(BEC.hier))))
+
+new_columns
+```
+
+**Check 5. Cells blank in the spreadsheet but filled in the master.** With `na_action = "keep"` the master value is kept. Each of these is either a deliberate deletion or an accident, so review them. Rows with `Column_all_blank = TRUE` mean the spreadsheet never used that column. The interesting ones are `FALSE`.
+
+```{r check-blanked-cells}
+blanked_all <- bec.tables %>%
+  imap_dfr(~ find_blanked_cells(BEC.hier, .x, .y))
+
+count(blanked_all, Table, Column_all_blank)
+
+write_xlsx(blanked_all, file.path("DSO_outputs/blank_cells_for_review.xlsx"))
+```
+
+## 5. Fixes applied in R
+
+Resolve everything flagged in checks 1-3 here, and note each decision, so the record is clear to the next person. Fixing the source spreadsheet is better where possible. Examples (edit, or delete if unused):
+
+```{r fixes}
+# Check 2 found CWHvh2_110 twice in CWH_HwBa_rich.
+# Decision (date, initials): keep the first row after checking with ...
+# bec.tables$CWH_HwBa_rich <- bec.tables$CWH_HwBa_rich %>%
+#   distinct(SiteUnit, .keep_all = TRUE)
+
+# Check 1 found CWHxs_Ro60.2 twice in BEC.hier. It is not in any meeting
+# spreadsheet, so it is not affected by this update. To be resolved in BECdb.
+
+# What to do with the blanked cells? 
+```
+
+After making fixes, re-run the checks in section 4. Check 2 should return zero rows.
+
+## 6. Update BEC.hier
+
+```{r update}
+# Start from the original table; BEC.hier itself stays untouched
+BEC.hier_updated <- BEC.hier
+
+# Add every new column once, as text
+for (col in unique(new_columns$Column)) BEC.hier_updated[[col]] <- NA_character_
+
+# Apply each spreadsheet in turn, logging success or failure
+update_log <- tibble(Table = names(bec.tables), Status = "not run", Message = "")
+
+for (i in seq_along(bec.tables)) {
+  tbl <- names(bec.tables)[i]
+
+  result <- tryCatch(
+    update_BEC.hier(BEC.hier_updated, bec.tables[[tbl]], tbl, na_action = "keep"),
+    error = function(e) e
+  )
+
+  if (inherits(result, "error")) {
+    update_log$Status[i]  <- "FAILED"
+    update_log$Message[i] <- conditionMessage(result)
+  } else {
+    BEC.hier_updated <- result   # keep the new version only if the update succeeded
+    update_log$Status[i] <- "OK"
   }
-
-  # Check for duplicates in the update df
-  if (anyDuplicated(update_data$SiteUnit)) {
-    stop(table_name, ": duplicated SiteUnits in update_data.")
-  }
-
-  # Check that all SiteUnits exist in the master
-  missing <- setdiff(update_data$SiteUnit, master$SiteUnit)
-
-  if (length(missing) > 0) {
-    stop(table_name, ": SiteUnits not found in BEC.hier: ",
-         paste(missing, collapse = ", "))
-  }
-
-  # Check that each SiteUnit identifies exactly one master row
-  master_counts <- master %>%
-    filter(SiteUnit %in% update_data$SiteUnit) %>%
-    count(SiteUnit)
-
-  duplicated_master <- master_counts %>%
-    filter(n > 1)
-
-  if (nrow(duplicated_master) > 0) {
-    stop(table_name, ": SiteUnits match multiple rows in BEC.hier: ",
-         paste(duplicated_master$SiteUnit, collapse = ", "))
-  }
-
-  # ---- Replacement ----
-
-  # Add any new columns to the master, using the incoming column's type
-  new_columns <- setdiff(names(update_data), names(master))
-
-  for (col in new_columns) {
-    master[[col]] <- vctrs::vec_init(update_data[[col]], nrow(master))
-  }
-
-  update_cols <- setdiff(names(update_data), "SiteUnit")
-  idx <- match(update_data$SiteUnit, master$SiteUnit)
-
-  for (col in update_cols) {
-
-    incoming <- update_data[[col]]
-
-    # Empty df columns are read as logical. Give them the master's type instead
-    if (is.logical(incoming) && all(is.na(incoming)) && !is.logical(master[[col]])) {
-      incoming <- vctrs::vec_init(master[[col]], length(incoming))
-    }
-  
-    # Strict - ensures incoming is converted to same type as master, errors if conversion loses information (e.g., text to logical or numeric to integer)
-    new_values <- vctrs::vec_cast(incoming, master[[col]])
-
-    if (na_action == "keep") {
-      has_value <- !is.na(new_values)
-      master[[col]][idx[has_value]] <- new_values[has_value]
-    } else if (na_action == "overwrite") {
-      master[[col]][idx] <- new_values
-    } else {
-      stop("na_action must be 'keep' or 'overwrite'.")
-    }
-  }
-
-  # ---- Replacement ends here ----
-
-  message(table_name, ": updated ", length(idx),
-          " records across ", length(update_cols), " columns.")
-
-  master
 }
 
-# Test: 
-BEC.hier_test <- update_BEC.hier(
-  master = BEC.hier_test,
-  update_data = CWH_102,
-  table_name = "CWH_102",
-  na_action = "keep"
-  )
-
+update_log
 ```
+
+## 7. Verify and save
+
+```{r verify-and-save}
+# Stop here if any table failed; fix it (section 5) and re-run from section 6
+if (any(update_log$Status != "OK")) {
+  stop("Some tables failed. See update_log.")
+}
+
+# No rows added or lost
+stopifnot(nrow(BEC.hier_updated) == nrow(BEC.hier))
+
+# Columns added
+setdiff(names(BEC.hier_updated), names(BEC.hier))
+
+# Save for the Access import. SiteUnit was created in R, so it is not exported.
+BEC.hier_export <- BEC.hier_updated %>% select(-SiteUnit)
+
+saveRDS(BEC.hier_export, file.path(out_dir, "tblBEC_Hierarchy_Class_updated.rds"))
+write_xlsx(BEC.hier_export, file.path("DSO_outputs/tblBEC_Hierarchy_Class_updated.xlsx"))
