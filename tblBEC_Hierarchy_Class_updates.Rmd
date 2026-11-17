@@ -72,7 +72,7 @@ BEC.hier <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") %>%
 dbDisconnect(becdb)
 ```
 
-## Functions: 
+## 3. Functions: 
 
 All functions are defined here and used in sections below:
 
@@ -326,3 +326,58 @@ saveRDS(BEC.hier_export, file.path("DSO_outputs/tblBEC_Hierarchy_Class_updated_2
 write_xlsx(BEC.hier_export, file.path("DSO_outputs/tblBEC_Hierarchy_Class_updated_20261117.xlsx"))
 ```
 
+
+## 8. Final checks before appending to BECdb.
+```{r final check}
+find_changed_cells <- function(old, new) {
+
+  # Rows must line up one-to-one (the update doesn't add, remove, or reorder rows)
+  stopifnot(nrow(old) == nrow(new), identical(old$SU_Label, new$SU_Label))
+
+  # Only columns that exist in both (new columns have no "old value")
+  cols <- setdiff(intersect(names(old), names(new)), "SiteUnit")
+
+  map_dfr(cols, function(col) {
+    o <- as.character(old[[col]])
+    n <- as.character(new[[col]])
+
+    has_both <- !is.na(o) & trimws(o) != "" & !is.na(n) & trimws(n) != ""
+    hit      <- has_both & o != n
+
+    tibble(
+      SiteUnit  = old$SiteUnit[hit],
+      SU_Label  = old$SU_Label[hit],
+      Column    = col,
+      Old_value = o[hit],
+      New_value = n[hit],
+      # TRUE = differs only by spaces or capitalization (probably not a real change)
+      Trivial   = tolower(trimws(o[hit])) == tolower(trimws(n[hit]))
+    )
+  })
+}
+
+# Which meeting spreadsheet(s) each SiteUnit came from
+source_tables <- bec.tables %>%
+  imap_dfr(~ tibble(Table = .y, SiteUnit = .x$SiteUnit)) %>%
+  filter(!is.na(SiteUnit)) %>%
+  group_by(SiteUnit) %>%
+  summarise(Source_tables = paste(unique(Table), collapse = ", "), .groups = "drop")
+
+changed_cells <- find_changed_cells(BEC.hier, BEC.hier_updated) %>%
+  left_join(source_tables, by = "SiteUnit") %>%
+  arrange(Column, SU_Label)
+
+nrow(changed_cells)
+count(changed_cells, Column, Trivial, sort = TRUE)   # summary by column
+
+# Look into these: 
+changed_cells %>%
+  filter(Column %in% c("Analysis_Group", "Suborder", "working_subass")) %>%
+  select(SU_Label, Column, Old_value, New_value, Source_tables)
+
+# n_siteunits: how large are the changes?
+changed_cells %>%
+  filter(Column == "n_siteunits") %>%
+  mutate(diff = as.numeric(New_value) - as.numeric(Old_value)) %>%
+  count(diff, sort = TRUE)
+```
