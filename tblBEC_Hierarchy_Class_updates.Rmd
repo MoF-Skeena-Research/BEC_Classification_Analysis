@@ -380,3 +380,45 @@ changed_cells %>%
   mutate(diff = as.numeric(New_value) - as.numeric(Old_value)) %>%
   count(diff, sort = TRUE)
 ```
+
+## *9. Check All_BC_Correlation.accdb 
+# Connect to BECdb (path is bec.becdb in local_paths_DSO.R)
+```{r check All_BC_Correlation}
+rm(list = ls())
+becdb <- dbConnect(
+  odbc::odbc(),
+  .connection_string = paste0(
+    "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=",
+    getOption("bec.becdb"), ";"
+  )
+)
+
+BEC.hier <- dbReadTable(becdb, "tblBEC_Hierarchy_Class_new") %>%
+  mutate(SiteUnit = str_replace_all(SU_Label, c("/" = "_", " " = "")))
+
+dbDisconnect(becdb)
+
+# Connect to All_BC_Correlation (path is db in local_paths_DSO.R)
+cor_db <- dbConnect(
+  odbc::odbc(),
+  .connection_string = paste0(
+    "Driver={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=",
+    getOption("db"), ";"
+  )
+)
+
+all_SUs <- dbReadTable(cor_db, "All_BC_BGCs_SU") |> 
+  mutate(SiteUnit = str_replace_all(SiteUnit, c("/" = "_", " " = "")))
+
+dbDisconnect(cor_db)
+
+# Check that overall the site units in All_BC_Correlation.accdb (aka all_SUs, which is all provincial forested classification) have been pulled into tblBEC_Hierarchy_Class (.
+missing_site_units <- all_SUs %>%
+  distinct(SiteUnit) %>%
+  anti_join(
+    BEC.hier %>% distinct(SiteUnit),
+    by = "SiteUnit"
+  )
+
+write.csv(missing_site_units, "DSO_outputs/missing_site_units_tblBEC_HierarchyClass_new.csv", row.names = FALSE)
+```
