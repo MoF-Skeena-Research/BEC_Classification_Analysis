@@ -130,37 +130,37 @@ compare_set <- c(
  #
  ##-----CWH, MH, CDF
   #"CWH-Act",
-  "CWH-HwBa",
-  "CWH-HwBa-rich",
-  "CWH-wetfor",
-  "CWH-102",
+  # "CWH-HwBa",
+  # "CWH-HwBa-rich",
+  # "CWH-wetfor",
+  # "CWH-102",
   #"CWH-HwFd",
  #  "CWH-HwFd-rich",
-  "MH"#,
+  #"MH"#,
 
 ##------IDF  (Fd)
- #  "FdPl",
- # "FdPy",
- # "Fd",
- # "FdLw",
+  "FdPl",
+ "FdPy",
+ "Fd",
+ "FdLw",
   
 ##-----ICH (CWHw)
- # "ICH-102", 
- # "ICH-CwFd", 
- #  "ICH-CwHw",
- # "ICH-rich",
- #  "ICH-Sx",
- # "ICH-wet",
+ "ICH-102",
+ "ICH-CwFd",
+  "ICH-CwHw",
+ "ICH-rich",
+  "ICH-Sx",
+ "ICH-wet",
 
 ##-------Boreal  (SBS,MS,BWBS)
-  # "Sb-bogs",
-  # "Sb-upland", 
-  # "Sw",
-  # "Sx",
-  # "SxFd",
-  # "Sx-horsetail",
-  # "SxPl",
-  # "Sx-rich"
+  "Sb-bogs",
+  "Sb-upland",
+  "Sw",
+  "Sx",
+  "SxFd",
+  "Sx-horsetail",
+  "SxPl",
+  "Sx-rich"
 )  
 
 
