@@ -36,27 +36,27 @@ source("local_paths_DSO.R")
 
 ```{r load data}
 # Pull in Nanaimo meeting spreadsheets:
-CWH_102 <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-102/0_CWH-102_BECdb_table_for_edit_meeting_dvm.xlsx")
-CWH_Act <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-Act/0_CWH-Act_BECdb_table_for_edit_meeting.xlsx")
-CWH_HwBa <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-HwBa/0_CWH-HwBa_BECdb_table_for_edit_meeting_dvm.xlsx")
-CWH_HwBa_rich <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-HwBa-rich/0_CWH-HwBa-rich_BECdb_table_for_edit_meeting_dvm.xlsx")
-CWH_HwFd <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-HwFd/Copy of 0_CWH-HwFd_BECdb_table_for_edit_meeting_dvm.xlsx")
-CWH_HwFd_rich <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-HwFd-rich/0_CWH-HwFd-rich_BECdb_table_for_edit_meetings_dvm.xlsx")
-CWH_wetfor <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/CWH-wetfor/0_CWH-wetfor_BECdb_table_for_edit_dvm_meeting.xlsx")
-MH <- read_excel("C:/Users/debor/OneDrive - Government of BC/External_ Coastal BEC Guide - Associations_Alliances_Review/MH/0_MH_BECdb_table_for_edit_meeting_dvm.xlsx")
+review_dir <- getOption("bec.review_dir")
+stopifnot("bec.review_dir not set or folder missing (check local_paths_DSO.R)" =
+            !is.null(review_dir) && dir.exists(review_dir))
 
-bec.tables <- list(
-  CWH_102 = CWH_102,
-  CWH_Act = CWH_Act,
-  CWH_HwBa = CWH_HwBa,
-  CWH_HwBa_rich = CWH_HwBa_rich,
-  CWH_HwFd = CWH_HwFd,
-  CWH_HwFd_rich = CWH_HwFd_rich,
-  CWH_wetfor = CWH_wetfor,
-  MH = MH
-)
+# Pattern kept vague: CWH-Act has "edit_meeting" (no dvm), CWH-wetfor has "edit_dvm_meeting"
+meeting_files <- list.files(review_dir,
+                            pattern = "BECdb_table_for_edit.*meeting.*\\.xlsx$",
+                            recursive = TRUE, full.names = TRUE, ignore.case = TRUE)
 
-# Connect to latest version of BECdb ("C:\Users\debor\OneDrive - Government of BC\MacKenzie, Will H FOR_EX's files - BECdb_Working\BECdb_ver14_2026_v1.accdb"). This is known as bec.becdb in local_paths_DSO.R
+# Ignore Excel lock files and anything inside an "old" folder
+meeting_files <- meeting_files[!startsWith(basename(meeting_files), "~$")]
+meeting_files <- meeting_files[!grepl("/old/", meeting_files, ignore.case = TRUE)]
+
+# Name each table after its folder (CWH-HwBa-rich -> CWH_HwBa_rich)
+names(meeting_files) <- gsub("-", "_", basename(dirname(meeting_files)))
+stopifnot("A folder has more than one matching file; see meeting_files" =
+            !anyDuplicated(names(meeting_files)))
+
+bec.tables <- map(meeting_files, read_excel)
+
+# Connect to BECdb (path is bec.becdb in local_paths_DSO.R)
 becdb <- dbConnect(
   odbc::odbc(),
   .connection_string = paste0(
@@ -65,9 +65,8 @@ becdb <- dbConnect(
   )
 )
 
-# Pull out tblBEC_Hierarchy_Class table: 
 BEC.hier <- dbReadTable(becdb, "tblBEC_Hierarchy_Class") %>%
-  mutate(SiteUnit = str_replace_all(SU_Label, c("/" = "_", " " = ""))) # Check if this line is necessary or wanted **
+  mutate(SiteUnit = str_replace_all(SU_Label, c("/" = "_", " " = "")))
 
 dbDisconnect(becdb)
 ```
