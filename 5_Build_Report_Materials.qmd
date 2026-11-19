@@ -57,6 +57,9 @@ require(gt)
 require(vegan)
 library(tidytext)
 library(stringr)
+library(climr)
+library(ggtext)
+library(patchwork)
 
 # DSO local paths: 
 source("local_paths_DSO.R")
@@ -219,8 +222,9 @@ su.class <- su2 %>%
 
 ```
 
+# Note: Update rules to updated rules 
 ```{r prep env data}
-rules <- read.csv("./inputs/aSMR_Rules_HalfStep_v11_09Dec2019.csv")
+rules <- read.csv("aSMR_Rules_HalfStep_v11_09Dec2019.csv") 
 source("./_functions/add_predictors.R")
 source("./_functions/assign_aSMR.R")
 source("./_functions/add_climate_data.R")
@@ -330,13 +334,81 @@ anal.set = "CWH_HwBa_mesic"
 su.anal <- su.class |> filter(working_alliance %in% anal.set)
 ```
 
+## Hierarchy representation: Testing HmYc moist poor because it has working order/suborder data
+- Maybe add circles for Association colour as legend for map here to make space on the map
+```{r hierarchy}
+alliance_labels <- BEC.hier %>%
+  filter(working_alliance == "HmYc moist poor") %>%
+  distinct(
+    working_order,
+    working_subord,
+    working_alliance,
+    working_association,
+    working_subass
+  )
 
-## Distribution Map for each unit
+labels <- c(
+  paste0("**Order:** ", alliance_labels$working_order[1]),
+  paste0("**Suborder:** ", alliance_labels$working_subord[1]),
+  paste0("**Alliance:** ", alliance_labels$working_alliance[1])
+)
+
+levels <- c(1, 2, 3)
+
+for (assoc in unique(alliance_labels$working_association)) {
+
+  labels <- c(labels, paste0("**Association:** ", assoc))
+  levels <- c(levels, 4)
+
+  subass <- alliance_labels %>%
+    filter(working_association == assoc) %>%
+    pull(working_subass) %>%
+    unique() %>%
+    na.omit()
+
+  if (length(subass) > 0) {
+    labels <- c(labels, paste0("**Subassociation:** ", subass))
+    levels <- c(levels, rep(5, length(subass)))
+  }
+}
+
+plot_data <- data.frame(
+  label = labels,
+  level = levels,
+  y = rev(seq(1, by = 0.1, length.out = length(labels)))
+)
+
+ggplot(plot_data, aes(x = level, y = y, label = label)) +
+  geom_richtext(
+    fill = NA,
+    label.color = NA,
+    hjust = 0,
+    size = 4
+  ) +
+  scale_x_continuous(
+    breaks = NULL,
+    limits = c(0.5, 12),
+    expand = c(0, 0)
+  ) +
+  scale_y_continuous(
+    breaks = NULL,
+    expand = expansion(add = 0.5)
+  ) +
+  coord_cartesian(clip = "off") +
+  theme_void() +
+  theme(
+    plot.margin = margin(0, 5, 0, 0)
+  )
+```
+
+## Build distribution map
 ```{r}
 #| label: fig-sites
 #| fig-cap: "Locations of plots for alliance"
 #| message: false
 #| warning: false
+#| fig-width: 6
+#| fig-height: 6
 
 library(sf)
 library(dplyr)
@@ -352,7 +424,8 @@ filter(!is.na(lon),!is.na(lat),!is.na(assoc))
 
 plots_sf <- st_as_sf(plots.map, coords=c("lon", "lat"), crs = 4326)
 
-bgc.anal <- st_read("D:/OneDrive - Government of BC/CommonTables/BGC_maps/BGCv13_simplified.gpkg") |> filter(BGC %in% plots.map$bgc)
+# bgc.anal <- st_read("D:/OneDrive - Government of BC/CommonTables/BGC_maps/BGCv13_simplified.gpkg") |> filter(BGC %in% plots.map$bgc)
+bgc.anal <- st_read(getOption("bec.spatial"))
 
 #----------------------------------------
 # Site locations
@@ -404,83 +477,124 @@ towns_bc <- st_crop(
 #----------------------------------------
 
 
-ggplot() +
+# map_plots <- ggplot() +
+#   geom_sf(data = bc, fill = "grey95", colour = "black") +
+#   geom_sf(data = lakes, fill = "lightblue", colour = NA) +
+#   geom_sf(data = rivers, colour = "lightblue3", linewidth = 0.2) +
+#  geom_sf(data = (bgc.anal %>% filter(BGC %in% plots.map$bgc)),
+#     mapping = aes(fill = BGC),
+#   colour = NA,
+#   alpha = 0.5) +
+#   geom_sf(data = plots_sf, aes(colour = assoc), size = 1, alpha = 0.8) +
+#   coord_sf(expand = FALSE) +
+#   scale_colour_viridis_d(option = "turbo") +
+#   theme_bw() +
+#   theme(panel.grid.major = element_blank(),
+#     panel.grid.minor = element_blank(),
+#     panel.border = element_rect(colour = "black", fill = NA),
+#     legend.position = "right",
+#     legend.direction = "vertical",
+#     legend.title = element_text(face = "bold"),
+#     legend.text = element_text(size = 9),
+#     legend.key = element_blank()) + 
+#   labs(Shape = "Association", 
+#        title = paste0("Plot Locations ", anal.set, " Alliance"),
+#        x = "Longitude",
+#        y = "Latitude") +
+#   coord_sf(xlim = c(min(plots.map$lon) - 1, max(plots.map$lon) + 1), ylim = c(min(plots.map$lat) - 0.25, max(plots.map$lat) + 0.25)) +
+#       theme_bw(base_size = 10) +
+#   guides(shape = guide_legend(nrow = 1, byrow = TRUE));map_plots
+
+# Try putting Associations legend underneath: 
+map_plots <- ggplot() +
   geom_sf(data = bc, fill = "grey95", colour = "black") +
   geom_sf(data = lakes, fill = "lightblue", colour = NA) +
   geom_sf(data = rivers, colour = "lightblue3", linewidth = 0.2) +
-  geom_sf(
-    data = bgc.anal,
-    aes(fill = BGC),
-    colour = NA,
-    alpha = 1
-  ) +
-  geom_sf(
-    data = plots_sf,
-    aes(colour = assoc),
-    size = 1.5,
-    alpha = 0.8
-  ) +
+  geom_sf(data = (bgc.anal %>% filter(BGC %in% plots.map$bgc)),
+          mapping = aes(fill = BGC),
+          colour = NA,
+          alpha = 0.5) +
+  geom_sf(data = plots_sf, aes(colour = assoc), size = 1, alpha = 0.8) +
   coord_sf(expand = FALSE) +
-  scale_colour_viridis_d(option = "turbo") +
-  theme_bw() +
-  theme(
-    legend.position = "none"
-  ) +
+  scale_colour_viridis_d(option = "turbo", name = NULL) +
   labs(
     colour = "Association",
-    title = paste0("Plot Locations ", anal.set, " Alliance")
-  ) +
-
-  coord_sf(
-    xlim = c(
-      min(plots$lon) - 3,
-      max(plots$lon) + 3
-    ),
-    ylim = c(
-      min(plots$lat) - 1,
-      max(plots$lat) + 1
-    )
-  ) +
-
-  labs(
+    title = paste0("Plot Locations ", anal.set, " Alliance"),
     x = "Longitude",
     y = "Latitude"
   ) +
-      theme_bw(base_size = 10) +
-
+  coord_sf(
+    xlim = c(min(plots.map$lon) - 1, max(plots.map$lon) + 1),
+    ylim = c(min(plots.map$lat) - 0.25, max(plots.map$lat) + 0.25),
+    expand = FALSE
+  ) +
+  theme_bw(base_size = 10) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
-
-    panel.border = element_rect(
-      colour = "black",
-      fill = NA
-    ),
-
+    panel.border = element_rect(colour = "black", fill = NA),
     legend.position = "right",
     legend.direction = "vertical",
-
-    legend.title = element_text(
-      face = "bold"
-    ),
-
-    legend.text = element_text(
-      size = 9
-    ),
-
-    legend.key = element_blank()
+    legend.title = element_text(face = "bold"),
+    legend.text = element_text(size = 9),
+    legend.key = element_blank(), 
+    legend.spacing.y = unit(0, "cm"),
+legend.key.height = unit(0.3, "cm")
   ) +
-
   guides(
-    shape = guide_legend(
-      nrow = 1,
-      byrow = TRUE
+    fill = guide_legend(order = 1),
+    colour = guide_legend(
+      order = 2,
+      position = "bottom",
+      direction = "horizontal",
+      ncol = 1
     )
-  )
+  );map_plots
+
+# Map extent
+map_extent <- st_bbox(
+  c(
+    xmin = min(plots.map$lon) - 0.2,
+    xmax = max(plots.map$lon) + 0.2,
+    ymin = min(plots.map$lat) - 0.2,
+    ymax = max(plots.map$lat) + 0.2
+  ),
+  crs = st_crs(4326)
+)
+
+# Convert extent to spatial polygon
+map_box <- st_as_sfc(map_extent)
+
+map_locator <- ggplot() +
+  geom_sf(
+    data = bc,
+    fill = "grey90",
+    colour = "grey30",
+    linewidth = 0.3
+  ) +
+  geom_sf(
+    data = map_box,
+    fill = NA,
+    colour = "red",
+    linewidth = 0.8
+  ) +
+  theme_void();map_locator
+
+
+
+map_final <- map_plots +
+  inset_element(
+    map_locator,
+    left = -0.4,
+    bottom = 0.1,
+    right = 0.98,
+    top = 0.32,
+    align_to = "plot"
+  ) +
+  plot_layout(guides = "keep");map_final
 ```
 
-
-
+## Build vegetation summary
 ```{r build veg guide summary and export to excel, echo = FALSE, warning=FALSE, message=FALSE}
 require(openxlsx)
 require(tictoc)
@@ -510,6 +624,230 @@ openxlsx::writeData(vegsum.wbk, sheet = assoc.choose, veg.sum.table)
 saveWorkbook(vegsum.wbk, paste0("./vegsum.tables/LMH77_draft_assoc_tables_", author, ".xlsx"), overwrite = TRUE)
 
 ```
+
+## Build climate summary 
+To do - figure out which climate vars are most important to include
+
+# Start with Alliance with most data: CWH_HwBa_mesic
+```{r climate summaries}
+# top_alliances <- plot.env3 %>%
+#   filter(!is.na(working_alliance)) %>%
+#   count(working_alliance) %>%
+#   filter(n == max(n)) %>%
+#   pull(working_alliance) # CWH_HwBa_mesic
+
+test_data <- plot.env3 |> 
+  dplyr::filter(working_alliance == "CWH_HwBa_mesic")
+
+
+ggplot(NULL, aes(x = PAS_an, y = Tmin_wt)) + 
+  geom_point(data = plot.env3, col = "grey50", alpha = 0.05) +
+  geom_point(data = test_data, col = "black", size = 1) + 
+  theme(panel.background = element_rect(fill = "white"),
+        panel.border = element_rect(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        aspect.ratio = 1) 
+
+# Radar diagram for most important vars? 
+library(tidyverse)
+
+library(tidyverse)
+
+vars <- c("PAS_an", "CMD.site", "MSP", "Tmin",
+          "AHM", "FFP", "DD5", "DD18_an")
+
+# Calculate mean and SD
+get_stats <- function(df, group) {
+  df %>%
+    summarise(across(all_of(vars),
+                     list(mean = ~mean(.x, na.rm = TRUE),
+                          sd = ~sd(.x, na.rm = TRUE)))) %>%
+    pivot_longer(
+      everything(),
+      names_to = c("variable", ".value"),
+      names_pattern = "(.*)_(mean|sd)"
+    ) %>%
+    mutate(group = group)
+}
+
+radar_data <- bind_rows(
+  get_stats(plot.env3, "All Alliances"),
+  get_stats(test_data, "Selected Alliance")
+)
+
+# Scale variables to 0–100 using the overall data ranges
+ranges <- plot.env3 %>%
+  summarise(across(all_of(vars),
+                   list(min = ~min(.x, na.rm = TRUE),
+                        max = ~max(.x, na.rm = TRUE)))) %>%
+  pivot_longer(
+    everything(),
+    names_to = c("variable", ".value"),
+    names_pattern = "(.*)_(min|max)"
+  )
+
+radar_data <- radar_data %>%
+  left_join(ranges, by = "variable") %>%
+  mutate(
+    mean = (mean - min) / (max - min) * 100,
+    sd = sd / (max - min) * 100,
+    lower = pmax(0, mean - sd),
+    upper = pmin(100, mean + sd),
+    variable = factor(variable, levels = vars),
+    axis = as.numeric(variable)
+  )
+
+# Close polygons
+radar_lines <- radar_data %>%
+  group_by(group) %>%
+  arrange(axis) %>%
+  bind_rows(slice(., 1), .) %>%
+  ungroup()
+
+ggplot() +
+  geom_linerange(
+    data = radar_data,
+    aes(x = axis, ymin = lower, ymax = upper, colour = group),
+    linewidth = 0.7
+  ) +
+  geom_polygon(
+    data = radar_lines,
+    aes(x = axis, y = mean, group = group,
+        colour = group, fill = group),
+    alpha = 0.12,
+    linewidth = 0.8
+  ) +
+  geom_point(
+    data = radar_data,
+    aes(x = axis, y = mean, colour = group),
+    size = 2
+  ) +
+  coord_polar() +
+  scale_x_continuous(
+    breaks = 1:length(vars),
+    labels = vars
+  ) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 20)) +
+  scale_colour_manual(values = c("grey50", "red")) +
+  scale_fill_manual(values = c("grey50", "red")) +
+  labs(x = NULL, y = NULL, colour = NULL, fill = NULL) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(size = 10),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  )
+
+```
+
+## Build env summary 
+# To do - figure out which env vars we want to include? 
+- Probably some combo of SNR/SMR but not sure which are the best. 
+```{r env summaries - SNR/SMR}
+# Option 1: All data
+jit <- position_jitter(width = 0.5, height = 0.5, seed = 1)
+ggplot(NULL, aes(x = rSNR, y = rSMR)) + 
+  geom_point(data = plot.env3, col = "grey50", alpha = 0.1, size = 1, position = jit) +
+  geom_point(data = test_data, col = "red", alpha = 0.5, size = 1, position = jit) + 
+  theme(panel.background = element_rect(fill = "white"),
+        panel.border = element_rect(),
+        panel.grid.major = element_line(colour = "grey"),
+        panel.grid.minor = element_blank(),
+        aspect.ratio = 1) + 
+  scale_y_continuous(breaks = 0:9, limits = c(0, 9))
+
+# Option 2: More heatmap-y
+all_counts <- plot.env3 %>%
+  filter(!is.na(rSNR), !is.na(rSMR)) %>%
+  mutate(rSNR = as.numeric(as.character(rSNR))) %>%
+  count(rSNR, rSMR)
+
+unit_pts <- test_data %>%
+  filter(!is.na(rSNR), !is.na(rSMR)) %>%
+  mutate(rSNR = as.numeric(as.character(rSNR)))
+
+ggplot() +
+  geom_tile(data = all_counts, aes(rSNR, rSMR, fill = n), colour = "white") +
+  scale_fill_gradient(low = "grey95", high = "grey30", trans = "sqrt",
+                      name = "# of plots") +
+  geom_point(data = unit_pts, aes(rSNR, rSMR),
+             colour = "red", size = 1.3, alpha = 0.7,
+             position = position_jitter(width = 0.45, height = 0.45, seed = 1)) +
+  scale_x_continuous(breaks = 1:6, limits = c(0.5, 6.5), expand = c(0, 0)) +
+  scale_y_continuous(breaks = 0:8, limits = c(-0.5, 8.5), expand = c(0, 0)) +
+  coord_fixed() +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        panel.border = element_rect())
+
+
+```
+
+```{r env summaries - slope position}
+
+```
+
+```{r env summaries - aspect}
+aspect_mini <- function(df, min_slope = 5, bar_col = "black") {
+
+  compass <- c("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+
+  asp <- df %>%
+    filter(!is.na(Aspect), Aspect >= 0, Aspect <= 360, SlopeGradient >= min_slope) %>%
+    mutate(bin = factor(compass[floor(((Aspect + 22.5) %% 360) / 45) + 1],
+                        levels = compass)) %>%
+    count(bin, .drop = FALSE)
+
+  ggplot(asp, aes(bin, n)) +
+    geom_col(fill = bar_col, width = 1, colour = "white", linewidth = 0.2) +
+    coord_polar(start = -pi / 8) +
+  # scale_x_discrete(breaks = c("N", "E", "S", "W")) +   # label only the 4 main directions
+    labs(x = NULL, y = NULL) +
+    theme_void(base_size = 8) +
+    theme(axis.text.x = element_text(size = 15),
+          panel.grid.major.x = element_line(colour = "grey85", linewidth = 0.2),
+          plot.margin = margin(1, 1, 1, 1))
+}
+
+aspect_mini(test_data)
+```
+
+```{r humus thickness}
+ggplot(NULL, aes(y = log10(HumusThickness))) + 
+  geom_violin(
+    data = plot.env3,
+    aes(x = "Alliance"),
+    fill = "grey90",
+    colour = "grey40",
+    width = 0.5
+  ) +
+  geom_violin(
+    data = test_data,
+    aes(x = "Alliance"),
+    fill = "salmon",
+    colour = "red",
+    width = 0.5
+  ) +
+  geom_jitter(
+    data = test_data,
+    aes(x = "Alliance"),
+    colour = "red",
+    alpha = 0.3,
+    width = 0.1,
+    size = 1
+  ) +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    panel.border = element_rect(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    aspect.ratio = 1
+  ) +
+  labs(x = NULL, y = "Humus thickness")
+
+```
+
 # Polished Ecosystem Unit Summary Report scripts from a copilot session
 ```{r}
 # Load required packages
