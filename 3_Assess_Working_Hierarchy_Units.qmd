@@ -37,7 +37,7 @@ output-file: "MH_Working_Hierarchy.pdf"
 library(readxl)
 anal_set <- c("MH")# "CWH-102" "CWH-HwBa" "CWH-HwBa-rich"  "CWH-HwFd" "CWH-HwFd-rich" "CWH-wetfor"  "MH" "CWH-Act"
 ## read in working db worksheet from one drive.
-review_dir <- paste0("D:/OneDrive - Government of BC/Coastal BEC Guide/Associations_Alliances_Review/" , anal_set, "/")
+review_dir <- paste0("D:/OneDrive - Government of BC/External_CoastalBECGuide/Associations_Alliances_Review/" , anal_set, "/")
 
 workbook <- paste0("0_", anal_set, "_BECdb_table_for_edit_meeting_dvm.xlsx")
 
@@ -299,7 +299,7 @@ bec_distance_assocs <- build_bec_distance_matrix(vegsum_assocs,
     preclass_level,
     use_preclass = FALSE,
     similarity_field = "BEC.sim.min")
-dendro_hc <- create_dendro_all(bec_distance_assocs$unit_compare, threshold.low = .4)
+dendro_hc <- create_dendro_all(bec_distance_assocs$unit_compare, threshold.low = .1)
 ```
 ## 3D NMDS ordination plot
 
@@ -413,7 +413,11 @@ ind.alliance <- indicator_species_analysis(
 ind.alliance$gt_table
 ```
 
+
+Some trials to see if alternate SU membership can 
+
 ```{r}
+source("../BEC_R_working/_functions/_optimize_indicators.R")
 opt <- optimize_indicators(
     veg_dat = veg_dat,
     su_anal = su_anal,

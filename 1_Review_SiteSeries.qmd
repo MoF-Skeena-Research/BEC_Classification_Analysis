@@ -1,5 +1,5 @@
 ---
-title: "Review of NThompson Guide Site Series by BGC"
+title: "Cariboo Site Series by BGC"
 author: "William H MacKenzie"
 date: today
 format:
@@ -30,7 +30,7 @@ execute:
   fig.asp: 1.5
   fig.path: "./figures/"
 
-output-file: "N_Thompson_Site_series_review.pdf"
+output-file: "Cariboo_Site_series_review.pdf"
 ---
 
 This script is designed to review the site series within each BGC, primarily to identify where site series do not sufficiently differentiate and need to be reviewed. The script also identifies site series with too few plots or with low diagnostic potential for review and interpretation of the quantitative analysis. The script generates a table list of site unit pairs that exceed a threshold similarity and a dendrogram of the cluster analysis of site units for each BGC.
@@ -127,7 +127,7 @@ dbDisconnect(veglump)
 veg.dat2 <- combine_taxa(vegdata = veg.dat, lump, use.subtaxa = FALSE)
 #db <- "C:/Users/whmacken/Dropbox/NorthThompson_LMH/NorthThompson_FG_Sorts.accdb"
 db <- "D:/BC_Correlation2_Vpro_2023/Sorts_Regional_BGC/NorthThompson_FG_Sorts.accdb"
-
+db <- "D:/OneDrive - Government of BC/Cariboo BEC Correlation/Cariboo_SU_2.accdb"
 su <- combined_su(db)
 su.nf <- su %>%
   filter(grepl('_[[:alpha:]]', SiteUnit)) %>% select(-SiteUnit.orig) %>% arrange(SiteUnit)
@@ -185,7 +185,7 @@ vegsum.pairs <- do_pairwise(veg.dat2,
   minplots = 1,
   minor = 1,
   use.ksi = FALSE, ksi = key.site.indicators, ksi.value = 1.5,
-  reduce_lifeform = TRUE, reduced_lifeforms = reduced.lifeforms, reduction = .2,
+  reduce_lifeform = TRUE, reduced_lifeforms = reduced.lifeforms, reduction = .33,
   reduced_exceptions = reduced.exceptions
 )
 
@@ -305,8 +305,8 @@ singles <- lapply(
     create_dendro_bybgc(
       bgc.choose,
       unit.compare,
-      threshold.low = .07,
-      threshold.high = .15
+      threshold.low = .10,
+      threshold.high = .20
     )
   }
 )
